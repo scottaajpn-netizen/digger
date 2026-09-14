@@ -58,9 +58,34 @@ test("diversity selector caps the seed artist and favors different artists", () 
     colors: ["#000000", "#111111"] as [string, string],
     reason: "test",
     relevance: 50,
+    origin: index % 2 === 0 ? "tag" : "artist-radio",
     score: 100 - index,
   }));
   const selected = selectDiverseRecommendations(ranked, "JeanJass", 10);
   assert.equal(selected.filter(track => track.artist === "JeanJass").length, 1);
   assert.ok(new Set(selected.map(track => track.artist)).size >= 7);
+});
+
+
+test("diversity selector avoids one candidate source dominating the first pass", () => {
+  const ranked = Array.from({ length: 12 }, (_, index) => ({
+    id: `source-${index}`,
+    title: `Track ${index}`,
+    artist: `Artist ${index}`,
+    scene: "Electronic",
+    label: `Label ${index}`,
+    tags: ["deep house"],
+    obscurity: 70,
+    year: 2024,
+    colors: ["#000000", "#111111"] as [string, string],
+    reason: "test",
+    relevance: 50,
+    origin: index < 8 ? "artist-radio" as const : "tag" as const,
+    score: 100 - index,
+  }));
+  const selected = selectDiverseRecommendations(ranked, "Seed Artist", 8);
+  const radioCount = selected.filter(track => track.origin === "artist-radio").length;
+  const tagCount = selected.filter(track => track.origin === "tag").length;
+  assert.ok(radioCount <= 6);
+  assert.ok(tagCount >= 2);
 });
