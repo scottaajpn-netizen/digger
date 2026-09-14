@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deduplicate, fromRecording, musicBrainzQuery, recommendLive, selectDiverseRecommendations } from "../src/lib/providers/live";
+import { deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, selectDiverseRecommendations } from "../src/lib/providers/live";
 
 const id = "aaaaaaaa-1111-4111-8111-111111111111";
 test("live normalization preserves real identity and never invents popularity", () => {
@@ -147,4 +147,11 @@ test("deep discovery favors second-circle sources", () => {
   ];
   const selected = selectDiverseRecommendations(ranked, "Seed Artist", 6);
   assert.ok(selected.filter(track => track.origin === "lastfm-deep").length >= 3);
+});
+
+
+test("Last.fm audience maps mainstream tracks to lower obscurity", () => {
+  assert.ok(obscurityFromLastFmListeners(500) > obscurityFromLastFmListeners(500000));
+  assert.ok(obscurityFromLastFmListeners(5000000) < 30);
+  assert.ok(obscurityFromLastFmListeners(50) > 70);
 });
