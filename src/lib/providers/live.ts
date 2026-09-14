@@ -1,5 +1,5 @@
 import type { DigRequest, DigResponse, Recommendation, Track } from "../types";
-import { musicJson, MusicServiceError } from "./http";
+import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, compareMusicalProfiles } from "../music/profile";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -8,7 +8,12 @@ interface Recording { id: string; title: string; score?: number; disambiguation?
 interface Release { id: string; title: string; date?: string; "label-info"?: { label?: { id: string; name: string } }[]; media?: { tracks?: { recording?: Recording }[] }[] }
 interface Metadata { artist?: { name?: string; artists?: { name: string; artist_mbid: string; area?: string }[] }; recording?: { name?: string; first_release_date?: string }; release?: { name?: string; mbid?: string; year?: number }; tag?: Record<string, { tag?: string; count?: number }[]> }
 type Radio = { recording_mbid: string; similar_artist_name?: string; similar_artist_mbid?: string; total_listen_count?: number; percent?: number };
-type CandidateOrigin = "artist-radio" | "tag" | "release" | "label";
+type LastFmArtist = { name?: string; mbid?: string; url?: string };
+type LastFmTrack = { name?: string; mbid?: string; url?: string; match?: number | string; artist?: LastFmArtist | { name?: string } };
+type LastFmSimilarResponse = { similartracks?: { track?: LastFmTrack[] } };
+type LastFmTagsResponse = { toptags?: { tag?: { name?: string; count?: number | string }[] } };
+type LastFmTopTracksResponse = { tracks?: { track?: LastFmTrack[] } };
+type CandidateOrigin = "artist-radio" | "tag" | "release" | "label" | "lastfm-similar" | "lastfm-tag";
 type Candidate = Recommendation & { relevance: number; origin: CandidateOrigin };
 type RankedCandidate = Candidate & { score: number };
 const colors: Track["colors"][] = [["#ca673c", "#392824"], ["#b6b56d", "#34382c"], ["#9fafd2", "#303148"], ["#dcab6f", "#803f34"], ["#74968c", "#25383c"], ["#bd7784", "#522f42"]];
@@ -93,6 +98,21 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   seed.country = artist?.country || seed.country;
   seed.scene = artist?.area?.name || seed.tags[0] || "MusicBrainz";
   seed.label = release?.["label-info"]?.find(l => l.label?.name)?.label?.name || "";
+  const lastFmSeedTags = await optional(
+    lastFmJson<LastFmTagsResponse>("track.getTopTags", {
+      artist: seed.artist,
+      track: seed.title,
+      autocorrect: "1",
+    }, signal),
+    "Les tags Last.fm sont indisponibles ; l’analyse continue avec MusicBrainz et ListenBrainz."
+  );
+  const extraLastFmTags = (lastFmSeedTags?.toptags?.tag || [])
+    .filter(tag => typeof tag.name === "string")
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
+    .map(tag => tag.name!)
+    .slice(0, 6);
+  if (extraLastFmTags.length) seed.tags = [...new Set([...seed.tags, ...extraLastFmTags])].slice(0, 8);
+
   const seedProfile = buildMusicalProfile(seed);
   seed.analysis = {
     genres: seedProfile.genres,
@@ -113,9 +133,15 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const tagQueries = [...new Set([...seedProfile.subgenres, ...seed.tags])]
     .filter(Boolean)
     .slice(0, 3);
-  const [radioResult, labelResult, ...tagResults] = await Promise.all([
+  const [radioResult, labelResult, lastFmSimilar, ...tagResults] = await Promise.all([
     seed.artistId ? optional(musicJson<Record<string, Radio[]>>("lb", `lb-radio/artist/${seed.artistId}`, { mode: radioMode, max_similar_artists: "18", max_recordings_per_artist: "3", pop_begin: "0", pop_end: "100" }, signal), "La radio d’artistes ListenBrainz est indisponible ; les autres pistes restent actives.") : null,
     input.direction === "Labels" && release?.["label-info"]?.some(l=>l.label?.id) ? optional(musicJson<{ releases?: Release[] }>("mb", "release", { label: release["label-info"]!.find(l=>l.label?.id)!.label!.id, inc: "recordings+artist-credits", limit: "6" }, signal), "Le catalogue du label n’a pas pu être chargé ; les autres pistes sont proposées.") : null,
+    optional(lastFmJson<LastFmSimilarResponse>("track.getSimilar", {
+      artist: seed.artist,
+      track: seed.title,
+      autocorrect: "1",
+      limit: "40",
+    }, signal), "Les morceaux similaires Last.fm sont indisponibles ; les autres sources restent actives."),
     ...tagQueries.map(tag => optional(
       musicJson<Radio[]>("lb", "lb-radio/tags", { tag, pop_begin: String(popBegin), pop_end: String(popEnd), count: "35" }, signal),
       `La recherche ListenBrainz pour le genre « ${tag} » est indisponible.`
@@ -131,6 +157,68 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       return row;
     });
   });
+  const lastFmSimilarTracks = lastFmSimilar?.similartracks?.track || [];
+  for (const [index, item] of lastFmSimilarTracks.entries()) {
+    const title = item.name?.trim();
+    const artistName = item.artist?.name?.trim();
+    if (!title || !artistName) continue;
+    const mbid = item.mbid && mbidPattern.test(item.mbid) ? item.mbid : undefined;
+    const similarity = Math.max(0, Math.min(1, Number(item.match || 0)));
+    const id = mbid || `lastfm:${hash(`${artistName}:${title}`)}`;
+    pool.push({
+      id,
+      title,
+      artist: artistName,
+      scene: seedProfile.subgenres[0] || seedProfile.genres[0] || "Last.fm",
+      label: "",
+      tags: [],
+      year: 0,
+      obscurity: 50,
+      colors: colors[hash(id) % colors.length],
+      externalIds: {
+        musicbrainz: mbid,
+        lastfm: item.url,
+      },
+      reason: `Last.fm rapproche ce morceau de « ${seed.title} » à partir des habitudes d’écoute.`,
+      relevance: 58 + similarity * 30 - index * 0.25,
+      origin: "lastfm-similar",
+    });
+  }
+
+  const lastFmGenreTags = [...new Set([...seedProfile.subgenres, ...seed.tags])].filter(Boolean).slice(0, 2);
+  const lastFmTagResults = await Promise.all(lastFmGenreTags.map(tag => optional(
+    lastFmJson<LastFmTopTracksResponse>("tag.getTopTracks", { tag, limit: "25", page: input.obscurity > 70 ? "2" : "1" }, signal),
+    `La piste Last.fm pour le genre « ${tag} » est indisponible.`
+  )));
+  lastFmTagResults.forEach((result, resultIndex) => {
+    const sourceTag = lastFmGenreTags[resultIndex];
+    for (const [index, item] of (result?.tracks?.track || []).entries()) {
+      const title = item.name?.trim();
+      const artistName = item.artist?.name?.trim();
+      if (!title || !artistName) continue;
+      const mbid = item.mbid && mbidPattern.test(item.mbid) ? item.mbid : undefined;
+      const id = mbid || `lastfm:${hash(`${artistName}:${title}:${sourceTag}`)}`;
+      pool.push({
+        id,
+        title,
+        artist: artistName,
+        scene: sourceTag || "Last.fm",
+        label: "",
+        tags: sourceTag ? [sourceTag] : [],
+        year: 0,
+        obscurity: Math.min(95, 45 + input.obscurity * 0.35 + index * 0.6),
+        colors: colors[hash(id) % colors.length],
+        externalIds: {
+          musicbrainz: mbid,
+          lastfm: item.url,
+        },
+        reason: `Repéré dans les morceaux associés au tag « ${sourceTag} » sur Last.fm.`,
+        relevance: 48 + Math.max(0, 18 - index * 0.5),
+        origin: "lastfm-tag",
+      });
+    }
+  });
+
   if (!radio.some(r => r.similar_artist_mbid !== seed.artistId)) notes.push(`Peu de liens d’écoute disponibles pour ${seed.artist}. La sélection s’élargit aux genres et aux sorties associés.`);
   if (labelResult?.releases) for (const r of labelResult.releases) addRelease(r, seed.label, 85, "label");
   if (input.direction === "Labels" && !seed.label) notes.push("Aucun label renseigné pour cette édition. Sélection élargie aux artistes et aux genres.");
@@ -165,7 +253,8 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
 
       if (input.direction === "Même vibe") {
         score += comparison.musicalSimilarity * 35;
-        if (t.origin === "tag") score += 10;
+        if (t.origin === "tag" || t.origin === "lastfm-tag") score += 10;
+        if (t.origin === "lastfm-similar") score += 14;
       }
       if (input.direction === "Même scène") {
         if (comparison.country) score += 22;
@@ -177,6 +266,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       }
       if (input.direction === "Rabbit hole") {
         score += sameSeedArtist ? -35 : 18;
+        if (t.origin === "lastfm-tag") score += 10;
         score += (1 - comparison.musicalSimilarity) * 8 + comparison.genre * 12 + comparison.traits * 12;
       }
 
