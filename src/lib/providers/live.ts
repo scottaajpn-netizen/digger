@@ -1,5 +1,6 @@
 import type { DigRequest, DigResponse, Recommendation, Track } from "../types";
 import { musicJson, MusicServiceError } from "./http";
+import { buildMusicalProfile, compareMusicalProfiles } from "../music/profile";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Credit = { name?: string; joinphrase?: string; artist?: { id?: string; name?: string; country?: string } };
@@ -8,6 +9,7 @@ interface Release { id: string; title: string; date?: string; "label-info"?: { l
 interface Metadata { artist?: { name?: string; artists?: { name: string; artist_mbid: string; area?: string }[] }; recording?: { name?: string; first_release_date?: string }; release?: { name?: string; mbid?: string; year?: number }; tag?: Record<string, { tag?: string; count?: number }[]> }
 type Radio = { recording_mbid: string; similar_artist_name?: string; similar_artist_mbid?: string; total_listen_count?: number; percent?: number };
 type Candidate = Recommendation & { relevance: number };
+type RankedCandidate = Candidate & { score: number };
 const colors: Track["colors"][] = [["#ca673c", "#392824"], ["#b6b56d", "#34382c"], ["#9fafd2", "#303148"], ["#dcab6f", "#803f34"], ["#74968c", "#25383c"], ["#bd7784", "#522f42"]];
 const hash = (s: string) => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7);
 export const normalized = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -29,6 +31,38 @@ export function fromRecording(r: Recording): Track | null {
 export function deduplicate<T extends Track>(tracks: T[]): T[] {
   const ids = new Set<string>(), names = new Set<string>();
   return tracks.filter(t => { const name = normalized(`${t.artist} ${t.title}`); if (ids.has(t.id) || names.has(name)) return false; ids.add(t.id); names.add(name); return true; });
+}
+
+export function selectDiverseRecommendations(ranked: RankedCandidate[], seedArtist: string, limit = 10) {
+  const selected: RankedCandidate[] = [];
+  const artistCounts = new Map<string, number>();
+  const labelCounts = new Map<string, number>();
+  const seedArtistName = normalized(seedArtist);
+
+  const tryAdd = (track: RankedCandidate, relaxed: boolean) => {
+    if (selected.some(item => item.id === track.id)) return false;
+    const artist = normalized(track.artist);
+    const label = normalized(track.label || "");
+    const artistCount = artistCounts.get(artist) || 0;
+    const labelCount = label ? (labelCounts.get(label) || 0) : 0;
+    if (artist === seedArtistName && artistCount >= 1) return false;
+    if (artistCount >= (relaxed ? 2 : 1)) return false;
+    if (label && labelCount >= (relaxed ? 3 : 2)) return false;
+    selected.push(track);
+    artistCounts.set(artist, artistCount + 1);
+    if (label) labelCounts.set(label, labelCount + 1);
+    return true;
+  };
+
+  for (const track of ranked) {
+    tryAdd(track, false);
+    if (selected.length >= limit) return selected;
+  }
+  for (const track of ranked) {
+    tryAdd(track, true);
+    if (selected.length >= limit) break;
+  }
+  return selected;
 }
 export async function searchLive(query: string, signal: AbortSignal): Promise<Track[]> {
   const data = await musicJson<{ recordings?: Recording[] }>("mb", "recording/", { query: musicBrainzQuery(query), limit: "25" }, signal);
@@ -54,6 +88,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   seed.country = artist?.country || seed.country;
   seed.scene = artist?.area?.name || seed.tags[0] || "MusicBrainz";
   seed.label = release?.["label-info"]?.find(l => l.label?.name)?.label?.name || "";
+  const seedProfile = buildMusicalProfile(seed);
   const pool: Candidate[] = [];
   function addRelease(r: Release, label: string, relevance: number) {
     for (const media of r.media || []) for (const item of media.tracks || []) {
@@ -91,20 +126,45 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     pool.push({ id, title: m.recording.name, artist: m.artist.name, artistId: m.artist.artists?.[0]?.artist_mbid, country: m.artist.artists?.[0]?.area, album: m.release?.name, releaseId: m.release?.mbid, scene: tags[0] || m.artist.artists?.[0]?.area || "ListenBrainz", label: "", tags, year: m.release?.year || 0, obscurity: popularity === undefined ? 50 : Math.round(100 - popularity), popularity, listenCount: related?.total_listen_count, colors: colors[hash(id) % colors.length], externalIds: { musicbrainz: id, listenbrainz: id }, reason, relevance: related ? sameArtist ? 32 : 72 : 38 });
   }
   const preferred = new Set(pool.filter(t => ["love", "curious"].includes(input.feedback[t.id])).flatMap(t=>t.tags));
-  const ranked = deduplicate(pool.sort((a,b)=>b.relevance-a.relevance)).filter(t => t.id !== seed.id && normalized(`${t.artist} ${t.title}`) !== normalized(`${seed.artist} ${seed.title}`) && !["known", "neutral"].includes(input.feedback[t.id])).map(t => {
-    const shared = t.tags.filter(tag => seed.tags.includes(tag)).length;
-    let score = t.relevance + shared * 5 + t.tags.filter(tag => preferred.has(tag)).length * 4;
-    if (t.popularity !== undefined) score -= Math.abs(t.obscurity - input.obscurity) * .5;
-    if (input.direction === "Même scène" && artist?.area?.name && t.country === artist.area.name) score += 20;
-    if (input.direction === "Rabbit hole") score += t.artistId !== seed.artistId ? 18 : -20;
-    const jitter = hash(`${t.id}:${input.session}`) % 31;
-    score += input.direction === "Surprends-moi" ? jitter * 3 : jitter * .15;
-    return { ...t, score };
-  }).sort((a,b)=>b.score-a.score);
-  const selected: typeof ranked = [];
-  const artists = new Map<string, number>();
-  for (const t of ranked) { const name = normalized(t.artist); if ((artists.get(name)||0) >= 2) continue; selected.push(t); artists.set(name,(artists.get(name)||0)+1); if(selected.length===10) break; }
-  if (selected.length < 10) for (const t of ranked) { if (!selected.some(x=>x.id===t.id)) selected.push(t); if(selected.length===10) break; }
+  const ranked: RankedCandidate[] = deduplicate(pool.sort((a,b)=>b.relevance-a.relevance))
+    .filter(t => t.id !== seed.id && normalized(`${t.artist} ${t.title}`) !== normalized(`${seed.artist} ${seed.title}`) && !["known", "neutral"].includes(input.feedback[t.id]))
+    .map(t => {
+      const candidateProfile = buildMusicalProfile(t);
+      const comparison = compareMusicalProfiles(seedProfile, candidateProfile);
+      const shared = t.tags.filter(tag => seed.tags.includes(tag)).length;
+      const sameSeedArtist = normalized(t.artist) === normalized(seed.artist);
+      let score = t.relevance + comparison.musicalSimilarity * 55 + shared * 3 + t.tags.filter(tag => preferred.has(tag)).length * 4;
+
+      if (sameSeedArtist) score -= 55;
+      if (t.popularity !== undefined) score -= Math.abs(t.obscurity - input.obscurity) * .45;
+
+      if (input.direction === "Même vibe") score += comparison.musicalSimilarity * 35;
+      if (input.direction === "Même scène") {
+        if (comparison.country) score += 22;
+        score += comparison.subgenre * 16 + comparison.rawTags * 10;
+      }
+      if (input.direction === "Labels") {
+        if (seed.label && t.label && normalized(seed.label) === normalized(t.label)) score += 34;
+        score += comparison.subgenre * 12;
+      }
+      if (input.direction === "Rabbit hole") {
+        score += sameSeedArtist ? -35 : 18;
+        score += (1 - comparison.musicalSimilarity) * 8 + comparison.genre * 12 + comparison.traits * 12;
+      }
+
+      const jitter = hash(`${t.id}:${input.session}`) % 31;
+      if (input.direction === "Surprends-moi") {
+        score += jitter * 2.2 + (1 - comparison.musicalSimilarity) * 14;
+        if (comparison.genre === 0 && comparison.subgenre === 0 && comparison.traits === 0 && comparison.rawTags === 0) score -= 20;
+      } else {
+        score += jitter * .12;
+      }
+
+      return { ...t, score };
+    })
+    .sort((a,b)=>b.score-a.score);
+
+  const selected = selectDiverseRecommendations(ranked, seed.artist, 10);
   if (selected.length < 10) notes.push(`Seulement ${selected.length} pistes exploitables avec ces données et tes exclusions. Aucun morceau inventé n’a été ajouté.`);
   if (!selected.some(t=>t.popularity !== undefined)) notes.push("Popularité indisponible pour cette sélection : le curseur agit sur l’ouverture de la radio, sans indice d’obscurité individuel.");
   return { tracks: selected.map(({ relevance: _, score: __, ...track })=>track), seed, source: "live", fallback: false, direction: input.direction, obscurity: input.obscurity, notes: [...new Set(notes)] };
