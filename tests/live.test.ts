@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deduplicate, fromRecording, musicBrainzQuery, recommendLive } from "../src/lib/providers/live";
+import { deduplicate, fromRecording, musicBrainzQuery, recommendLive, selectDiverseRecommendations } from "../src/lib/providers/live";
 
 const id = "aaaaaaaa-1111-4111-8111-111111111111";
 test("live normalization preserves real identity and never invents popularity", () => {
@@ -42,4 +42,25 @@ test("live service ranks real-source records, excludes seed and known tracks", a
   assert.equal(result.fallback,false);
   assert.equal(result.tracks.length,0);
   assert.ok(result.notes?.some(note=>note.includes("Aucun morceau inventé")));
+});
+
+
+test("diversity selector caps the seed artist and favors different artists", () => {
+  const ranked = Array.from({ length: 12 }, (_, index) => ({
+    id: `id-${index}`,
+    title: `Track ${index}`,
+    artist: index < 5 ? "JeanJass" : `Artist ${index}`,
+    scene: "Rap",
+    label: index < 4 ? "Same Label" : `Label ${index}`,
+    tags: ["hip hop"],
+    obscurity: 50,
+    year: 2020,
+    colors: ["#000000", "#111111"] as [string, string],
+    reason: "test",
+    relevance: 50,
+    score: 100 - index,
+  }));
+  const selected = selectDiverseRecommendations(ranked, "JeanJass", 10);
+  assert.equal(selected.filter(track => track.artist === "JeanJass").length, 1);
+  assert.ok(new Set(selected.map(track => track.artist)).size >= 7);
 });
