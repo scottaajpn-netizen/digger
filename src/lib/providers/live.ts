@@ -8,7 +8,8 @@ interface Recording { id: string; title: string; score?: number; disambiguation?
 interface Release { id: string; title: string; date?: string; "label-info"?: { label?: { id: string; name: string } }[]; media?: { tracks?: { recording?: Recording }[] }[] }
 interface Metadata { artist?: { name?: string; artists?: { name: string; artist_mbid: string; area?: string }[] }; recording?: { name?: string; first_release_date?: string }; release?: { name?: string; mbid?: string; year?: number }; tag?: Record<string, { tag?: string; count?: number }[]> }
 type Radio = { recording_mbid: string; similar_artist_name?: string; similar_artist_mbid?: string; total_listen_count?: number; percent?: number };
-type Candidate = Recommendation & { relevance: number };
+type CandidateOrigin = "artist-radio" | "tag" | "release" | "label";
+type Candidate = Recommendation & { relevance: number; origin: CandidateOrigin };
 type RankedCandidate = Candidate & { score: number };
 const colors: Track["colors"][] = [["#ca673c", "#392824"], ["#b6b56d", "#34382c"], ["#9fafd2", "#303148"], ["#dcab6f", "#803f34"], ["#74968c", "#25383c"], ["#bd7784", "#522f42"]];
 const hash = (s: string) => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7);
@@ -37,6 +38,7 @@ export function selectDiverseRecommendations(ranked: RankedCandidate[], seedArti
   const selected: RankedCandidate[] = [];
   const artistCounts = new Map<string, number>();
   const labelCounts = new Map<string, number>();
+  const originCounts = new Map<CandidateOrigin, number>();
   const seedArtistName = normalized(seedArtist);
 
   const tryAdd = (track: RankedCandidate, relaxed: boolean) => {
@@ -45,12 +47,15 @@ export function selectDiverseRecommendations(ranked: RankedCandidate[], seedArti
     const label = normalized(track.label || "");
     const artistCount = artistCounts.get(artist) || 0;
     const labelCount = label ? (labelCounts.get(label) || 0) : 0;
+    const originCount = originCounts.get(track.origin) || 0;
     if (artist === seedArtistName && artistCount >= 1) return false;
     if (artistCount >= (relaxed ? 2 : 1)) return false;
     if (label && labelCount >= (relaxed ? 3 : 2)) return false;
+    if (originCount >= (relaxed ? 6 : 4)) return false;
     selected.push(track);
     artistCounts.set(artist, artistCount + 1);
     if (label) labelCounts.set(label, labelCount + 1);
+    originCounts.set(track.origin, originCount + 1);
     return true;
   };
 
@@ -90,25 +95,39 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   seed.label = release?.["label-info"]?.find(l => l.label?.name)?.label?.name || "";
   const seedProfile = buildMusicalProfile(seed);
   const pool: Candidate[] = [];
-  function addRelease(r: Release, label: string, relevance: number) {
+  function addRelease(r: Release, label: string, relevance: number, origin: CandidateOrigin = "release") {
     for (const media of r.media || []) for (const item of media.tracks || []) {
       const track = item.recording ? fromRecording(item.recording) : null;
-      if (track) pool.push({ ...track, releaseId: r.id, album: r.title, label, reason: label ? `Paru chez ${label}, comme une édition de « ${seed.title} » (MusicBrainz).` : `Présent sur « ${r.title} », une sortie qui contient aussi ton morceau de départ (MusicBrainz).`, relevance });
+      if (track) pool.push({ ...track, releaseId: r.id, album: r.title, label, reason: label ? `Paru chez ${label}, comme une édition de « ${seed.title} » (MusicBrainz).` : `Présent sur « ${r.title} », une sortie qui contient aussi ton morceau de départ (MusicBrainz).`, relevance, origin });
     }
   }
-  if (release) addRelease(release, seed.label, input.direction === "Labels" ? 80 : 52);
+  if (release) addRelease(release, seed.label, input.direction === "Labels" ? 80 : 52, "release");
   const radioMode = input.direction === "Rabbit hole" || input.obscurity > 75 ? "hard" : input.obscurity < 30 ? "easy" : "medium";
   const popEnd = input.obscurity > 75 ? 35 : input.obscurity > 40 ? 70 : 100;
   const popBegin = input.obscurity < 25 ? 25 : 0;
-  const jobs = await Promise.all([
-    seed.artistId ? optional(musicJson<Record<string, Radio[]>>("lb", `lb-radio/artist/${seed.artistId}`, { mode: radioMode, max_similar_artists: "15", max_recordings_per_artist: "4", pop_begin: "0", pop_end: "100" }, signal), "La radio d’artistes ListenBrainz est indisponible ; les autres pistes restent actives.") : null,
-    seed.tags.length ? optional(musicJson<Radio[]>("lb", "lb-radio/tags", { tag: seed.tags[0], pop_begin: String(popBegin), pop_end: String(popEnd), count: "45" }, signal), "La recherche par genre ListenBrainz est indisponible.") : null,
+  const tagQueries = [...new Set([...seedProfile.subgenres, ...seed.tags])]
+    .filter(Boolean)
+    .slice(0, 3);
+  const [radioResult, labelResult, ...tagResults] = await Promise.all([
+    seed.artistId ? optional(musicJson<Record<string, Radio[]>>("lb", `lb-radio/artist/${seed.artistId}`, { mode: radioMode, max_similar_artists: "18", max_recordings_per_artist: "3", pop_begin: "0", pop_end: "100" }, signal), "La radio d’artistes ListenBrainz est indisponible ; les autres pistes restent actives.") : null,
     input.direction === "Labels" && release?.["label-info"]?.some(l=>l.label?.id) ? optional(musicJson<{ releases?: Release[] }>("mb", "release", { label: release["label-info"]!.find(l=>l.label?.id)!.label!.id, inc: "recordings+artist-credits", limit: "6" }, signal), "Le catalogue du label n’a pas pu être chargé ; les autres pistes sont proposées.") : null,
+    ...tagQueries.map(tag => optional(
+      musicJson<Radio[]>("lb", "lb-radio/tags", { tag, pop_begin: String(popBegin), pop_end: String(popEnd), count: "35" }, signal),
+      `La recherche ListenBrainz pour le genre « ${tag} » est indisponible.`
+    )),
   ]);
-  const radio = jobs[0] ? Object.values(jobs[0]).flat().filter(r => mbidPattern.test(r.recording_mbid)) : [];
-  const byTag = Array.isArray(jobs[1]) ? jobs[1].filter(r => mbidPattern.test(r.recording_mbid)) : [];
+  const radio = radioResult ? Object.values(radioResult).flat().filter(r => mbidPattern.test(r.recording_mbid)) : [];
+  const tagSourceById = new Map<string, string>();
+  const byTag = tagResults.flatMap((result, index) => {
+    if (!Array.isArray(result)) return [];
+    const tag = tagQueries[index];
+    return result.filter(r => mbidPattern.test(r.recording_mbid)).map(row => {
+      if (!tagSourceById.has(row.recording_mbid)) tagSourceById.set(row.recording_mbid, tag);
+      return row;
+    });
+  });
   if (!radio.some(r => r.similar_artist_mbid !== seed.artistId)) notes.push(`Peu de liens d’écoute disponibles pour ${seed.artist}. La sélection s’élargit aux genres et aux sorties associés.`);
-  if (jobs[2]?.releases) for (const r of jobs[2].releases) addRelease(r, seed.label, 85);
+  if (labelResult?.releases) for (const r of labelResult.releases) addRelease(r, seed.label, 85, "label");
   if (input.direction === "Labels" && !seed.label) notes.push("Aucun label renseigné pour cette édition. Sélection élargie aux artistes et aux genres.");
   if (input.direction === "Même scène") notes.push("« Même scène » privilégie ici les artistes associés, les genres et, lorsqu’elle est connue, la zone géographique ; ce n’est pas une scène musicale certifiée.");
   const rows = [...radio, ...byTag];
@@ -122,8 +141,9 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     const popularity = typeof tagRow?.percent === "number" && Number.isFinite(tagRow.percent) ? Math.max(0,Math.min(100,tagRow.percent)) : undefined;
     const tags = [...new Set(Object.values(m.tag || {}).flat().sort((a,b)=>(b.count||0)-(a.count||0)).map(t => t.tag).filter((t): t is string => typeof t === "string"))].slice(0, 6);
     const sameArtist = m.artist.artists?.[0]?.artist_mbid === seed.artistId;
-    const reason = related ? sameArtist ? `Un autre morceau de ${seed.artist}, présent dans les écoutes ListenBrainz.` : `ListenBrainz rapproche ${m.artist.name} de ${seed.artist} à partir des habitudes d’écoute.` : `Partage le tag « ${seed.tags[0]} » dans MusicBrainz / ListenBrainz. Une piste de genre, sans similarité sonore mesurée.`;
-    pool.push({ id, title: m.recording.name, artist: m.artist.name, artistId: m.artist.artists?.[0]?.artist_mbid, country: m.artist.artists?.[0]?.area, album: m.release?.name, releaseId: m.release?.mbid, scene: tags[0] || m.artist.artists?.[0]?.area || "ListenBrainz", label: "", tags, year: m.release?.year || 0, obscurity: popularity === undefined ? 50 : Math.round(100 - popularity), popularity, listenCount: related?.total_listen_count, colors: colors[hash(id) % colors.length], externalIds: { musicbrainz: id, listenbrainz: id }, reason, relevance: related ? sameArtist ? 32 : 72 : 38 });
+    const matchedTag = tagSourceById.get(id);
+    const reason = related ? sameArtist ? `Un autre morceau de ${seed.artist}, présent dans les écoutes ListenBrainz.` : `ListenBrainz rapproche ${m.artist.name} de ${seed.artist} à partir des habitudes d’écoute.` : `Trouvé via le genre / sous-genre « ${matchedTag || seed.tags[0] || "musique associée"} » dans ListenBrainz.`;
+    pool.push({ id, title: m.recording.name, artist: m.artist.name, artistId: m.artist.artists?.[0]?.artist_mbid, country: m.artist.artists?.[0]?.area, album: m.release?.name, releaseId: m.release?.mbid, scene: tags[0] || m.artist.artists?.[0]?.area || "ListenBrainz", label: "", tags, year: m.release?.year || 0, obscurity: popularity === undefined ? 50 : Math.round(100 - popularity), popularity, listenCount: related?.total_listen_count, colors: colors[hash(id) % colors.length], externalIds: { musicbrainz: id, listenbrainz: id }, reason, relevance: related ? sameArtist ? 32 : 72 : 46, origin: related ? "artist-radio" : "tag" });
   }
   const preferred = new Set(pool.filter(t => ["love", "curious"].includes(input.feedback[t.id])).flatMap(t=>t.tags));
   const ranked: RankedCandidate[] = deduplicate(pool.sort((a,b)=>b.relevance-a.relevance))
@@ -138,7 +158,10 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       if (sameSeedArtist) score -= 55;
       if (t.popularity !== undefined) score -= Math.abs(t.obscurity - input.obscurity) * .45;
 
-      if (input.direction === "Même vibe") score += comparison.musicalSimilarity * 35;
+      if (input.direction === "Même vibe") {
+        score += comparison.musicalSimilarity * 35;
+        if (t.origin === "tag") score += 10;
+      }
       if (input.direction === "Même scène") {
         if (comparison.country) score += 22;
         score += comparison.subgenre * 16 + comparison.rawTags * 10;
@@ -160,7 +183,12 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
         score += jitter * .12;
       }
 
-      return { ...t, score };
+      const sharedSubgenres = candidateProfile.subgenres.filter(value => seedProfile.subgenres.includes(value));
+      const sharedTraits = candidateProfile.traits.filter(value => seedProfile.traits.includes(value));
+      let reason = t.reason;
+      if (sharedSubgenres.length) reason = `Sous-genre commun : ${sharedSubgenres.slice(0, 2).join(" / ")}. ${reason}`;
+      else if (sharedTraits.length) reason = `Traits musicaux communs : ${sharedTraits.slice(0, 2).join(" / ")}. ${reason}`;
+      return { ...t, reason, score };
     })
     .sort((a,b)=>b.score-a.score);
 
