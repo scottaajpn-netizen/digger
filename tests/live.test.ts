@@ -58,7 +58,7 @@ test("diversity selector caps the seed artist and favors different artists", () 
     colors: ["#000000", "#111111"] as [string, string],
     reason: "test",
     relevance: 50,
-    origin: (index % 2 === 0 ? "tag" : "artist-radio") as const,
+    origin: (index % 2 === 0 ? "tag" : "artist-radio") as "tag" | "artist-radio",
     score: 100 - index,
   }));
   const selected = selectDiverseRecommendations(ranked, "JeanJass", 10);
