@@ -1,0 +1,45 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { deduplicate, fromRecording, musicBrainzQuery, recommendLive } from "../src/lib/providers/live";
+
+const id = "aaaaaaaa-1111-4111-8111-111111111111";
+test("live normalization preserves real identity and never invents popularity", () => {
+  const track = fromRecording({ id, title: "Test", "artist-credit": [{ name: "Artist", artist: { id: "bbbbbbbb-1111-4111-8111-111111111111" } }] });
+  assert.ok(track);
+  assert.equal(track.id,id);
+  assert.equal(track.externalIds?.musicbrainz,id);
+  assert.equal(track.popularity,undefined);
+  assert.equal(track.label,"");
+  assert.equal(fromRecording({id:"invalid",title:"Bad"}),null);
+  assert.equal(deduplicate([track,{...track,id:"cccccccc-1111-4111-8111-111111111111",title:"TEST"}]).length,1);
+});
+test("search separates artist/title in either order and escapes query operators", () => {
+  const query = musicBrainzQuery("Ttabla — Taxi Kebab");
+  assert.ok(query.includes('recording:"Ttabla" AND artist:"Taxi Kebab"'));
+  assert.ok(query.includes('recording:"Taxi Kebab" AND artist:"Ttabla"'));
+  assert.ok(!musicBrainzQuery('Test:* — Artist').includes('*'));
+  assert.ok(musicBrainzQuery('أغنية — فنان').includes('أغنية'));
+});
+test("live requests cannot silently fall back to demo without a selected recording", async () => {
+  await assert.rejects(recommendLive({seed:"unknown",direction:"Même vibe",obscurity:65,feedback:{},session:0},AbortSignal.timeout(1000)), /Choisis/);
+});
+test("live service ranks real-source records, excludes seed and known tracks", async t => {
+  const artistId="dddddddd-1111-4111-8111-111111111111";
+  const candidateId="eeeeeeee-1111-4111-8111-111111111111";
+  t.mock.method(globalThis,"fetch", async (url: URL) => {
+    const path=String(url);
+    let data: unknown;
+    if(path.includes('/ws/2/recording/')) data={id,title:"Seed",'artist-credit':[{name:"Seed artist",artist:{id:artistId}}]};
+    else if(path.includes('/ws/2/artist/')) data={tags:[{name:"test-tag"}],area:{name:"France"}};
+    else if(path.includes('/lb-radio/artist/')) data={[artistId]:[{recording_mbid:candidateId,similar_artist_mbid:artistId}]};
+    else if(path.includes('/lb-radio/tags')) data=[];
+    else if(path.includes('/metadata/recording/')) data={[candidateId]:{recording:{name:"Real candidate"},artist:{name:"Seed artist",artists:[{artist_mbid:artistId,name:"Seed artist"}]}}};
+    else throw new Error(`Unexpected external request ${path}`);
+    return Response.json(data);
+  });
+  const result = await recommendLive({seed:"Seed",seedId:id,direction:"Même vibe",obscurity:65,feedback:{[candidateId]:"known"},session:0},AbortSignal.timeout(10000));
+  assert.equal(result.source,"live");
+  assert.equal(result.fallback,false);
+  assert.equal(result.tracks.length,0);
+  assert.ok(result.notes?.some(note=>note.includes("Aucun morceau inventé")));
+});
