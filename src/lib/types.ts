@@ -3,11 +3,18 @@ export type Direction = typeof directions[number];
 export const feedbackValues = ["love", "curious", "neutral", "known"] as const;
 export type Feedback = typeof feedbackValues[number];
 export type FeedbackMap = Record<string, Feedback>;
+export interface MusicalAnalysis {
+  genres: string[];
+  subgenres: string[];
+  traits: string[];
+  similarity?: number;
+}
 export interface Track {
   id: string; title: string; artist: string; scene: string; label: string;
   tags: string[]; obscurity: number; year: number; colors: [string, string];
   artistId?: string; releaseId?: string; country?: string; album?: string;
   popularity?: number; listenCount?: number;
+  analysis?: MusicalAnalysis;
   externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string };
 }
 export interface Recommendation extends Track { reason: string }
