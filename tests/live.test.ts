@@ -110,3 +110,41 @@ test("seed artist is excluded from discovery recommendations", () => {
   const selected = selectDiverseRecommendations(ranked.filter(track => track.artist !== "JeanJass"), "JeanJass", 10);
   assert.equal(selected.some(track => track.artist === "JeanJass"), false);
 });
+
+
+test("deep discovery favors second-circle sources", () => {
+  const ranked = [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `direct-${index}`,
+      title: `Direct ${index}`,
+      artist: `Direct Artist ${index}`,
+      scene: "Hip-Hop",
+      label: "",
+      tags: ["hip hop"],
+      obscurity: 50,
+      year: 2020,
+      colors: ["#000000", "#111111"] as [string, string],
+      reason: "direct",
+      relevance: 80,
+      origin: "lastfm-similar" as const,
+      score: 90 - index,
+    })),
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `deep-${index}`,
+      title: `Deep ${index}`,
+      artist: `Deep Artist ${index}`,
+      scene: "Hip-Hop",
+      label: "",
+      tags: ["hip hop"],
+      obscurity: 50,
+      year: 2020,
+      colors: ["#000000", "#111111"] as [string, string],
+      reason: "deep",
+      relevance: 70,
+      origin: "lastfm-deep" as const,
+      score: 100 - index,
+    })),
+  ];
+  const selected = selectDiverseRecommendations(ranked, "Seed Artist", 6);
+  assert.ok(selected.filter(track => track.origin === "lastfm-deep").length >= 3);
+});
