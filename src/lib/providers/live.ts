@@ -13,11 +13,17 @@ type LastFmTrack = { name?: string; mbid?: string; url?: string; match?: number 
 type LastFmSimilarResponse = { similartracks?: { track?: LastFmTrack[] } };
 type LastFmTagsResponse = { toptags?: { tag?: { name?: string; count?: number | string }[] } };
 type LastFmTopTracksResponse = { tracks?: { track?: LastFmTrack[] } };
+type LastFmTrackInfoResponse = { track?: { listeners?: string; playcount?: string; url?: string } };
 type CandidateOrigin = "artist-radio" | "tag" | "release" | "label" | "lastfm-similar" | "lastfm-tag" | "lastfm-deep";
 type Candidate = Recommendation & { relevance: number; origin: CandidateOrigin };
 type RankedCandidate = Candidate & { score: number };
 const colors: Track["colors"][] = [["#ca673c", "#392824"], ["#b6b56d", "#34382c"], ["#9fafd2", "#303148"], ["#dcab6f", "#803f34"], ["#74968c", "#25383c"], ["#bd7784", "#522f42"]];
 const hash = (s: string) => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7);
+export function obscurityFromLastFmListeners(listeners: number) {
+  if (!Number.isFinite(listeners) || listeners <= 0) return 90;
+  const log = Math.log10(listeners + 1);
+  return Math.max(5, Math.min(98, Math.round(102 - log * 17)));
+}
 export const normalized = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const quote = (s: string) => `"${s.replace(/[\\"+\-!(){}\[\]^~*?:/|&]/g, " ").trim()}"`;
 export function musicBrainzQuery(query: string) {
@@ -283,6 +289,39 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   if (labelResult?.releases) for (const r of labelResult.releases) addRelease(r, seed.label, 85, "label");
   if (input.direction === "Labels" && !seed.label) notes.push("Aucun label renseigné pour cette édition. Sélection élargie aux artistes et aux genres.");
   if (input.direction === "Même scène") notes.push("« Même scène » privilégie ici les artistes associés, les genres et, lorsqu’elle est connue, la zone géographique ; ce n’est pas une scène musicale certifiée.");
+  if (input.obscurity >= 75 && process.env.LASTFM_API_KEY) {
+    const enrichmentTargets = deduplicate(
+      [...pool]
+        .filter(track => track.origin === "lastfm-deep" || track.origin === "lastfm-similar" || track.origin === "lastfm-tag")
+        .sort((a, b) => b.relevance - a.relevance)
+    ).slice(0, 14);
+
+    const audienceRows = await Promise.all(enrichmentTargets.map(track => optional(
+      lastFmJson<LastFmTrackInfoResponse>("track.getInfo", {
+        artist: track.artist,
+        track: track.title,
+        autocorrect: "1",
+      }, signal),
+      `Audience Last.fm indisponible pour « ${track.title} ».`
+    )));
+
+    const audienceByName = new Map<string, { listeners: number; url?: string }>();
+    enrichmentTargets.forEach((track, index) => {
+      const info = audienceRows[index]?.track;
+      const listeners = Number(info?.listeners || 0);
+      if (!Number.isFinite(listeners) || listeners <= 0) return;
+      audienceByName.set(normalized(`${track.artist} ${track.title}`), { listeners, url: info?.url });
+    });
+
+    for (const track of pool) {
+      const audience = audienceByName.get(normalized(`${track.artist} ${track.title}`));
+      if (!audience) continue;
+      track.lastfmListeners = audience.listeners;
+      track.obscurity = obscurityFromLastFmListeners(audience.listeners);
+      if (audience.url) track.externalIds = { ...(track.externalIds || {}), lastfm: audience.url };
+    }
+  }
+
   const rows = [...radio, ...byTag];
   const ids = [...new Set(rows.map(r => r.recording_mbid))].slice(0, 100);
   const metadata = ids.length ? await optional(musicJson<Record<string, Metadata>>("lb", "metadata/recording/", { recording_mbids: ids.join(","), inc: "artist tag release" }, signal), "Certaines fiches ListenBrainz n’ont pas pu être chargées.") : null;
@@ -314,6 +353,11 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       }
       if (input.obscurity >= 80 && t.listenCount !== undefined && t.listenCount > 0) {
         score -= Math.max(0, Math.log10(t.listenCount + 1) - 3) * 8;
+      }
+      if (input.obscurity >= 75 && t.lastfmListeners !== undefined) {
+        const audiencePenalty = Math.max(0, Math.log10(t.lastfmListeners + 1) - 3.2);
+        score -= audiencePenalty * (input.obscurity >= 95 ? 18 : 11);
+        score -= Math.abs(t.obscurity - input.obscurity) * 0.65;
       }
       if (input.obscurity >= 80 && t.origin === "lastfm-tag") score -= 35;
       if (input.obscurity >= 90 && t.origin === "lastfm-deep") score += 26;
