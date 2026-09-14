@@ -89,3 +89,24 @@ test("diversity selector avoids one candidate source dominating the first pass",
   assert.ok(radioCount <= 6);
   assert.ok(tagCount >= 2);
 });
+
+
+test("seed artist is excluded from discovery recommendations", () => {
+  const ranked = Array.from({ length: 6 }, (_, index) => ({
+    id: `seed-artist-${index}`,
+    title: `Track ${index}`,
+    artist: index < 3 ? "JeanJass" : `Other Artist ${index}`,
+    scene: "Hip-Hop",
+    label: "Test Label",
+    tags: ["hip hop"],
+    obscurity: 50,
+    year: 2020,
+    colors: ["#000000", "#111111"] as [string, string],
+    reason: "test",
+    relevance: 50,
+    origin: "artist-radio" as const,
+    score: 100 - index,
+  }));
+  const selected = selectDiverseRecommendations(ranked.filter(track => track.artist !== "JeanJass"), "JeanJass", 10);
+  assert.equal(selected.some(track => track.artist === "JeanJass"), false);
+});
