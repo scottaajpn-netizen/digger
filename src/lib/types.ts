@@ -13,7 +13,7 @@ export interface Track {
   id: string; title: string; artist: string; scene: string; label: string;
   tags: string[]; obscurity: number; year: number; colors: [string, string];
   artistId?: string; releaseId?: string; country?: string; album?: string;
-  popularity?: number; listenCount?: number;
+  popularity?: number; listenCount?: number; lastfmListeners?: number;
   analysis?: MusicalAnalysis;
   externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string };
 }
