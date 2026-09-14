@@ -26,7 +26,8 @@ npm run dev
 
 - **MusicBrainz** : recherche, identifiants stables, artistes, tags, sorties, labels et catalogue de label.
 - **ListenBrainz** : radio d’artistes associés selon les écoutes, recherche de morceaux par tag et popularité, métadonnées groupées.
-- **Last.fm et Discogs** : pas encore connectés. Aucun compte ou secret nécessaire pour les deux connexions actuelles.
+- **Last.fm** : tags communautaires, morceaux similaires et exploration par genre. Nécessite une clé API serveur `LASTFM_API_KEY`.
+- **Discogs** : pas encore connecté.
 
 Les premières recherches peuvent prendre plusieurs secondes ; les résultats externes sont mis en cache une heure. Une connexion Internet est nécessaire. Un morceau inconnu affiche une erreur explicite. Aucun retour automatique aux données simulées.
 
@@ -52,7 +53,12 @@ Le profil connecté est dans `localStorage`, clé `digger.profile.v2`. La démo 
 - `src/components/digger.tsx` : choix du morceau, interface, feedback et collection.
 - Les anciennes fixtures et le moteur mock restent disponibles pour les tests, mais ne sont plus appelés par l’application.
 
-Variable serveur optionnelle : `MUSICBRAINZ_USER_AGENT`, pour identifier l’application et fournir une URL de contact lors d’un usage public. Exemple de forme : Digger/0.2 (URL de contact de votre application). Ne pas utiliser le préfixe NEXT_PUBLIC pour les futures clés API.
+Variables serveur :
+
+- `LASTFM_API_KEY` : clé API Last.fm. Copier `.env.example` vers `.env.local`, puis renseigner la clé. Ne jamais utiliser `NEXT_PUBLIC_` pour cette clé.
+- `MUSICBRAINZ_USER_AGENT` : optionnelle, pour identifier proprement l’application auprès de MusicBrainz.
+
+Sans `LASTFM_API_KEY`, Digger continue de fonctionner avec MusicBrainz + ListenBrainz et ignore simplement Last.fm.
 
 ## Vérification
 
