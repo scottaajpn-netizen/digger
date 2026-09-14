@@ -94,6 +94,11 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   seed.scene = artist?.area?.name || seed.tags[0] || "MusicBrainz";
   seed.label = release?.["label-info"]?.find(l => l.label?.name)?.label?.name || "";
   const seedProfile = buildMusicalProfile(seed);
+  seed.analysis = {
+    genres: seedProfile.genres,
+    subgenres: seedProfile.subgenres,
+    traits: seedProfile.traits,
+  };
   const pool: Candidate[] = [];
   function addRelease(r: Release, label: string, relevance: number, origin: CandidateOrigin = "release") {
     for (const media of r.media || []) for (const item of media.tracks || []) {
@@ -188,7 +193,17 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       let reason = t.reason;
       if (sharedSubgenres.length) reason = `Sous-genre commun : ${sharedSubgenres.slice(0, 2).join(" / ")}. ${reason}`;
       else if (sharedTraits.length) reason = `Traits musicaux communs : ${sharedTraits.slice(0, 2).join(" / ")}. ${reason}`;
-      return { ...t, reason, score };
+      return {
+        ...t,
+        reason,
+        score,
+        analysis: {
+          genres: candidateProfile.genres,
+          subgenres: candidateProfile.subgenres,
+          traits: candidateProfile.traits,
+          similarity: Math.round(comparison.musicalSimilarity * 100),
+        },
+      };
     })
     .sort((a,b)=>b.score-a.score);
 
