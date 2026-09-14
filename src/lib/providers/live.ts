@@ -240,15 +240,13 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   }
   const preferred = new Set(pool.filter(t => ["love", "curious"].includes(input.feedback[t.id])).flatMap(t=>t.tags));
   const ranked: RankedCandidate[] = deduplicate(pool.sort((a,b)=>b.relevance-a.relevance))
-    .filter(t => t.id !== seed.id && normalized(`${t.artist} ${t.title}`) !== normalized(`${seed.artist} ${seed.title}`) && !["known", "neutral"].includes(input.feedback[t.id]))
+    .filter(t => t.id !== seed.id && normalized(`${t.artist} ${t.title}`) !== normalized(`${seed.artist} ${seed.title}`) && normalized(t.artist) !== normalized(seed.artist) && !["known", "neutral"].includes(input.feedback[t.id]))
     .map(t => {
       const candidateProfile = buildMusicalProfile(t);
       const comparison = compareMusicalProfiles(seedProfile, candidateProfile);
       const shared = t.tags.filter(tag => seed.tags.includes(tag)).length;
       const sameSeedArtist = normalized(t.artist) === normalized(seed.artist);
       let score = t.relevance + comparison.musicalSimilarity * 55 + shared * 3 + t.tags.filter(tag => preferred.has(tag)).length * 4;
-
-      if (sameSeedArtist) score -= 55;
       if (t.popularity !== undefined) score -= Math.abs(t.obscurity - input.obscurity) * .45;
 
       if (input.direction === "Même vibe") {
@@ -265,7 +263,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
         score += comparison.subgenre * 12;
       }
       if (input.direction === "Rabbit hole") {
-        score += sameSeedArtist ? -35 : 18;
+        score += 18;
         if (t.origin === "lastfm-tag") score += 10;
         score += (1 - comparison.musicalSimilarity) * 8 + comparison.genre * 12 + comparison.traits * 12;
       }
