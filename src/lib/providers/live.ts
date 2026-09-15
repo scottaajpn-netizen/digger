@@ -10,14 +10,15 @@ interface Release { id: string; title: string; date?: string; "label-info"?: { l
 interface Metadata { artist?: { name?: string; artists?: { name: string; artist_mbid: string; area?: string }[] }; recording?: { name?: string; first_release_date?: string }; release?: { name?: string; mbid?: string; year?: number }; tag?: Record<string, { tag?: string; count?: number }[]> }
 type Radio = { recording_mbid: string; similar_artist_name?: string; similar_artist_mbid?: string; total_listen_count?: number; percent?: number };
 type LastFmArtist = { name?: string; mbid?: string; url?: string };
-type LastFmTrack = { name?: string; mbid?: string; url?: string; match?: number | string; artist?: LastFmArtist | { name?: string } };
+type LastFmTrack = { name?: string; mbid?: string; url?: string; match?: number | string; listeners?: number | string; artist?: LastFmArtist | { name?: string } };
 type LastFmSimilarResponse = { similartracks?: { track?: LastFmTrack[] } };
 type LastFmTagsResponse = { toptags?: { tag?: { name?: string; count?: number | string }[] } };
 type LastFmTopTracksResponse = { tracks?: { track?: LastFmTrack[] } };
+type LastFmSimilarArtistsResponse = { similarartists?: { artist?: { name?: string; match?: number | string }[] } };
 type LastFmTrackInfoResponse = { track?: { name?: string; artist?: { name?: string }; listeners?: string; playcount?: string; url?: string } };
 type LastFmSearchTrack = { name?: string; artist?: string; mbid?: string; url?: string };
 type LastFmSearchResponse = { results?: { trackmatches?: { track?: LastFmSearchTrack[] } } };
-type CandidateOrigin = DiscogsOrigin | "artist-radio" | "tag" | "release" | "label" | "lastfm-similar" | "lastfm-tag" | "lastfm-deep";
+type CandidateOrigin = DiscogsOrigin | "artist-radio" | "tag" | "release" | "label" | "lastfm-similar" | "lastfm-tag" | "lastfm-deep" | "lastfm-crate";
 type Candidate = Recommendation & { relevance: number; origin: CandidateOrigin; feedbackIds?: string[] };
 type RankedCandidate = Candidate & { score: number };
 const colors: Track["colors"][] = [["#ca673c", "#392824"], ["#b6b56d", "#34382c"], ["#9fafd2", "#303148"], ["#dcab6f", "#803f34"], ["#74968c", "#25383c"], ["#bd7784", "#522f42"]];
@@ -304,6 +305,62 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const allLastFmSimilarTracks = lastFmSimilar?.similartracks?.track || [];
   const directLastFmOffset = input.obscurity >= 90 ? 12 : input.obscurity >= 75 ? 6 : 0;
   const lastFmSimilarTracks = allLastFmSimilarTracks.slice(directLastFmOffset);
+
+  // Catalogue fallback for deep digging: if track-level similarity is empty,
+  // walk through neighbouring artists, then inspect several cuts from each catalogue.
+  // This keeps the path explainable while avoiding tag charts.
+  if ((input.direction === "Rabbit hole" || input.obscurity >= 80) && allLastFmSimilarTracks.length === 0) {
+    const similarArtists = await optional(
+      lastFmJson<LastFmSimilarArtistsResponse>("artist.getSimilar", {
+        artist: seed.artist,
+        limit: "12",
+        autocorrect: "1",
+      }, signal),
+      `Les artistes voisins Last.fm autour de ${seed.artist} sont indisponibles.`
+    );
+    const neighbours = (similarArtists?.similarartists?.artist || [])
+      .filter(row => typeof row.name === "string" && row.name.trim() && normalized(row.name) !== normalized(seed.artist))
+      .slice(0, 5);
+
+    const catalogues = await Promise.all(neighbours.map(row => optional(
+      lastFmJson<LastFmTopTracksResponse>("artist.getTopTracks", {
+        artist: row.name!,
+        limit: "12",
+        autocorrect: "1",
+      }, signal),
+      `Le catalogue Last.fm de ${row.name} est indisponible.`
+    )));
+
+    catalogues.forEach((result, artistIndex) => {
+      const neighbour = neighbours[artistIndex];
+      const neighbourName = neighbour?.name?.trim() || "";
+      for (const [index, item] of (result?.toptracks?.track || []).entries()) {
+        const title = item.name?.trim();
+        const artistName = item.artist?.name?.trim() || neighbourName;
+        if (!title || !artistName || normalized(artistName) === normalized(seed.artist)) continue;
+        const mbid = item.mbid && mbidPattern.test(item.mbid) ? item.mbid : undefined;
+        const id = mbid || `lastfm-crate:${hash(`${artistName}:${title}`)}`;
+        const listeners = Number(item.listeners);
+        pool.push({
+          id,
+          title,
+          artist: artistName,
+          scene: seedProfile.subgenres[0] || seedProfile.genres[0] || "Last.fm catalogue",
+          label: "",
+          tags: [],
+          year: 0,
+          obscurity: Number.isFinite(listeners) && listeners > 0 ? obscurityFromLastFmListeners(listeners) : 50,
+          obscurityKnown: Number.isFinite(listeners) && listeners > 0,
+          lastfmListeners: Number.isFinite(listeners) && listeners > 0 ? listeners : undefined,
+          colors: colors[hash(id) % colors.length],
+          externalIds: { musicbrainz: mbid, lastfm: item.url },
+          reason: `Catalogue : ${seed.artist} → artiste voisin ${artistName} → « ${title} ».`,
+          relevance: 66 + Math.max(0, 14 - index * 0.6) + Math.max(0, 8 - artistIndex),
+          origin: "lastfm-crate",
+        });
+      }
+    });
+  }
   for (const [index, item] of lastFmSimilarTracks.entries()) {
     const title = item.name?.trim();
     const artistName = item.artist?.name?.trim();
@@ -451,7 +508,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   if (input.obscurity >= 75 && process.env.LASTFM_API_KEY) {
     const enrichmentTargets = deduplicate(
       [...pool]
-        .filter(track => track.id !== seed.id && normalized(track.artist) !== normalized(seed.artist))
+        .filter(track => track.id !== seed.id && normalized(track.artist) !== normalized(seed.artist) && track.lastfmListeners === undefined)
         .sort((a, b) => b.relevance - a.relevance)
     ).slice(0, 60);
 
@@ -512,6 +569,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       }
       if (input.obscurity >= 80 && t.origin === "lastfm-tag") score -= 35;
       if (input.obscurity >= 90 && t.origin === "lastfm-deep") score += 26;
+      if (input.obscurity >= 80 && t.origin === "lastfm-crate") score += 24;
 
       if (t.discogs) {
         // Editorial metadata is release-scoped, separate from track similarity.
@@ -541,6 +599,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       if (input.direction === "Rabbit hole") {
         score += 18;
         if (t.origin === "lastfm-deep") score += 22;
+        if (t.origin === "lastfm-crate") score += 28;
         if (t.origin === "lastfm-tag") score -= 12;
         score += (1 - comparison.musicalSimilarity) * 8 + comparison.genre * 12 + comparison.traits * 12;
       }
