@@ -5,6 +5,27 @@ export type GenreNode = {
 };
 
 const MAP: Record<string, GenreNode> = {
+  "electronic": { genre: "Electronic" },
+  "electronica": { genre: "Electronic", subgenre: "Electronica" },
+  "ambient": { genre: "Electronic", subgenre: "Ambient", traits: ["atmospheric"] },
+  "uk bass": { genre: "Electronic", subgenre: "UK Bass" },
+  "dubstep": { genre: "Electronic", subgenre: "Dubstep" },
+  "broken beat": { genre: "Electronic", subgenre: "Broken Beat", traits: ["syncopated"] },
+  "uk funky": { genre: "Electronic", subgenre: "UK Funky" },
+  "electro": { genre: "Electronic", subgenre: "Electro" },
+  "trip hop": { genre: "Electronic", subgenre: "Trip-Hop" },
+  "downtempo": { genre: "Electronic", subgenre: "Downtempo" },
+  "reggae": { genre: "Reggae" },
+  "dub": { genre: "Reggae", subgenre: "Dub", traits: ["dub"] },
+  "afrobeat": { genre: "Afrobeat" },
+  "afrobeats": { genre: "Afrobeats" },
+  "highlife": { genre: "Highlife" },
+  "gnawa": { genre: "Gnawa" },
+  "raï": { genre: "Raï" },
+  "psychedelic rock": { genre: "Rock", subgenre: "Psychedelic Rock" },
+  "rock": { genre: "Rock" },
+  "r&b": { genre: "R&B" },
+  "rhythm and blues": { genre: "R&B" },
   "uk garage": { genre: "Electronic", subgenre: "UK Garage" },
   "ukg": { genre: "Electronic", subgenre: "UK Garage" },
   "2-step": { genre: "Electronic", subgenre: "2-Step", traits: ["syncopated"] },
@@ -60,7 +81,7 @@ const MAP: Record<string, GenreNode> = {
 };
 
 export function cleanMusicTag(tag: string) {
-  return tag.trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
+  return tag.normalize("NFKC").trim().toLowerCase().replace(/[‐‑–—]/g, "-").replace(/_/g, " ").replace(/\s+/g, " ");
 }
 
 export function normalizeMusicTags(tags: string[]) {
@@ -72,7 +93,8 @@ export function normalizeMusicTags(tags: string[]) {
   for (const raw of tags) {
     const clean = cleanMusicTag(raw);
     if (!clean) continue;
-    const node = MAP[clean];
+    const alias = ({ "dnb": "drum and bass", "d&b": "drum and bass", "drum n bass": "drum and bass", "hiphop": "hip hop", "2-step garage": "2-step", "trip-hop": "trip hop", "rai": "raï" } as Record<string, string>)[clean];
+    const node = MAP[alias || clean] || MAP[clean.replace(/-/g, " ")];
     if (!node) {
       unknownTags.add(clean);
       continue;

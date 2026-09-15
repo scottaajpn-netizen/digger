@@ -19,3 +19,13 @@ test("musical profile similarity rewards shared subgenres and traits", () => {
   const far = buildMusicalProfile({ tags: ["trap"], year: 2024, country: "US", label: "" });
   assert.ok(compareMusicalProfiles(seed, close).musicalSimilarity > compareMusicalProfiles(seed, far).musicalSimilarity);
 });
+
+
+test("handles aliases without merging distinct traditions or promoting unknown tags", () => {
+  const tags = normalizeMusicTags(["D&B", "dnb", "trip-hop", "UK_GARAGE", "Afrobeat", "Afrobeats", "favorites", "2020"]);
+  assert.equal(tags.subgenres.filter(v => v === "Drum & Bass").length, 1);
+  assert.ok(tags.subgenres.includes("Trip-Hop"));
+  assert.ok(tags.subgenres.includes("UK Garage"));
+  assert.ok(tags.genres.includes("Afrobeat") && tags.genres.includes("Afrobeats"));
+  assert.deepEqual(tags.unknownTags, ["favorites", "2020"]);
+});

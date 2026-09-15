@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, selectDiverseRecommendations } from "../src/lib/providers/live";
+import { passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, selectDiverseRecommendations } from "../src/lib/providers/live";
 
 const id = "aaaaaaaa-1111-4111-8111-111111111111";
 test("live normalization preserves real identity and never invents popularity", () => {
@@ -154,4 +154,43 @@ test("Last.fm audience maps mainstream tracks to lower obscurity", () => {
   assert.ok(obscurityFromLastFmListeners(500) > obscurityFromLastFmListeners(500000));
   assert.ok(obscurityFromLastFmListeners(5000000) < 30);
   assert.ok(obscurityFromLastFmListeners(50) > 70);
+});
+
+
+test("strict digging rejects mainstream and unknown audiences, including contradictory sources", () => {
+  assert.equal(passesDeepAudienceGate({lastfmListeners: 500000, popularity: 1}, 100), false);
+  assert.equal(passesDeepAudienceGate({}, 100), false);
+  assert.equal(passesDeepAudienceGate({lastfmListeners: Number.NaN}, 100), false);
+  assert.equal(passesDeepAudienceGate({lastfmListeners: 500}, 100), true);
+  assert.equal(passesDeepAudienceGate({popularity: 12}, 100), true);
+  assert.equal(passesDeepAudienceGate({lastfmListeners: 500, popularity: 80}, 100), false);
+  assert.equal(passesDeepAudienceGate({}, 65), true);
+});
+
+test("Surprends-moi at 100 excludes popular second-hop tracks and does not invent genres", async t => {
+  const seedId = "aaaaaaaa-2222-4222-8222-222222222222";
+  const oldKey = process.env.LASTFM_API_KEY;
+  process.env.LASTFM_API_KEY = "fixture-key";
+  t.after(() => { if (oldKey === undefined) delete process.env.LASTFM_API_KEY; else process.env.LASTFM_API_KEY = oldKey; });
+  t.mock.method(globalThis, "fetch", async (url: URL) => {
+    const u = new URL(String(url));
+    if (u.pathname.includes("/ws/2/recording/")) return Response.json({id:seedId,title:"Fixture seed",tags:[{name:"uk garage"}],"artist-credit":[{name:"Fixture artist"}]});
+    if (u.pathname.includes("/lb-radio/tags")) return Response.json([]);
+    const method = u.searchParams.get("method");
+    if (method === "track.getTopTags") return Response.json({toptags:{tag:[]}});
+    if (method === "tag.getTopTracks") assert.fail("Deep mode must not request tag charts");
+    if (method === "track.getSimilar") {
+      if (u.searchParams.get("track") === "Fixture seed") return Response.json({similartracks:{track:Array.from({length:32}, (_,i)=>({name:`Bridge ${i}`,artist:{name:`Bridge artist ${i}`},match:0.7}))}});
+      return Response.json({similartracks:{track:[{name:"Underground fixture",artist:{name:"Small fixture"},match:0.5},{name:"Mainstream fixture",artist:{name:"Famous fixture"},match:1}]}});
+    }
+    if (method === "track.getInfo") return Response.json({track:{listeners:u.searchParams.get("artist") === "Small fixture" ? "500" : "500000"}});
+    throw new Error("Unexpected fixture request");
+  });
+  for (const session of [0, 1, 7]) {
+    const result = await recommendLive({seed:"Fixture seed",seedId,direction:"Surprends-moi",obscurity:100,feedback:{},session}, AbortSignal.timeout(20000));
+    assert.equal(result.tracks.length, 1);
+    assert.equal(result.tracks[0].artist, "Small fixture");
+    assert.deepEqual(result.tracks[0].analysis?.subgenres, []);
+    assert.equal(result.tracks[0].lastfmListeners, 500);
+  }
 });
