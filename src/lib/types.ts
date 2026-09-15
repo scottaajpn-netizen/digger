@@ -21,6 +21,22 @@ export interface Track {
   externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string };
 }
 export interface Recommendation extends Track { reason: string }
-export interface DigRequest { seed: string; seedId?: string; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number }
+export type SeedSource = "musicbrainz" | "lastfm" | "discogs" | "mixed";
+export interface SeedReference {
+  id: string;
+  title: string;
+  artist: string;
+  scene?: string;
+  label?: string;
+  tags?: string[];
+  year?: number;
+  artistId?: string;
+  releaseId?: string;
+  country?: string;
+  album?: string;
+  externalIds?: Track["externalIds"];
+  source?: SeedSource;
+}
+export interface DigRequest { seed: string; seedId?: string; seedTrack?: SeedReference; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number }
 export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[] }
 export interface MusicProvider { id: string; search(query: string): Promise<Track[]>; candidates(seed: Track): Promise<Track[]> }
