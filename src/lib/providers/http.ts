@@ -35,6 +35,9 @@ export async function musicJson<T>(base: "mb" | "lb", path: string, params: Reco
     }
     if ([429, 502, 503, 504].includes(response.status) && attempt < 2) {
       const retry = Number(response.headers.get("retry-after"));
+      if (base === "mb" && Number.isFinite(retry) && retry > 4) {
+        throw new MusicServiceError("MusicBrainz demande de patienter avant une nouvelle requête. Réessaie dans quelques secondes.", 429);
+      }
       await delay(Number.isFinite(retry) && retry > 0 ? Math.min(retry * 1000, 4000) : 1300 * (attempt + 1), signal);
       continue;
     }
@@ -97,3 +100,5 @@ export async function lastFmJson<T>(method: string, params: Record<string, strin
 
   return null;
 }
+
+export { discogsJson } from "./discogs-http";
