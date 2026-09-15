@@ -93,7 +93,7 @@ export function normalizeMusicTags(tags: string[]) {
   for (const raw of tags) {
     const clean = cleanMusicTag(raw);
     if (!clean) continue;
-    const alias = ({ "dnb": "drum and bass", "d&b": "drum and bass", "drum n bass": "drum and bass", "hiphop": "hip hop", "2-step garage": "2-step", "trip-hop": "trip hop", "rai": "raï" } as Record<string, string>)[clean];
+    const alias = ({ "dnb": "drum and bass", "d&b": "drum and bass", "drum n bass": "drum and bass", "hiphop": "hip hop", "2-step garage": "2-step", "trip-hop": "trip hop", "jazz-hop": "jazz rap", "jazz hop": "jazz rap", "rai": "raï" } as Record<string, string>)[clean];
     const node = MAP[alias || clean] || MAP[clean.replace(/-/g, " ")];
     if (!node) {
       unknownTags.add(clean);
