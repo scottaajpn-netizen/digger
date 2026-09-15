@@ -222,15 +222,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
 
   // Start the bounded editorial graph alongside the existing providers.
   const discogsJob = discoverDiscogs({ ...seed }, input, signal).catch(() => ({ candidates: [], notes: ["Discogs indisponible ; les autres sources restent actives."] }));
-  const [artist, release] = await Promise.all([
-    seed.artistId ? optional(musicJson<{ tags?: { name: string; count?: number }[]; area?: { name: string }; country?: string }>("mb", `artist/${seed.artistId}`, { inc: "tags" }, signal), "Les informations de l’artiste sont temporairement indisponibles.") : null,
-    seed.releaseId ? optional(musicJson<Release>("mb", `release/${seed.releaseId}`, { inc: "labels+recordings+artist-credits" }, signal), "Les informations de label sont temporairement indisponibles.") : null,
-  ]);
-  seed.tags = [...new Set([...seed.tags, ...(artist?.tags || []).sort((a,b)=>(b.count||0)-(a.count||0)).map(t => t.name)])].slice(0, 5);
-  seed.country = artist?.country || seed.country;
-  seed.scene = artist?.area?.name || seed.tags[0] || seed.scene || "Sources musicales";
-  seed.label = release?.["label-info"]?.find(l => l.label?.name)?.label?.name || seed.label || "";
-  const [lastFmSeedTags, lastFmSeedInfo] = await Promise.all([
+  const lastFmSeedJob = Promise.all([
     optional(
       lastFmJson<LastFmTagsResponse>("track.getTopTags", {
         artist: seed.artist,
@@ -248,6 +240,15 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       "La fiche Last.fm du morceau de départ est indisponible."
     ),
   ]);
+  const [artist, release] = await Promise.all([
+    seed.artistId ? optional(musicJson<{ tags?: { name: string; count?: number }[]; area?: { name: string }; country?: string }>("mb", `artist/${seed.artistId}`, { inc: "tags" }, signal), "Les informations de l’artiste sont temporairement indisponibles.") : null,
+    seed.releaseId ? optional(musicJson<Release>("mb", `release/${seed.releaseId}`, { inc: "labels+recordings+artist-credits" }, signal), "Les informations de label sont temporairement indisponibles.") : null,
+  ]);
+  seed.tags = [...new Set([...seed.tags, ...(artist?.tags || []).sort((a,b)=>(b.count||0)-(a.count||0)).map(t => t.name)])].slice(0, 5);
+  seed.country = artist?.country || seed.country;
+  seed.scene = artist?.area?.name || seed.tags[0] || seed.scene || "Sources musicales";
+  seed.label = release?.["label-info"]?.find(l => l.label?.name)?.label?.name || seed.label || "";
+  const [lastFmSeedTags, lastFmSeedInfo] = await lastFmSeedJob;
   if (lastFmSeedInfo?.track?.url) seed.externalIds = { ...(seed.externalIds || {}), lastfm: lastFmSeedInfo.track.url };
   const seedListeners = Number(lastFmSeedInfo?.track?.listeners || 0);
   if (Number.isFinite(seedListeners) && seedListeners > 0) seed.lastfmListeners = seedListeners;
@@ -309,7 +310,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   // Catalogue fallback for deep digging: if track-level similarity is empty,
   // walk through neighbouring artists, then inspect several cuts from each catalogue.
   // This keeps the path explainable while avoiding tag charts.
-  if ((input.direction === "Rabbit hole" || input.obscurity >= 80) && allLastFmSimilarTracks.length === 0) {
+  if (allLastFmSimilarTracks.length === 0) {
     const similarArtists = await optional(
       lastFmJson<LastFmSimilarArtistsResponse>("artist.getSimilar", {
         artist: seed.artist,

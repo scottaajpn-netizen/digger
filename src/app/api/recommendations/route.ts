@@ -1,6 +1,7 @@
-import { recommendLive, searchLive, mbidPattern } from "@/lib/providers/live";
+import { recommendLive, mbidPattern } from "@/lib/providers/live";
 import { MusicServiceError } from "@/lib/providers/http";
 import { directions, feedbackValues, type DigRequest } from "@/lib/types";
+import { suggest } from "@/lib/search/service";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
     }
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(50000)]);
     if (!body.seedId && !body.seedTrack) {
-      const choices = await searchLive(body.seed.trim(), signal);
+      const {suggestions: choices} = await suggest(body.seed.trim(), signal);
       if (!choices.length) return Response.json({ error: "Aucun morceau trouvé. Essaie avec quelques mots du titre ou de l’artiste." }, { status: 404 });
       return Response.json({ choices });
     }

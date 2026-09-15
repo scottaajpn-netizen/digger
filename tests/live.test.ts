@@ -282,3 +282,25 @@ test("a verified Last.fm seed can be explored without a MusicBrainz ID", async t
   assert.ok(result.notes?.some(note => note.includes("multi-source")));
   assert.ok(result.tracks.some(track => track.artist === "Small Artist"));
 });
+
+test("catalogue fallback serves sparse non-MBID seeds in every direction and supports chaining", async t => {
+  const oldKey=process.env.LASTFM_API_KEY;
+  process.env.LASTFM_API_KEY="catalogue-fallback-fixture";
+  t.after(()=>{if(oldKey===undefined)delete process.env.LASTFM_API_KEY;else process.env.LASTFM_API_KEY=oldKey;});
+  t.mock.method(globalThis,"fetch",async(input:URL)=>{
+    const u=new URL(String(input)),method=u.searchParams.get("method");
+    if(method==="track.getTopTags")return Response.json({toptags:{tag:[]}});
+    if(method==="track.getInfo")return Response.json({track:{name:u.searchParams.get("track"),artist:{name:u.searchParams.get("artist")},listeners:"600"}});
+    if(method==="track.getSimilar")return Response.json({similartracks:{track:[]}});
+    if(method==="artist.getSimilar")return Response.json({similarartists:{artist:[{name:u.searchParams.get("artist")==="Niche fixture"?"Neighbour fixture":"Next fixture",match:0.6}]}});
+    if(method==="artist.getTopTracks")return Response.json({toptracks:{track:[{name:"Catalogue cut",artist:{name:u.searchParams.get("artist")},listeners:"600",url:"https://www.last.fm/music/fixture"}]}});
+    throw Error(`Unexpected catalogue route ${u.pathname}`);
+  });
+  const request={seed:"Sparse seed",seedTrack:{id:"lastfm:niche",title:"Sparse seed",artist:"Niche fixture",source:"lastfm" as const},direction:"Même vibe" as const,obscurity:65,feedback:{},session:0};
+  const first=await recommendLive(request,AbortSignal.timeout(10000));
+  assert.equal(first.tracks[0]?.artist,"Neighbour fixture");
+  assert.equal(first.tracks[0]?.externalIds?.musicbrainz,undefined);
+  const second=await recommendLive({...request,seedTrack:first.tracks[0]},AbortSignal.timeout(10000));
+  assert.equal(second.seed.artist,"Neighbour fixture");
+  assert.equal(second.tracks[0]?.artist,"Next fixture");
+});
