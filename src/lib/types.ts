@@ -1,3 +1,4 @@
+import type { DiscogsEvidence } from "./providers/discogs";
 export const directions = ["Même vibe", "Même scène", "Labels", "Rabbit hole", "Surprends-moi"] as const;
 export type Direction = typeof directions[number];
 export const feedbackValues = ["love", "curious", "neutral", "known"] as const;
@@ -15,6 +16,8 @@ export interface Track {
   artistId?: string; releaseId?: string; country?: string; album?: string;
   popularity?: number; listenCount?: number; lastfmListeners?: number;
   analysis?: MusicalAnalysis;
+  obscurityKnown?: boolean;
+  discogs?: DiscogsEvidence;
   externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string };
 }
 export interface Recommendation extends Track { reason: string }

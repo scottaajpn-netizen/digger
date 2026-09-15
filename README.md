@@ -20,22 +20,22 @@ npm run dev
 3. Choisir la bonne version parmi les résultats MusicBrainz.
 4. Explorer jusqu’à dix cartes, puis changer la direction ou le curseur et relancer.
 5. Utiliser ❤️ / 👀 / 😐 / ✓. Les deux premiers alimentent Ma collection ; les deux derniers excluent le morceau des prochaines sélections. Cliquer de nouveau sur un avis le retire.
-6. Le bouton ↳ repart directement de l’identifiant du morceau. Les liens permettent de voir sa fiche MusicBrainz ou de le rechercher sur YouTube.
+6. Le bouton ↳ repart du MBID quand il est disponible ; sinon il recherche la bonne version dans MusicBrainz. Les liens permettent de voir sa fiche MusicBrainz ou de le rechercher sur YouTube.
 
 ## Connexions actives
 
 - **MusicBrainz** : recherche, identifiants stables, artistes, tags, sorties, labels et catalogue de label.
 - **ListenBrainz** : radio d’artistes associés selon les écoutes, recherche de morceaux par tag et popularité, métadonnées groupées.
 - **Last.fm** : tags communautaires, morceaux similaires et exploration par genre. Nécessite une clé API serveur `LASTFM_API_KEY`.
-- **Discogs** : pas encore connecté.
+- **Discogs** : graphe de labels, compilations, artistes crédités et sorties voisines. Optionnel via `DISCOGS_TOKEN`. Voir [activation, chemins et limites](docs/DISCOGS.md).
 
-Les premières recherches peuvent prendre plusieurs secondes ; les résultats externes sont mis en cache une heure. Une connexion Internet est nécessaire. Un morceau inconnu affiche une erreur explicite. Aucun retour automatique aux données simulées.
+Les premières recherches peuvent prendre plusieurs secondes ; les résultats externes sont mis en cache une heure (15 minutes pour Discogs). Une connexion Internet est nécessaire. Un morceau inconnu affiche une erreur explicite. Aucun retour automatique aux données simulées.
 
 ## Sens des directions et limites
 
 Même vibe combine les artistes associés, les tags et les sorties en commun. Même scène ajoute une préférence géographique quand elle est connue ; ce n’est pas une scène musicale certifiée. Labels privilégie les morceaux d’éditions associées au même label. Rabbit hole élargit la radio et favorise d’autres artistes. Surprends-moi augmente la variation dans ces candidats.
 
-Le curseur change le mode de radio et la plage de popularité des recherches par tag. L’indice de popularité appartient à ListenBrainz, pas au marché mondial. Si une fiche n’a pas cette mesure, l’interface affiche Popularité inconnue et le classement ne lui invente pas de score de rareté. Pour un mode Labels pauvre en statistiques, le curseur peut peu modifier les résultats.
+Le curseur change le mode de radio et la plage de popularité des recherches par tag. L’indice de popularité appartient à ListenBrainz, pas au marché mondial. Si une fiche n’a pas cette mesure, l’interface affiche Popularité inconnue et le classement ne lui invente pas de score de rareté. À partir de 90, les audiences inconnues ou trop élevées sont exclues, y compris dans Labels ; la sélection peut donc être courte ou vide. Discogs ne transforme ni l’ancienneté ni l’absence de données en obscurité.
 
 Les communautés ne documentent pas tous les morceaux de manière égale. Quand la similarité manque, l’application signale l’élargissement aux genres ou aux sorties. S’il reste moins de dix candidats exploitables, elle affiche ce qu’elle a trouvé sans inventer de pistes. Les cinq directions ne sont pas une analyse audio ou une IA sémantique.
 
@@ -43,11 +43,13 @@ Les pochettes sont des illustrations. Aucun extrait audio ni lecteur intégré :
 
 ## Profil et confidentialité
 
-Le profil connecté est dans `localStorage`, clé `digger.profile.v2`. La démo v1 reste stockée séparément pour éviter de mélanger ses fausses fiches avec les vraies. Pas de compte, ni synchronisation entre navigateurs. Les avis sont envoyés uniquement au serveur Digger pour classer les candidats ; ils ne sont pas publiés sur les plateformes. Les recherches musicales sont transmises à MusicBrainz et ListenBrainz. Les tags des candidats aimés ou à écouter favorisent les prochaines sélections lorsqu’ils figurent dans le groupe de candidats chargé. Maximum 200 avis transmis par demande ; les avis plus anciens restent conservés localement. Une remise à zéro est disponible en bas de page avec confirmation.
+Le profil connecté est dans `localStorage`, clé `digger.profile.v2`. La démo v1 reste stockée séparément pour éviter de mélanger ses fausses fiches avec les vraies. Pas de compte, ni synchronisation entre navigateurs. Les avis sont envoyés uniquement au serveur Digger pour classer les candidats ; ils ne sont pas publiés sur les plateformes. Les recherches musicales sont transmises à MusicBrainz et ListenBrainz, ainsi qu’à Last.fm et Discogs si leurs clés sont configurées. Les tags des candidats aimés ou à écouter favorisent les prochaines sélections lorsqu’ils figurent dans le groupe de candidats chargé. Maximum 200 avis transmis par demande ; les avis plus anciens restent conservés localement. Une remise à zéro est disponible en bas de page avec confirmation.
 
 ## Architecture
 
 - `src/lib/providers/http.ts` : accès serveur aux deux APIs, délais maximaux, trois tentatives pour 429/502/503/504, cache limité à 300 réponses et espacement MusicBrainz de 1,1 seconde.
+- `src/lib/providers/discogs.ts` : résolution des sorties, parcours du graphe, preuves éditoriales.
+- `src/lib/providers/discogs-http.ts` : token serveur, cache, quota, reprise et annulation Discogs.
 - `src/lib/providers/live.ts` : recherche, normalisation, rapprochements, déduplication et classement réel.
 - `src/app/api/recommendations/route.ts` : validation ; sans seedId renvoie des choix, avec seedId renvoie une sélection.
 - `src/components/digger.tsx` : choix du morceau, interface, feedback et collection.
@@ -56,6 +58,8 @@ Le profil connecté est dans `localStorage`, clé `digger.profile.v2`. La démo 
 Variables serveur :
 
 - `LASTFM_API_KEY` : clé API Last.fm. Copier `.env.example` vers `.env.local`, puis renseigner la clé. Ne jamais utiliser `NEXT_PUBLIC_` pour cette clé.
+- `DISCOGS_TOKEN` : token personnel Discogs dans `.env.local`, côté serveur uniquement. Redémarrer après ajout. Sans ce token, le moteur conserve les autres sources.
+- `DISCOGS_USER_AGENT` : identification optionnelle pour Discogs.
 - `MUSICBRAINZ_USER_AGENT` : optionnelle, pour identifier proprement l’application auprès de MusicBrainz.
 
 Sans `LASTFM_API_KEY`, Digger continue de fonctionner avec MusicBrainz + ListenBrainz et ignore simplement Last.fm.

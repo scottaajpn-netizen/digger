@@ -32,3 +32,27 @@ L’outil agent-browser n’était pas installé ; les contrôles visuels et int
 - Limite : aucune clé Last.fm dans cet environnement ; validation musicale réelle
   et latence avec les services externes restent à mesurer sur la configuration
   de l'utilisateur. Le nombre d'auditeurs concerne la piste, pas tout l'artiste.
+
+
+## Intégration Discogs — 15 septembre 2026
+
+- État de départ : 18 tests, typecheck et build réussis.
+- État final : `npm test` (34 tests), `npm run typecheck` et
+  `npm run build` réussis. Lockfile et dépendances du projet inchangés.
+- Nouvelles vérifications : graphes compilation/artiste et label/artiste,
+  master → édition, contexte de sortie, identité/remix, co-labels, pagination,
+  secret côté serveur, cache, 429/Retry-After, reprise et annulation en file.
+- Test du moteur live avec APIs simulées : source Discogs consommée dans Labels,
+  audience Last.fm vérifiée, candidat populaire exclu, avis « connu » respecté,
+  fonctionnement sans token. Les tests MusicBrainz/ListenBrainz/Last.fm passent.
+- Appel public réel Discogs `/releases/249504` : HTTP 200, parsing de deux pistes,
+  label et master. En-têtes de débit présents. Aucune clé privée disponible :
+  recherche authentifiée et qualité musicale réelle non validées ici.
+- Rendu serveur React vérifié avec une carte simulée : chemin, URL Discogs,
+  mention audience inconnue, styles d'édition, pays d'édition et catalogue.
+- Vérification navigateur non réalisée : agent-browser échoue à ouvrir son
+  socket (Operation not permitted) ; téléchargement Chromium de secours en
+  timeout. Aucune validation visuelle ou de clic réelle revendiquée.
+- Inspection des bundles client : aucune occurrence de `DISCOGS_TOKEN` ou
+  de l'en-tête `Discogs token=`.
+- Voir `docs/DISCOGS.md` pour l'activation, les budgets et les chemins différés.

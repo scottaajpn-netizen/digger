@@ -194,3 +194,36 @@ test("Surprends-moi at 100 excludes popular second-hop tracks and does not inven
     assert.equal(result.tracks[0].lastfmListeners, 500);
   }
 });
+
+test("live Labels consumes Discogs, verifies audience, preserves exclusions and falls back on failure", async t => {
+  const seedId="aaaaaaaa-3333-4333-8333-333333333333";
+  const oldLastfm=process.env.LASTFM_API_KEY,oldDiscogs=process.env.DISCOGS_TOKEN;
+  process.env.LASTFM_API_KEY="integration-fixture";process.env.DISCOGS_TOKEN="integration-fixture";
+  t.after(()=>{if(oldLastfm===undefined)delete process.env.LASTFM_API_KEY;else process.env.LASTFM_API_KEY=oldLastfm;if(oldDiscogs===undefined)delete process.env.DISCOGS_TOKEN;else process.env.DISCOGS_TOKEN=oldDiscogs;});
+  t.mock.method(globalThis,"fetch",async (url:URL)=>{
+    const u=new URL(String(url));let data:unknown;
+    if(u.hostname==="api.discogs.com") {
+      if(u.pathname==="/database/search") data={results:[{id:10010,type:"release"}]};
+      else if(u.pathname==="/releases/10010") data={id:10010,title:"Integration compilation",artists:[{id:194,name:"Various"}],labels:[{id:10050,name:"Integration label"}],formats:[{descriptions:["Compilation"]}],tracklist:[{title:"Integration seed",artists:[{id:101,name:"Integration artist"}]},{title:"Famous fixture",artists:[{id:102,name:"Famous fixture artist"}]}]};
+      else if(u.pathname==="/labels/10050/releases") data={releases:[{id:10020}]};
+      else if(u.pathname==="/releases/10020") data={id:10020,title:"Small EP",artists:[{id:103,name:"Small fixture artist"}],labels:[{id:10050,name:"Integration label"}],tracklist:[{title:"Small fixture track",position:"A1"}]};
+      else throw Error("Unexpected Discogs fixture");
+    } else if(u.pathname.includes('/ws/2/recording/')) data={id:seedId,title:"Integration seed",tags:[{name:"uk garage"}],"artist-credit":[{name:"Integration artist"}]};
+    else if(u.pathname.includes('/lb-radio/tags')) data=[];
+    else if(u.searchParams.get("method")==="track.getTopTags") data={toptags:{tag:[]}};
+    else if(u.searchParams.get("method")==="track.getSimilar") data={similartracks:{track:[]}};
+    else if(u.searchParams.get("method")==="track.getInfo") data={track:{name:u.searchParams.get("track"),artist:{name:u.searchParams.get("artist")},listeners:u.searchParams.get("artist")==="Small fixture artist"?"500":"500000"}};
+    else throw Error("Unexpected live fixture");
+    return Response.json(data);
+  });
+  const request={seed:"Integration seed",seedId,direction:"Labels" as const,obscurity:100,feedback:{},session:0};
+  const result=await recommendLive(request,AbortSignal.timeout(15000));
+  assert.equal(result.tracks.length,1);assert.equal(result.tracks[0].artist,"Small fixture artist");
+  assert.equal(result.tracks[0].lastfmListeners,500);assert.equal(result.tracks[0].obscurityKnown,true);
+  assert.ok(result.tracks[0].reason.includes("Integration label"));
+  const excluded=await recommendLive({...request,feedback:{[result.tracks[0].id]:"known"}},AbortSignal.timeout(15000));
+  assert.equal(excluded.tracks.length,0);
+  delete process.env.DISCOGS_TOKEN;
+  const without=await recommendLive(request,AbortSignal.timeout(15000));
+  assert.equal(without.source,"live");assert.equal(without.tracks.length,0);
+});
