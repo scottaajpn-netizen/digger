@@ -267,7 +267,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   function addRelease(r: Release, label: string, relevance: number, origin: CandidateOrigin = "release") {
     for (const media of r.media || []) for (const item of media.tracks || []) {
       const track = item.recording ? fromRecording(item.recording) : null;
-      if (track) pool.push({ ...track, releaseId: r.id, album: r.title, label, reason: label ? `Paru chez ${label}, comme une édition de « ${seed.title} » (MusicBrainz).` : `Présent sur « ${r.title} », une sortie qui contient aussi ton morceau de départ (MusicBrainz).`, relevance, origin });
+      if (track) pool.push({ ...track, releaseId: r.id, album: r.title, label, reason: label ? `Paru chez ${label}, comme une édition de « ${seed!.title} » (MusicBrainz).` : `Présent sur « ${r.title} », une sortie qui contient aussi ton morceau de départ (MusicBrainz).`, relevance, origin });
     }
   }
   if (release) addRelease(release, seed.label, input.direction === "Labels" ? 80 : 52, "release");
