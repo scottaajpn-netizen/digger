@@ -1,3 +1,4 @@
+import { discogsJson as strictDiscogsJson } from "./discogs-http";
 export class MusicServiceError extends Error {
   constructor(message: string, public status = 502) { super(message); }
 }
@@ -101,4 +102,8 @@ export async function lastFmJson<T>(method: string, params: Record<string, strin
   return null;
 }
 
-export { discogsJson } from "./discogs-http";
+
+export async function discogsJson<T>(path: string, params: Record<string, string>, signal: AbortSignal): Promise<T | null> {
+  if (!process.env.DISCOGS_TOKEN?.trim()) return null;
+  return strictDiscogsJson<T>(path, params, signal);
+}
