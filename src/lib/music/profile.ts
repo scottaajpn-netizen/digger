@@ -44,12 +44,12 @@ export function compareMusicalProfiles(seed: MusicalProfile, candidate: MusicalP
   // Broad genre labels (e.g. "hip hop") are weak evidence on their own.
   // Fine-grained subgenres and musical traits carry most of the similarity score.
   const musicalSimilarity =
-    subgenre * 0.40 +
-    genre * 0.05 +
-    traits * 0.25 +
-    rawTags * 0.02 +
+    subgenre * 0.42 +
+    genre * 0.03 +
+    traits * 0.27 +
+    rawTags * 0.01 +
     year * 0.12 +
-    country * 0.08 +
+    country * 0.07 +
     labels * 0.08;
 
   return { genre, subgenre, traits, rawTags, labels, country, year, musicalSimilarity };
