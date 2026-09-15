@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, selectDiverseRecommendations } from "../src/lib/providers/live";
+import { passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, searchLive, selectDiverseRecommendations } from "../src/lib/providers/live";
 
 const id = "aaaaaaaa-1111-4111-8111-111111111111";
 test("live normalization preserves real identity and never invents popularity", () => {
@@ -226,4 +226,59 @@ test("live Labels consumes Discogs, verifies audience, preserves exclusions and 
   delete process.env.DISCOGS_TOKEN;
   const without=await recommendLive(request,AbortSignal.timeout(15000));
   assert.equal(without.source,"live");assert.equal(without.tracks.length,0);
+});
+
+
+test("search falls back to Last.fm when MusicBrainz has too few matches", async t => {
+  const oldKey = process.env.LASTFM_API_KEY;
+  process.env.LASTFM_API_KEY = "search-fixture-key";
+  t.after(() => { if (oldKey === undefined) delete process.env.LASTFM_API_KEY; else process.env.LASTFM_API_KEY = oldKey; });
+  t.mock.method(globalThis, "fetch", async (url: URL) => {
+    const u = new URL(String(url));
+    if (u.hostname === "musicbrainz.org") return Response.json({ recordings: [] });
+    if (u.searchParams.get("method") === "track.search") return Response.json({
+      results: { trackmatches: { track: [{ name: "Your no Groove", artist: "DÜK", url: "https://www.last.fm/music/DUK/_/Your+no+Groove" }] } }
+    });
+    throw new Error(`Unexpected search request ${u}`);
+  });
+  const choices = await searchLive("Your no Groove — DÜK", AbortSignal.timeout(5000));
+  assert.equal(choices.length, 1);
+  assert.equal(choices[0].title, "Your no Groove");
+  assert.equal(choices[0].artist, "DÜK");
+  assert.ok(choices[0].id.startsWith("lastfm:"));
+  assert.equal(choices[0].externalIds?.musicbrainz, undefined);
+});
+
+test("a verified Last.fm seed can be explored without a MusicBrainz ID", async t => {
+  const oldKey = process.env.LASTFM_API_KEY;
+  process.env.LASTFM_API_KEY = "seed-fixture-key";
+  t.after(() => { if (oldKey === undefined) delete process.env.LASTFM_API_KEY; else process.env.LASTFM_API_KEY = oldKey; });
+  t.mock.method(globalThis, "fetch", async (url: URL) => {
+    const u = new URL(String(url));
+    const method = u.searchParams.get("method");
+    if (u.hostname === "api.listenbrainz.org" && u.pathname.includes("/lb-radio/tags")) return Response.json([]);
+    if (method === "track.getTopTags") return Response.json({ toptags: { tag: [{ name: "electronic", count: 10 }] } });
+    if (method === "track.getInfo") return Response.json({ track: { name: u.searchParams.get("track"), artist: { name: u.searchParams.get("artist") }, listeners: "1200", url: "https://www.last.fm/fixture" } });
+    if (method === "track.getSimilar") return Response.json({ similartracks: { track: [{ name: "Neighbour", artist: { name: "Small Artist" }, match: 0.6, url: "https://www.last.fm/neighbour" }] } });
+    throw new Error(`Unexpected seed request ${u}`);
+  });
+  const result = await recommendLive({
+    seed: "Your no Groove — DÜK",
+    seedTrack: {
+      id: "lastfm:fixture",
+      title: "Your no Groove",
+      artist: "DÜK",
+      externalIds: { lastfm: "https://www.last.fm/fixture-seed" },
+      source: "lastfm",
+    },
+    direction: "Même vibe",
+    obscurity: 65,
+    feedback: {},
+    session: 0,
+  }, AbortSignal.timeout(10000));
+  assert.equal(result.seed.title, "Your no Groove");
+  assert.equal(result.seed.artist, "DÜK");
+  assert.equal(result.seed.externalIds?.musicbrainz, undefined);
+  assert.ok(result.notes?.some(note => note.includes("multi-source")));
+  assert.ok(result.tracks.some(track => track.artist === "Small Artist"));
 });
