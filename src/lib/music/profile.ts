@@ -41,14 +41,16 @@ export function compareMusicalProfiles(seed: MusicalProfile, candidate: MusicalP
   const country = seed.country && candidate.country && seed.country.toLowerCase() === candidate.country.toLowerCase() ? 1 : 0;
   const year = seed.year && candidate.year ? Math.max(0, 1 - Math.abs(seed.year - candidate.year) / 12) : 0;
 
+  // Broad genre labels (e.g. "hip hop") are weak evidence on their own.
+  // Fine-grained subgenres and musical traits carry most of the similarity score.
   const musicalSimilarity =
-    subgenre * 0.34 +
-    genre * 0.20 +
-    traits * 0.18 +
-    rawTags * 0.12 +
-    year * 0.08 +
-    country * 0.05 +
-    labels * 0.03;
+    subgenre * 0.40 +
+    genre * 0.05 +
+    traits * 0.25 +
+    rawTags * 0.02 +
+    year * 0.12 +
+    country * 0.08 +
+    labels * 0.08;
 
   return { genre, subgenre, traits, rawTags, labels, country, year, musicalSimilarity };
 }
