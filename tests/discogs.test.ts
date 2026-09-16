@@ -211,3 +211,56 @@ test("Cross-source identity keeps artist and title boundaries separate", () => {
   const result=mergeDiscoveryCandidates([{...base,id:"one",artist:"A B",title:"C"},{...base,id:"two",artist:"A",title:"B C"}]);
   assert.equal(result.length,2);
 });
+
+
+test("Discogs keeps explicit track roles separate from the displayed artist credit", () => {
+  const parsed = parseDiscogsRelease({
+    id: 90,
+    title: "Role fixture",
+    artists: [a(10, "Main Artist")],
+    tracklist: [{
+      title: "Role track",
+      artists: [a(10, "Main Artist")],
+      extraartists: [
+        { id: 11, name: "Remix Person", role: "Remix" },
+        { id: 12, name: "Producer Person", role: "Producer" },
+        { id: 13, name: "Artwork Person", role: "Design" },
+      ],
+    }],
+  })!;
+  assert.deepEqual(parsed.tracks[0].credits.map(c => [c.name, c.role]), [
+    ["Main Artist", "primary"],
+    ["Remix Person", "remixer"],
+    ["Producer Person", "producer"],
+  ]);
+});
+
+test("Discogs confirms multi-artist seeds from structured credits even when join punctuation differs", async () => {
+  const collabSeed: Track = {
+    ...seed,
+    id: "collab-seed",
+    title: "Together",
+    artist: "Alpha feat. Beta",
+    credits: [
+      { name: "Alpha", role: "primary", source: "musicbrainz", sourceId: "aaaaaaaa-5555-4555-8555-555555555555" },
+      { name: "Beta", role: "featured", source: "musicbrainz", sourceId: "bbbbbbbb-5555-4555-8555-555555555555" },
+    ],
+  };
+  const get: DiscogsGet = async <T>(path: string) => {
+    if (path === "database/search") return { results: [{ id: 91, type: "release" }] } as T;
+    if (path === "releases/91") return {
+      id: 91,
+      title: "Together EP",
+      artists: [a(20, "Alpha"), a(21, "Beta")],
+      labels: [{ id: 61, name: "Fixture Label" }],
+      tracklist: [
+        { title: "Together", artists: [{...a(20, "Alpha"), join: " & "}, a(21, "Beta")] },
+        { title: "Peer", artists: [a(22, "Peer Artist")] },
+      ],
+    } as T;
+    if (path === "labels/61/releases") return { releases: [] } as T;
+    throw new Error(`Unexpected collaboration path ${path}`);
+  };
+  const result = await discoverDiscogs(collabSeed, {...input, seed: collabSeed.title, direction: "Même vibe"}, AbortSignal.timeout(1000), {enabled:true,get});
+  assert.ok(result.candidates.some(c => c.artist === "Peer Artist"));
+});
