@@ -118,9 +118,28 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
   }, [feedback, saved, ready]);
 
   function react(id: string, value: Feedback) {
-    setFeedback(previous => { const next = { ...previous }; if (next[id] === value) delete next[id]; else next[id] = value; return next; });
+    const nextValue: Feedback | null = feedback[id] === value ? null : value;
+    setFeedback(previous => {
+      const next = { ...previous };
+      if (nextValue === null) delete next[id];
+      else next[id] = nextValue;
+      return next;
+    });
     const track = result?.tracks.find(t => t.id === id) ?? saved[id];
-    if (track) setSaved(previous => ({ ...previous, [id]: track }));
+    if (track) {
+      setSaved(previous => ({ ...previous, [id]: track }));
+      void fetch("/api/memory/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artist: track.artist,
+          title: track.title,
+          discoveryPath: track.discoveryPath,
+          feedback: nextValue,
+          direction,
+        }),
+      }).catch(() => undefined);
+    }
   }
 
   async function explore(nextSeed = seed, seedTrack = selectedSeed?.text === nextSeed ? selectedSeed.track : undefined) {
