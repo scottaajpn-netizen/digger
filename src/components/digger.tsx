@@ -46,6 +46,23 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
   const [soulseekBusy, setSoulseekBusy] = useState(false);
   const [soulseekError, setSoulseekError] = useState("");
   const [soulseekProgress, setSoulseekProgress] = useState("");
+  const [downloads, setDownloads] = useState<Record<string, string>>({});
+  async function downloadSoulseek(item: SoulseekResult) {
+    const key = JSON.stringify([item.username, item.filename]);
+    if (downloads[key]) return;
+    setDownloads(previous => ({...previous,[key]:"Envoi…"}));
+    try {
+      const r = await fetch("/api/soulseek/download", {method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:soulseekId.current,username:item.username,filename:item.filename}),signal:AbortSignal.timeout(12000)});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Téléchargement non confirmé.");
+      setDownloads(previous => ({...previous,[key]:"Transmis à slskd"}));
+    } catch(e) {
+      setDownloads(previous => ({...previous,[key]:"Non confirmé — vérifier slskd"}));
+      setSoulseekError(e instanceof Error ? e.message : "Téléchargement non confirmé. Vérifie slskd.");
+    }
+  }
+
   const soulseekController = useRef<AbortController | null>(null);
   const soulseekId = useRef<string | null>(null);
   useEffect(() => () => { soulseekController.current?.abort(); }, []);
@@ -125,7 +142,7 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
     const controller = new AbortController();
     soulseekController.current = controller;
     soulseekId.current = null;
-    setSoulseekTrack(track); setSoulseekResults([]); setSoulseekError(""); setSoulseekProgress("Démarrage de la recherche…"); setSoulseekBusy(true);
+    setDownloads({}); setSoulseekTrack(track); setSoulseekResults([]); setSoulseekError(""); setSoulseekProgress("Démarrage de la recherche…"); setSoulseekBusy(true);
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]);
     try {
       const response = await fetch("/api/soulseek/search", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -181,8 +198,8 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
       {soulseekBusy && <button onClick={() => void cancelSoulseek()}>Annuler la recherche</button>}<p role="status">{soulseekProgress}</p>{soulseekBusy && <p>Recherche des partages disponibles…</p>}
       {soulseekError && <p className="error">{soulseekError}</p>}
       {!soulseekBusy && !soulseekError && soulseekResults.length === 0 && <p>Aucun résultat audio exploitable trouvé pour le moment.</p>}
-      {soulseekResults.length > 0 && <div className="soulseek-results">{soulseekResults.map((item, index) => <div className="soulseek-result" key={item.username + item.filename + index}><div><strong>{item.filename.split(/[\\/]/).pop()}</strong><span>{item.username}{item.freeUploadSlot ? " · slot libre" : ""}{typeof item.queueLength === "number" ? ` · file ${item.queueLength}` : ""}</span></div><div><span>{item.format} · {(item.size / 1024 / 1024).toFixed(1)} Mo</span>{item.uploadSpeed !== undefined ? <span>Vitesse annoncée : {(item.uploadSpeed / 1024).toFixed(0)} Ko/s</span> : null}{item.bitRate ? <span>{Math.round(item.bitRate)} kb/s</span> : null}</div></div>)}</div>}
-      <p className="soulseek-note">Étape 1 : recherche uniquement. Aucun téléchargement n’est lancé depuis Digger.</p>
+      {soulseekResults.length > 0 && <div className="soulseek-results">{soulseekResults.map((item, index) => <div className="soulseek-result" key={item.username + item.filename + index}><div><strong>{item.filename.split(/[\\/]/).pop()}</strong><span>{item.username}{item.freeUploadSlot ? " · slot libre" : ""}{typeof item.queueLength === "number" ? ` · file ${item.queueLength}` : ""}</span></div><div><span>{item.format} · {(item.size / 1024 / 1024).toFixed(1)} Mo</span>{item.uploadSpeed !== undefined ? <span>Vitesse annoncée : {(item.uploadSpeed / 1024).toFixed(0)} Ko/s</span> : null}{item.bitRate ? <span>{Math.round(item.bitRate)} kb/s</span> : null}<button disabled={!!downloads[JSON.stringify([item.username,item.filename])]} onClick={() => void downloadSoulseek(item)}>{downloads[JSON.stringify([item.username,item.filename])] || "Télécharger"}</button></div></div>)}</div>}
+      <p className="soulseek-note">Choisis un fichier puis clique sur Télécharger. Destination : 00_INBOX ; le classement existant vers Navidrome reste automatique. Aucun téléchargement ne démarre pendant la recherche.</p>
     </section>}
     <div className="track-grid">{visible.map((track, i) => <TrackCard key={track.id} track={track} index={i} feedback={feedback[track.id]} onFeedback={react} onExplore={(value, track) => { setSeed(value); setSelectedSeed({ text: value, track }); void explore(value, track); }} onSoulseek={searchSoulseek} />)}</div>
     {!visible.length && !busy && !choices.length && <div className="empty"><span>◎</span><h3>{tab === "collection" ? "Ton prochain coup de cœur t’attend." : result ? "Pas encore de piste pour cette exploration." : "Un morceau. Des chemins à découvrir."}</h3><p>{tab === "collection" ? "Un ❤️ ou un 👀 sur une carte, et tu la retrouveras ici." : result ? "Essaie une autre direction, un autre morceau ou retire des exclusions avec le bouton en bas de page." : "Entre un titre et son artiste, puis lance l’exploration pour chercher dans MusicBrainz."}</p>{tab === "collection" ? <button onClick={() => setTab("explore")}>Retour à l’exploration ↗</button> : null}</div>}

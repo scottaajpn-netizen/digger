@@ -50,3 +50,22 @@ test("slskd upstream errors are explicit and never reflect secrets or raw bodies
   t.mock.method(globalThis,"fetch",async()=>new Response("fixture-secret",{status:401}));
   const r=await GET(new Request(`http://localhost/api/soulseek/search?id=${id}`));assert.equal(r.status,503);assert.ok(!(await r.text()).includes("fixture-secret"));
 });
+
+// Transfers are mocked: verification never downloads a music file.
+test("manual download checks search membership and inbox before queuing server-verified size", async t => {
+  const { POST: download } = await import("../src/app/api/soulseek/download/route");
+  const old=process.env.SLSKD_API_KEY;process.env.SLSKD_API_KEY="fixture";
+  t.after(()=>{if(old===undefined)delete process.env.SLSKD_API_KEY;else process.env.SLSKD_API_KEY=old;});
+  let destination="C:\\MUSIC\\00_INBOX", sends=0;
+  t.mock.method(globalThis,"fetch",async(url:string,init:RequestInit)=>{
+    if(url.endsWith("?includeResponses=true"))return Response.json({id,isComplete:true,responses:[response]});
+    if(url.endsWith("/options"))return Response.json({directories:{downloads:destination}});
+    assert.ok(url.endsWith("/transfers/downloads/fixture-peer"));assert.equal(init.method,"POST");
+    assert.deepEqual(JSON.parse(init.body as string),[{filename:response.files[0].filename,size:13800377}]);
+    sends++;return Response.json({enqueued:[{id:"transfer"}],failed:[]},{status:201});
+  });
+  const req=(filename=response.files[0].filename)=>new Request("http://localhost/api/soulseek/download",{method:"POST",body:JSON.stringify({id,username:"fixture-peer",filename,size:1})});
+  assert.equal((await download(req("unexpected.mp3"))).status,409);assert.equal(sends,0);
+  destination="C:\\OTHER";assert.equal((await download(req())).status,409);assert.equal(sends,0);
+  destination="C:\\MUSIC\\00_INBOX";assert.equal((await download(req())).status,200);assert.equal(sends,1);
+});
