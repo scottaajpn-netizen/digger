@@ -3,6 +3,7 @@ import type {
   DiscoveryPathEvidence,
   DiscoveryPathNode,
   DiscoveryPathSource,
+  Direction,
   Track,
 } from "../types";
 
@@ -130,4 +131,15 @@ export function discogsPath(
     ),
     trackNode(candidate, "discogs"),
   ]);
+}
+
+
+export function discoveryPathPreferenceKey(
+  path: DiscoveryPath | undefined,
+  direction: Direction,
+): string | null {
+  if (!path?.nodes?.length) return null;
+  const shape = path.nodes.map(node => node.kind).join(">");
+  const boundedDistance = Math.min(6, Math.max(0, path.distance));
+  return [direction, path.source, path.evidence, shape, boundedDistance].join("|");
 }
