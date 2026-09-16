@@ -304,3 +304,11 @@ test("catalogue fallback serves sparse non-MBID seeds in every direction and sup
   assert.equal(second.seed.artist,"Neighbour fixture");
   assert.equal(second.tracks[0]?.artist,"Next fixture");
 });
+
+test("discovery selection prefers a fifth artist before doubles and collapses edition variants",()=>{
+  const rows=Array.from({length:10},(_,i)=>({id:`edition-${i}`,title:i<2?`Track - ${i===0?'Radio Edit':'Extended Mix'}`:`Track ${i}`,artist:i<2?'Artist 0':`Artist ${i}`,scene:'',label:'',tags:[],obscurity:50,year:0,colors:['a','b'] as [string,string],reason:'catalogue',relevance:60,origin:'lastfm-crate' as const,score:100-i}));
+  const selected=selectDiverseRecommendations(rows,'seed',6);
+  assert.equal(selected.length,6);
+  assert.equal(new Set(selected.map(t=>t.artist)).size,6);
+  assert.equal(selected.filter(t=>t.title.startsWith('Track -')).length,1);
+});

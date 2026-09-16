@@ -29,3 +29,10 @@ test("handles aliases without merging distinct traditions or promoting unknown t
   assert.ok(tags.genres.includes("Afrobeat") && tags.genres.includes("Afrobeats"));
   assert.deepEqual(tags.unknownTags, ["favorites", "2020"]);
 });
+
+test("digging tag searches skip broad charts but preserve specific musical paths", async()=>{
+  const {discoveryTags}=await import('../src/lib/music/profile');
+  assert.deepEqual(discoveryTags(['electronic','hip hop','pop','unknown-label']),[]);
+  assert.ok(discoveryTags(['hip hop','jazz-hop','uk garage']).includes('Jazz Rap'));
+  assert.ok(discoveryTags(['hip hop','jazz-hop','uk garage']).includes('UK Garage'));
+});

@@ -1,7 +1,7 @@
 import { discoverDiscogs, profileFromDiscogsRelease, type DiscogsOrigin } from "./discogs";
 import type { DigRequest, DigResponse, Recommendation, Track } from "../types";
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
-import { buildMusicalProfile, compareMusicalProfiles } from "../music/profile";
+import { buildMusicalProfile, compareMusicalProfiles, discoveryTags } from "../music/profile";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Credit = { name?: string; joinphrase?: string; artist?: { id?: string; name?: string; country?: string } };
@@ -97,9 +97,12 @@ export function selectDiverseRecommendations(ranked: RankedCandidate[], seedArti
   const labelCounts = new Map<string, number>();
   const originCounts = new Map<CandidateOrigin, number>();
   const seedArtistName = normalized(seedArtist);
+  // Editions of the same performance need not occupy multiple discovery slots.
+  // Keep named remixes distinct: they can be musically different interpretations.
+  const editionKey = (track: Track) => trackIdentity({...track,title:track.title.replace(/\s*(?:[-–—]|\()\s*(?:radio edit|extended mix|original mix|mixed)\)?\s*$/i, "")});
 
-  const tryAdd = (track: RankedCandidate, relaxed: boolean) => {
-    if (selected.some(item => item.id === track.id)) return false;
+  const tryAdd = (track: RankedCandidate, relaxed: boolean, newArtists = false) => {
+    if (selected.some(item => item.id === track.id || editionKey(item) === editionKey(track))) return false;
     const artist = normalized(track.artist);
     const labels = [...new Set([normalized(track.label || ""), ...(track.discogs?.labels.flatMap(l => [`discogs:${l.id}`, normalized(l.name)]) || [])].filter(Boolean))];
     const artistKeys = [...new Set([artist, ...(track.discogs?.trackArtists.flatMap(a => [`discogs:${a.id}`, normalized(a.name.replace(/\s*\(\d+\)$/, ""))]) || [])])];
@@ -109,7 +112,7 @@ export function selectDiverseRecommendations(ranked: RankedCandidate[], seedArti
     if (artist === seedArtistName && artistCount >= 1) return false;
     if (artistCount >= (relaxed ? 2 : 1)) return false;
     if (labels.some(label => (labelCounts.get(label) || 0) >= (relaxed ? 3 : 2))) return false;
-    if (originCount >= (relaxed ? 6 : 4)) return false;
+    if (originCount >= (relaxed || newArtists ? 6 : 4)) return false;
     selected.push(track);
     for (const key of artistKeys) artistCounts.set(key, (artistCounts.get(key) || 0) + 1);
     for (const label of labels) labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
@@ -119,6 +122,10 @@ export function selectDiverseRecommendations(ranked: RankedCandidate[], seedArti
 
   for (const track of ranked) {
     tryAdd(track, false);
+    if (selected.length >= limit) return selected;
+  }
+  for (const track of ranked) {
+    tryAdd(track, false, true);
     if (selected.length >= limit) return selected;
   }
   for (const track of ranked) {
@@ -276,9 +283,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const radioMode = input.direction === "Rabbit hole" || input.obscurity > 75 ? "hard" : input.obscurity < 30 ? "easy" : "medium";
   const popEnd = input.obscurity > 75 ? 35 : input.obscurity > 40 ? 70 : 100;
   const popBegin = input.obscurity < 25 ? 25 : 0;
-  const tagQueries = [...new Set([...seedProfile.subgenres, ...seed.tags])]
-    .filter(Boolean)
-    .slice(0, 3);
+  const tagQueries = discoveryTags(seed.tags);
   const [radioResult, labelResult, lastFmSimilar, ...tagResults] = await Promise.all([
     seed.artistId ? optional(musicJson<Record<string, Radio[]>>("lb", `lb-radio/artist/${seed.artistId}`, { mode: radioMode, max_similar_artists: "18", max_recordings_per_artist: "3", pop_begin: String(popBegin), pop_end: String(popEnd) }, signal), "La radio d’artistes ListenBrainz est indisponible ; les autres pistes restent actives.") : null,
     input.direction === "Labels" && release?.["label-info"]?.some(l=>l.label?.id) ? optional(musicJson<{ releases?: Release[] }>("mb", "release", { label: release["label-info"]!.find(l=>l.label?.id)!.label!.id, inc: "recordings+artist-credits", limit: "6" }, signal), "Le catalogue du label n’a pas pu être chargé ; les autres pistes sont proposées.") : null,
@@ -390,7 +395,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   }
 
   const deepMode = input.obscurity >= 80 || input.direction === "Rabbit hole";
-  const lastFmGenreTags = [...new Set([...seedProfile.subgenres, ...seed.tags])].filter(Boolean).slice(0, 2);
+  const lastFmGenreTags = tagQueries.slice(0, 2);
 
   // Last.fm tag.getTopTracks is intentionally disabled in deep mode:
   // it tends to return canonical/mainstream tracks, which works against digging.

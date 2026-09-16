@@ -15,12 +15,13 @@ npm run dev
 
 ## Tester maintenant
 
-1. Saisir **Ttabla — Taxi Kebab** ou **Kerala — Bonobo** (l’ordre artiste — titre fonctionne aussi).
-2. Cliquer sur **Lancer l’exploration**.
-3. Choisir la bonne version parmi les résultats MusicBrainz.
-4. Explorer jusqu’à dix cartes, puis changer la direction ou le curseur et relancer.
-5. Utiliser ❤️ / 👀 / 😐 / ✓. Les deux premiers alimentent Ma collection ; les deux derniers excluent le morceau des prochaines sélections. Cliquer de nouveau sur un avis le retire.
-6. Le bouton ↳ repart du MBID quand il est disponible ; sinon il recherche la bonne version dans MusicBrainz. Les liens permettent de voir sa fiche MusicBrainz ou de le rechercher sur YouTube.
+1. Saisir un titre et un artiste, même sans tiret : **your no gro**, **mes jambes jeanjass**, **Ttabla Taxi Kebab**.
+2. Après trois caractères et 300 ms de pause, choisir une suggestion avec le clic ou ↑ ↓ puis Entrée ; Échap ferme la liste. Jusqu’à huit résultats indiquent leur source.
+3. La sélection lance directement l’exploration, même pour un morceau Last.fm sans MBID. Changer ensuite la direction ou le curseur et relancer.
+4. Utiliser ❤️ / 👀 / 😐 / ✓. Les deux premiers alimentent Ma collection ; les deux derniers excluent le morceau des prochaines sélections. Cliquer de nouveau sur un avis le retire.
+5. Le bouton ↳ repart de la fiche sélectionnée, avec ou sans MBID. Les liens ouvrent la fiche source ou une recherche YouTube.
+
+La recherche privilégie MusicBrainz, puis Last.fm, puis Discogs si nécessaire et configuré. Elle rapproche accents, ponctuation, ordre titre/artiste et fautes mineures sans inventer d’identifiant. Les anciennes requêtes sont annulées. Cache de suggestions : deux minutes dans le navigateur, cinq minutes sur le serveur (15 secondes pour une recherche vide ; pas de cache des réponses dégradées).
 
 ## Connexions actives
 
@@ -41,6 +42,10 @@ Les communautés ne documentent pas tous les morceaux de manière égale. Quand 
 
 Les pochettes sont des illustrations. Aucun extrait audio ni lecteur intégré : le lien YouTube ouvre une recherche. La source de chaque fiche est consultable. Les genres peuvent être renseignés au niveau de l’artiste ou de la sortie.
 
+Les recherches par tags utilisent les sous-genres reconnus plutôt que les classements de genres génériques comme « electronic » ou « hip hop ». La sélection privilégie de nouveaux artistes avant les répétitions et regroupe les éditions radio/extended d’un même titre. Les remixes nommés restent distincts. Une affinité non calculable s’affiche comme « non mesurée ».
+
+L’audience Last.fm concerne une fiche exacte : une variante de crédit ou une collaboration peut avoir peu d’écoutes même si l’artiste est connu. Ce signal ne garantit donc pas une pépite confidentielle. Voir [le bilan de validation](docs/MVP-VALIDATION.md).
+
 ## Profil et confidentialité
 
 Le profil connecté est dans `localStorage`, clé `digger.profile.v2`. La démo v1 reste stockée séparément pour éviter de mélanger ses fausses fiches avec les vraies. Pas de compte, ni synchronisation entre navigateurs. Les avis sont envoyés uniquement au serveur Digger pour classer les candidats ; ils ne sont pas publiés sur les plateformes. Les recherches musicales sont transmises à MusicBrainz et ListenBrainz, ainsi qu’à Last.fm et Discogs si leurs clés sont configurées. Les tags des candidats aimés ou à écouter favorisent les prochaines sélections lorsqu’ils figurent dans le groupe de candidats chargé. Maximum 200 avis transmis par demande ; les avis plus anciens restent conservés localement. Une remise à zéro est disponible en bas de page avec confirmation.
@@ -51,8 +56,10 @@ Le profil connecté est dans `localStorage`, clé `digger.profile.v2`. La démo 
 - `src/lib/providers/discogs.ts` : résolution des sorties, parcours du graphe, preuves éditoriales.
 - `src/lib/providers/discogs-http.ts` : token serveur, cache, quota, reprise et annulation Discogs.
 - `src/lib/providers/live.ts` : recherche, normalisation, rapprochements, déduplication et classement réel.
-- `src/app/api/recommendations/route.ts` : validation ; sans seedId renvoie des choix, avec seedId renvoie une sélection.
-- `src/components/digger.tsx` : choix du morceau, interface, feedback et collection.
+- `src/app/api/recommendations/route.ts` : validation ; sans morceau sélectionné renvoie des choix ; accepte un seedId ou une fiche seedTrack multi-source pour explorer.
+- `src/components/digger.tsx` : exploration, feedback et collection.
+- `src/components/seed-search.tsx` et `src/lib/search/` : autocomplétion accessible, annulation, rapprochement tolérant et fusion des sources.
+- `src/app/api/search/route.ts` : endpoint de suggestions, délai maximal de 17 secondes.
 - Les anciennes fixtures et le moteur mock restent disponibles pour les tests, mais ne sont plus appelés par l’application.
 
 Variables serveur :

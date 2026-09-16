@@ -23,6 +23,11 @@ export function buildMusicalProfile(track: Pick<Track, "tags" | "year" | "countr
   };
 }
 
+/** Broad tag charts are not evidence of a useful digging connection. */
+export function discoveryTags(tags: string[]): string[] {
+  return [...new Set(normalizeMusicTags(tags).subgenres)].slice(0, 3);
+}
+
 const overlap = (a: string[], b: string[]) => {
   if (!a.length || !b.length) return 0;
   const left = new Set(a.map(v => v.toLowerCase()));
