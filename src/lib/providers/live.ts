@@ -82,6 +82,18 @@ export function deduplicate<T extends Track>(tracks: T[]): T[] {
   return tracks.filter(t => { const name = trackIdentity(t); if (ids.has(t.id) || names.has(name)) return false; ids.add(t.id); names.add(name); return true; });
 }
 
+const mergeCredits = (tracks: Track[]): ArtistCredit[] | undefined => {
+  const result: ArtistCredit[] = [];
+  const seen = new Set<string>();
+  for (const track of tracks) for (const credit of track.credits || []) {
+    const key = `${normalized(credit.name)}\u0000${credit.role}\u0000${credit.source}\u0000${credit.sourceId || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(credit);
+  }
+  return result.length ? result : undefined;
+};
+
 /** Merge only exact artist/title identities; preserve existing track-scoped facts. */
 export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
   const groups = new Map<string, Candidate[]>();
@@ -121,7 +133,7 @@ export function selectDiverseRecommendations(ranked: RankedCandidate[], seedArti
     if (selected.some(item => item.id === track.id || editionKey(item) === editionKey(track))) return false;
     const artist = normalized(track.artist);
     const labels = [...new Set([normalized(track.label || ""), ...(track.discogs?.labels.flatMap(l => [`discogs:${l.id}`, normalized(l.name)]) || [])].filter(Boolean))];
-    const artistKeys = [...new Set([artist, ...(track.discogs?.trackArtists.flatMap(a => [`discogs:${a.id}`, normalized(a.name.replace(/\s*\(\d+\)$/, ""))]) || [])])];
+    const artistKeys = [...new Set([artist, ...(track.credits || []).filter(c => c.role === "primary" || c.role === "featured").flatMap(c => [normalized(c.name), ...(c.sourceId ? [`${c.source}:${c.sourceId}`] : [])]), ...(track.discogs?.trackArtists.flatMap(a => [`discogs:${a.id}`, normalized(a.name.replace(/\s*\(\d+\)$/, ""))]) || [])])];
     const artistCount = Math.max(...artistKeys.map(key => artistCounts.get(key) || 0));
 
     const originCount = originCounts.get(track.origin) || 0;
