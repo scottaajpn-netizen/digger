@@ -1,4 +1,4 @@
-import { recordDiscoveryFeedback } from "@/lib/discovery/memory";
+import { clearDiscoveryMemory, recordDiscoveryFeedback } from "@/lib/discovery/memory";
 import {
   directions,
   feedbackValues,
@@ -20,6 +20,14 @@ function isLoopbackOrigin(value: string) {
   } catch {
     return false;
   }
+}
+
+function originAllowed(request: Request) {
+  const origin = request.headers.get("origin");
+  const requestOrigin = new URL(request.url).origin;
+  return !origin ||
+    origin === requestOrigin ||
+    (isLoopbackOrigin(origin) && isLoopbackOrigin(requestOrigin));
 }
 
 function parsePath(value: unknown): DiscoveryPath | undefined {
@@ -64,13 +72,7 @@ function parsePath(value: unknown): DiscoveryPath | undefined {
 
 export async function POST(request: Request) {
   try {
-    const origin = request.headers.get("origin");
-    const requestOrigin = new URL(request.url).origin;
-    if (
-      origin &&
-      origin !== requestOrigin &&
-      !(isLoopbackOrigin(origin) && isLoopbackOrigin(requestOrigin))
-    ) {
+    if (!originAllowed(request)) {
       return Response.json({ error: "Origine non autorisée." }, { status: 403 });
     }
 
@@ -108,6 +110,20 @@ export async function POST(request: Request) {
       return Response.json({ error: "Avis illisible." }, { status: 400 });
     }
     console.error("Discovery memory write failure", error);
+    return Response.json({ error: "Mémoire locale indisponible." }, { status: 500 });
+  }
+}
+
+
+export async function DELETE(request: Request) {
+  try {
+    if (!originAllowed(request)) {
+      return Response.json({ error: "Origine non autorisée." }, { status: 403 });
+    }
+    await clearDiscoveryMemory();
+    return Response.json({ ok: true });
+  } catch (error) {
+    console.error("Discovery memory reset failure", error);
     return Response.json({ error: "Mémoire locale indisponible." }, { status: 500 });
   }
 }
