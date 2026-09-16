@@ -28,6 +28,7 @@ type TrackMemoryRow = {
   title: string;
   feedback: Feedback;
   pathKey?: string;
+  discoveryPath?: Recommendation["discoveryPath"];
   lastSeenAt: string;
 };
 
@@ -99,6 +100,7 @@ const parseStore = (value: unknown): DiscoveryMemoryStore => {
         title: row.title.slice(0, 300),
         feedback: row.feedback as Feedback,
         pathKey: typeof row.pathKey === "string" ? row.pathKey.slice(0, 300) : undefined,
+        discoveryPath: row.discoveryPath && typeof row.discoveryPath === "object" ? row.discoveryPath as Recommendation["discoveryPath"] : undefined,
         lastSeenAt: typeof row.lastSeenAt === "string" ? row.lastSeenAt : store.updatedAt,
       };
     }
@@ -180,6 +182,7 @@ export async function recordDiscoveryFeedback(
         title: track.title.slice(0, 300),
         feedback,
         pathKey,
+        discoveryPath: track.discoveryPath,
         lastSeenAt: now,
       };
     }
