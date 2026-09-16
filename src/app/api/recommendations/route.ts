@@ -40,6 +40,20 @@ export async function POST(request: Request) {
         discogs: typeof body.seedTrack.externalIds.discogs === "string" ? body.seedTrack.externalIds.discogs : undefined,
         listenbrainz: typeof body.seedTrack.externalIds.listenbrainz === "string" ? body.seedTrack.externalIds.listenbrainz : undefined,
       } : undefined,
+      credits: Array.isArray(body.seedTrack.credits) ? body.seedTrack.credits.flatMap((credit: unknown) => {
+        if (!credit || typeof credit !== "object") return [];
+        const row = credit as Record<string, unknown>;
+        const role = String(row.role);
+        const source = String(row.source);
+        if (typeof row.name !== "string" || !row.name.trim() || !["primary","featured","remixer","producer"].includes(role) || !["musicbrainz","discogs","lastfm"].includes(source)) return [];
+        return [{
+          name: row.name.trim().slice(0, 200),
+          role: role as "primary" | "featured" | "remixer" | "producer",
+          source: source as "musicbrainz" | "discogs" | "lastfm",
+          sourceId: typeof row.sourceId === "string" ? row.sourceId.slice(0, 100) : undefined,
+          joinPhrase: typeof row.joinPhrase === "string" ? row.joinPhrase.slice(0, 40) : undefined,
+        }];
+      }).slice(0, 12) : undefined,
       source: ["musicbrainz", "lastfm", "discogs", "mixed"].includes(body.seedTrack.source) ? body.seedTrack.source : undefined,
     } : undefined;
     return Response.json(await recommendLive({ ...body, seed: body.seed.trim(), seedTrack } as DigRequest, signal));
