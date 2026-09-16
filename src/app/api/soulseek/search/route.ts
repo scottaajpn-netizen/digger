@@ -54,32 +54,34 @@ export async function POST(request: Request) {
       return Response.json({ error: `slskd refuse la recherche (${create.status}).`, detail: detail.slice(0, 300) }, { status: 502 });
     }
 
+    let finalState: any = null;
     const startedAt = Date.now();
-    while (Date.now() - startedAt < 11500) {
-      await new Promise(resolve => setTimeout(resolve, 650));
+    while (Date.now() - startedAt < 12000) {
+      await new Promise(resolve => setTimeout(resolve, 700));
       const stateRequest = await slskdFetch(`/searches/${id}`, {
         signal: AbortSignal.timeout(2500),
       });
       if (!stateRequest.ok) break;
-      const state = await stateRequest.json().catch(() => ({}));
-      const label = String(state?.state ?? state?.status ?? "").toLowerCase();
+      finalState = await stateRequest.json().catch(() => null);
+      const label = String(finalState?.state ?? finalState?.status ?? "").toLowerCase();
       const done =
-        state?.isComplete === true ||
-        state?.completed === true ||
+        finalState?.isComplete === true ||
+        finalState?.completed === true ||
         ["completed", "complete", "stopped", "cancelled", "failed"].includes(label);
       if (done) break;
     }
 
-    const responsesRequest = await slskdFetch(`/searches/${id}/responses`, {
-      signal: AbortSignal.timeout(5000),
-    });
+    let responses: SlskdResponse[] = Array.isArray(finalState?.responses) ? finalState.responses : [];
 
-    if (!responsesRequest.ok) {
-      return Response.json({ error: "Impossible de récupérer les résultats Soulseek." }, { status: 502 });
+    if (responses.length === 0) {
+      const responsesRequest = await slskdFetch(`/searches/${id}/responses`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (responsesRequest.ok) {
+        const raw = await responsesRequest.json().catch(() => null);
+        responses = Array.isArray(raw) ? raw : Array.isArray(raw?.responses) ? raw.responses : [];
+      }
     }
-
-    const raw = await responsesRequest.json();
-    const responses: SlskdResponse[] = Array.isArray(raw) ? raw : Array.isArray(raw?.responses) ? raw.responses : [];
     const results = responses.flatMap(response =>
       (response.files || [])
         .filter(file => typeof file.filename === "string" && audioExtensions.test(file.filename))
@@ -113,7 +115,15 @@ export async function POST(request: Request) {
 
     await slskdFetch(`/searches/${id}`, { method: "DELETE" }).catch(() => undefined);
 
-    return Response.json({ query: `${artist} ${title}`, results: results.slice(0, 40) }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({
+      query: `${artist} ${title}`,
+      results: results.slice(0, 40),
+      diagnostics: {
+        responseCount: Number(finalState?.responseCount) || responses.length,
+        fileCount: Number(finalState?.fileCount) || results.length,
+        complete: Boolean(finalState?.isComplete),
+      },
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message === "SLSKD_API_KEY_MISSING") {
