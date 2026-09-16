@@ -312,3 +312,22 @@ test("discovery selection prefers a fifth artist before doubles and collapses ed
   assert.equal(new Set(selected.map(t=>t.artist)).size,6);
   assert.equal(selected.filter(t=>t.title.startsWith('Track -')).length,1);
 });
+
+
+test("structured MusicBrainz credits preserve collaborations without splitting artist names", () => {
+  const collaboration = fromRecording({
+    id: "aaaaaaaa-4444-4444-8444-444444444444",
+    title: "Collab",
+    "artist-credit": [
+      { name: "Alpha & Omega", joinphrase: " feat. ", artist: { id: "bbbbbbbb-4444-4444-8444-444444444444" } },
+      { name: "Guest", artist: { id: "cccccccc-4444-4444-8444-444444444444" } },
+    ],
+  });
+  assert.ok(collaboration);
+  assert.equal(collaboration.artist, "Alpha & Omega feat. Guest");
+  assert.deepEqual(collaboration.credits?.map(c => [c.name, c.role]), [
+    ["Alpha & Omega", "primary"],
+    ["Guest", "featured"],
+  ]);
+  assert.equal(collaboration.credits?.[0].sourceId, "bbbbbbbb-4444-4444-8444-444444444444");
+});
