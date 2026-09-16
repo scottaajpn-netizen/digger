@@ -1,4 +1,4 @@
-import { discoverDiscogs, profileFromDiscogsRelease } from "./discogs";
+import { discoverDiscogs } from "./discogs";
 import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } from "../types";
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
