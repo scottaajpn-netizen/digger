@@ -56,3 +56,21 @@ L’outil agent-browser n’était pas installé ; les contrôles visuels et int
 - Inspection des bundles client : aucune occurrence de `DISCOGS_TOKEN` ou
   de l'en-tête `Discogs token=`.
 - Voir `docs/DISCOGS.md` pour l'activation, les budgets et les chemins différés.
+
+
+## Recherche souple — 16 septembre 2026
+
+Reprise depuis `c633e57` pour conserver les évolutions faites entre les sessions.
+La branche contenait déjà l'autocomplétion et la recherche multi-source.
+
+- Complément : mots omis, ordre libre, préfixes de trois lettres et requête
+  MusicBrainz répartissant les mots entre artiste et titre.
+- Régression couverte : « fall love chet », « chet fall love », « bon ker » ;
+  un mot sans rapport ne doit pas être ignoré pour forcer une correspondance.
+- Suggestions : annulation/fermeture lors d'un départ en exploration ou d'un
+  changement de morceau externe, gestion de saisie IME, aide liée au champ,
+  navigation clavier et réouverture sans ancienne sélection.
+- Correction préalable d'un type trop large sur les crédits secondaires Discogs.
+- `npm test` : 49 tests réussis. Typecheck et build réussis.
+- Essai MusicBrainz direct : timeout après 12 secondes. Ni la latence du service
+  réel ni le rendu navigateur ne sont validés dans cette session.

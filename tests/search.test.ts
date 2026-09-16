@@ -45,3 +45,11 @@ test("300ms debounce, abort, stale response suppression and client cache",async 
 test("keyboard arrows wrap and empty lists never select a missing track",()=>{
   assert.equal(moveSelection("ArrowDown",-1,5),0);assert.equal(moveSelection("ArrowUp",0,5),4);assert.equal(moveSelection("ArrowDown",4,5),0);assert.equal(moveSelection("ArrowUp",0,0),-1);
 });
+
+test("partial words can be omitted and entered in any order without accepting unrelated words",()=>{
+  const t=track("I Fall in Love Too Easily","Chet Baker");
+  for(const q of ["fall love chet","chet fall love","baker love easily"])
+    assert.ok(matchScore(q,t)>.85,q);
+  assert.ok(matchScore("fall love metallica",t)<.66);
+  assert.ok(matchScore("bon ker",track("Kerala","Bonobo"))>.85);
+});

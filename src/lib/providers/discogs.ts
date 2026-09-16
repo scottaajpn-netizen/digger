@@ -51,7 +51,7 @@ const discogsCredits = (main: DiscogsArtist[], extra: RawExtraArtist[] | undefin
     sourceId: String(a.id),
     joinPhrase: a.join,
   }));
-  const secondary = (Array.isArray(extra) ? extra : []).flatMap(row => {
+  const secondary = (Array.isArray(extra) ? extra : []).flatMap<ArtistCredit>(row => {
     if (!row || !validId(row.id) || typeof row.name !== "string" || !row.name.trim() || typeof row.role !== "string") return [];
     const roleText = norm(row.role);
     const role = /\bremix(?:ed|er)?\b/.test(roleText) ? "remixer" : /\bproduc(?:ed|er|tion)\b/.test(roleText) ? "producer" : null;

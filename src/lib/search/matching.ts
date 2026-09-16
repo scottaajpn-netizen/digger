@@ -42,12 +42,23 @@ export function matchScore(query: string, track: Pick<Track,"title"|"artist">) {
   });
   const last=normalize(query).split(" ").at(-1)||"";
   const completion=last.length>=3&&normalize(track.title).split(" ").some(word=>word.startsWith(last))?.025:0;
-  return Math.min(1,Math.max(similarity(query,track.title)*.93,similarity(query,track.artist)*.85,...scores)+completion);
+  // Accept omitted words and free token order, but require every supplied word
+  // to match: one familiar word must not hide an unrelated artist/title.
+  const words=normalize(query).split(" ").filter(Boolean);
+  const candidateWords=normalize(`${track.title} ${track.artist}`).split(" ");
+  const coverage=words.map(word=>Math.max(0,...candidateWords.map(target=>
+    word.length<3 ? Number(word===target) : similarity(word,target))));
+  const partial=words.length>=2 && coverage.every(score=>score>=.72)
+    ? coverage.reduce((sum,score)=>sum+score,0)/words.length*.9 : 0;
+  return Math.min(1,Math.max(similarity(query,track.title)*.93,similarity(query,track.artist)*.85,partial,...scores)+completion);
 }
 export function fuzzyQuery(query:string) {
-  const term=(s:string)=>normalize(s).split(" ").map(t=>t.length>=4?`(${t}~1 OR ${t}*)`:t).join(" AND ");
+  const term=(s:string)=>normalize(s).split(" ").map(t=>t.length>=4?`(${t}~1 OR ${t}*)`:t.length===3?`${t}*`:t).join(" AND ");
   const clauses=partitions(query).slice(0,16).map(([title,artist])=>`(recording:(${term(title)}) AND artist:(${term(artist)} OR ${normalize(artist).replace(/ /g,"")}))`);
-  return [...clauses,`recording:(${term(query)})`,`artist:(${term(query)})`].join(" OR ");
+  const words=normalize(query).split(" ").filter(Boolean).slice(0,12);
+  if(!words.length)return "";
+  const mixed=words.map(word=>`(recording:(${term(word)}) OR artist:(${term(word)}))`).join(" AND ");
+  return [...clauses,mixed,`recording:(${term(query)})`,`artist:(${term(query)})`].join(" OR ");
 }
 export function mergeSuggestions(query:string, pool:Suggestion[]) {
   const groups=new Map<string,Suggestion>();
