@@ -1,6 +1,6 @@
 import { buildMusicalProfile, compareMusicalProfiles, type MusicalProfile } from "../music/profile";
 import { profileFromDiscogsRelease } from "../providers/discogs";
-import type { DigRequest, Track } from "../types";
+import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
 import {
   deduplicate,
   normalized,
@@ -11,6 +11,56 @@ import {
 
 const hash = (value: string) =>
   [...value].reduce((number, character) => (number * 31 + character.charCodeAt(0)) >>> 0, 7);
+
+export function discoveryPathScoreAdjustment(
+  path: DiscoveryPath | undefined,
+  direction: Direction,
+): number {
+  if (!path) return 0;
+
+  const evidenceBase: Record<DiscoveryPath["evidence"], number> = {
+    editorial: 6,
+    catalogue: 4,
+    listening: 3,
+    release: 4,
+    tag: -3,
+  };
+  let adjustment = evidenceBase[path.evidence];
+  const distance = Math.max(0, path.distance);
+  const hasLabel = path.nodes.some(node => node.kind === "label");
+  const hasContext = path.nodes.some(node => node.kind === "context");
+
+  if (direction === "Même vibe") {
+    if (path.evidence === "listening") adjustment += 3;
+    if (distance > 2) adjustment -= Math.min(4, distance - 2);
+  }
+
+  if (direction === "Même scène") {
+    if (hasContext) adjustment += 8;
+    if (path.evidence === "editorial") adjustment += 3;
+  }
+
+  if (direction === "Labels") {
+    if (hasLabel) adjustment += 12;
+    if (path.evidence === "editorial") adjustment += 4;
+  }
+
+  if (direction === "Rabbit hole") {
+    adjustment += Math.min(3, Math.max(0, distance - 1)) * 5;
+    if (path.evidence === "tag") adjustment -= 6;
+    if (path.evidence === "editorial" || path.evidence === "catalogue")
+      adjustment += 4;
+  }
+
+  if (direction === "Surprends-moi") {
+    adjustment += Math.min(3, Math.max(0, distance - 1)) * 4;
+    if (path.evidence === "tag") adjustment -= 4;
+    if (path.evidence === "editorial" || path.evidence === "catalogue")
+      adjustment += 4;
+  }
+
+  return adjustment;
+}
 
 type RankDiscoveryInput = {
   pool: Candidate[];
@@ -90,6 +140,8 @@ export function rankDiscoveryCandidates({
       if (input.obscurity >= 80 && track.origin === "lastfm-tag") score -= 35;
       if (input.obscurity >= 90 && track.origin === "lastfm-deep") score += 26;
       if (input.obscurity >= 80 && track.origin === "lastfm-crate") score += 24;
+
+      score += discoveryPathScoreAdjustment(track.discoveryPath, input.direction);
 
       if (track.discogs) {
         // Editorial metadata is release-scoped, separate from track similarity.
