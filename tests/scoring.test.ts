@@ -183,27 +183,23 @@ test("path-aware Rabbit hole ranking can prefer a coherent deeper path at equal 
 });
 
 
-test("learned path preferences can reorder otherwise equivalent candidates", () => {
-  const preferredPath = path("listening", 2);
-  const otherPath = path("listening", 2);
-  const preferred = candidate("memory-preferred", {
+test("learned path preferences adjust the score for a matching path shape", () => {
+  const learnedPath = path("listening", 2);
+  const row = candidate("memory-preferred", {
     relevance: 70,
-    discoveryPath: preferredPath,
+    discoveryPath: learnedPath,
   });
-  const other = candidate("memory-other", {
-    relevance: 70,
-    discoveryPath: otherPath,
-  });
-  const key = discoveryPathPreferenceKey(preferredPath, "Même vibe");
+  const key = discoveryPathPreferenceKey(learnedPath, "Même vibe");
   assert.ok(key);
-  const ranked = rank(
-    [other, preferred],
+  const baseline = rank([row], request({ direction: "Même vibe" }))[0].score;
+  const learned = rank(
+    [row],
     request({
       direction: "Même vibe",
       memory: { pathScores: { [key!]: 8 }, knownTracks: [] },
     }),
-  );
-  assert.equal(ranked[0].score, ranked[1].score);
+  )[0].score;
+  assert.equal(learned - baseline, 8);
 });
 
 test("server memory excludes tracks marked as already known", () => {
