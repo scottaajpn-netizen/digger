@@ -10,6 +10,26 @@ export interface MusicalAnalysis {
   traits: string[];
   similarity?: number;
 }
+export type DiscoveryPathSource = "discogs" | "lastfm" | "listenbrainz" | "musicbrainz";
+export type DiscoveryPathEvidence =
+  | "editorial"
+  | "listening"
+  | "catalogue"
+  | "tag"
+  | "release";
+export interface DiscoveryPathNode {
+  kind: "track" | "artist" | "release" | "label" | "context";
+  name: string;
+  source: DiscoveryPathSource;
+  id?: string;
+  url?: string;
+}
+export interface DiscoveryPath {
+  source: DiscoveryPathSource;
+  evidence: DiscoveryPathEvidence;
+  nodes: DiscoveryPathNode[];
+  distance: number;
+}
 export type ArtistRole = "primary" | "featured" | "remixer" | "producer";
 export type ArtistSource = "musicbrainz" | "discogs" | "lastfm";
 export interface ArtistCredit {
@@ -25,6 +45,7 @@ export interface Track {
   artistId?: string; releaseId?: string; country?: string; album?: string;
   popularity?: number; listenCount?: number; lastfmListeners?: number;
   analysis?: MusicalAnalysis;
+  discoveryPath?: DiscoveryPath;
   credits?: ArtistCredit[];
   obscurityKnown?: boolean;
   discogs?: DiscogsEvidence;
