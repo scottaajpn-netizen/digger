@@ -14,3 +14,15 @@
 @media(max-width:700px){.search-line{align-items:stretch}.search-line>.dig-button{margin-top:0}}
 
 .soulseek-link{font-size:9px!important;color:var(--orange);padding:4px 7px!important}.soulseek-panel{margin:0 0 24px;padding:18px;border:1px solid #59604f;background:#191d19;border-radius:8px}.soulseek-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.soulseek-panel-head span{font-size:8px;letter-spacing:1.4px;color:var(--orange)}.soulseek-panel-head h3{margin:5px 0 12px;font-size:17px}.soulseek-panel-head>button{background:none;border:1px solid var(--line);color:var(--muted);border-radius:4px;font-size:18px;line-height:1;padding:4px 8px}.soulseek-panel>p{color:var(--muted);font-size:11px}.soulseek-results{display:grid;gap:7px}.soulseek-result{display:flex;justify-content:space-between;gap:15px;padding:10px 12px;border:1px solid var(--line);background:#151815;border-radius:5px}.soulseek-result>div{display:flex;flex-direction:column;gap:4px;min-width:0}.soulseek-result>div:first-child{flex:1}.soulseek-result strong{font-size:11px;overflow-wrap:anywhere}.soulseek-result span{font-size:9px;color:var(--muted)}.soulseek-result>div:last-child{text-align:right;white-space:nowrap}.soulseek-note{margin:12px 0 0!important;font-size:9px!important}@media(max-width:700px){.soulseek-result{flex-direction:column}.soulseek-result>div:last-child{text-align:left;flex-direction:row}.track-links{flex-wrap:wrap}}
+
+.discovery-path{margin:12px 0;padding:10px;border:1px solid #3b4436;border-radius:6px;background:#171a17}
+.discovery-path-head{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.discovery-path-head>span{font-size:8px;letter-spacing:1.1px;color:var(--orange);font-weight:700}
+.discovery-path-head>small{font-size:8px;color:#9fa896;line-height:1.4}
+.discovery-path-nodes{display:flex;align-items:center;flex-wrap:wrap;gap:5px 3px;line-height:1.45}
+.discovery-path-step{display:flex;align-items:center;gap:3px;min-width:0}
+.discovery-path-step i{font-style:normal;color:#6f7868;font-size:9px}
+.discovery-path-step a,.discovery-path-step b{max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #343b31;border-radius:3px;padding:3px 5px;font-size:8px;font-weight:400;color:#c8d0bd;background:#20251f}
+.discovery-path-step a{color:#e2a17c;border-color:#5a493d}
+.discovery-path-step a:hover{border-color:var(--orange);color:#ffc09a}
+@media(max-width:700px){.discovery-path-step a,.discovery-path-step b{max-width:120px}.discovery-path{padding:9px}}
