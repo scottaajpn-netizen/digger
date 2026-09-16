@@ -3,7 +3,7 @@ import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } fro
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, compareMusicalProfiles, discoveryTags } from "../music/profile";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, trackIdentity, type Candidate, type CandidateOrigin, type RankedCandidate } from "../discovery/ranking";
-export { deduplicate, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations } from "../discovery/ranking";
+export { deduplicate, mergeDiscoveryCandidates, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Credit = { name?: string; joinphrase?: string; artist?: { id?: string; name?: string; country?: string } };
