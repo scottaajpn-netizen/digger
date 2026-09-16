@@ -1,9 +1,21 @@
 import { SlskdError, slskdRequest, validSearchId } from "../../../../lib/soulseek/client";
 import { parseSearch } from "../../../../lib/soulseek/results";
 export const maxDuration = 15;
+
+function isLoopbackOrigin(value: string) {
+  try {
+    const url = new URL(value);
+    return ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: Request) {
   try {
-    if (request.headers.get("origin") && request.headers.get("origin") !== new URL(request.url).origin)
+    const origin = request.headers.get("origin");
+    const requestOrigin = new URL(request.url).origin;
+    if (origin && origin !== requestOrigin && !(isLoopbackOrigin(origin) && isLoopbackOrigin(requestOrigin)))
       return Response.json({error:"Origine non autorisée."},{status:403});
     const body = await request.json().catch(() => null);
     if (!body || typeof body.id !== "string" || !validSearchId(body.id) || typeof body.username !== "string" || typeof body.filename !== "string")
