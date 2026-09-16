@@ -1,4 +1,4 @@
-import type { DigRequest, Recommendation, Track } from "../types";
+import type { ArtistCredit, DigRequest, Recommendation, Track } from "../types";
 import { normalizeMusicTags } from "../music/taxonomy";
 import { discogsJson, type DiscogsGet } from "./discogs-http";
 
@@ -23,14 +23,15 @@ export interface DiscogsEvidence extends DiscogsReleaseEvidence {
   audience: "unknown";
 }
 export type DiscogsCandidate = Recommendation & { origin: DiscogsOrigin; relevance: number; discogs: DiscogsEvidence };
-interface RawTrack { title?: string; position?: string; type_?: string; artists?: DiscogsArtist[] }
+interface RawExtraArtist { id?: number; name?: string; role?: string }
+interface RawTrack { title?: string; position?: string; type_?: string; artists?: DiscogsArtist[]; extraartists?: RawExtraArtist[] }
 interface RawRelease {
   id?: number; master_id?: number; title?: string; artists?: DiscogsArtist[];
   labels?: { id: number; name: string; catno?: string }[];
   genres?: string[]; styles?: string[]; country?: string; year?: number;
   formats?: { descriptions?: string[] }[]; tracklist?: RawTrack[];
 }
-interface Release extends DiscogsReleaseEvidence { tracks: { title: string; position: string; artists: DiscogsArtist[] }[] }
+interface Release extends DiscogsReleaseEvidence { tracks: { title: string; position: string; artists: DiscogsArtist[]; credits: ArtistCredit[] }[] }
 interface Row { id: number; type?: string; main_release?: number; role?: string; title?: string }
 interface Listing { results?: Row[]; releases?: Row[]; pagination?: { pages?: number } }
 const norm = (s: string) => s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -42,6 +43,23 @@ const strings = (value: unknown): string[] => Array.isArray(value) ? value.filte
 const artists = (value: unknown): DiscogsArtist[] => Array.isArray(value) ? value.filter(a => a && validId(a.id) && typeof a.name === "string" && a.name.trim()).map(a => ({ id: a.id, name: a.name, join: typeof a.join === "string" ? a.join : undefined })) : [];
 const realArtist = (a: DiscogsArtist) => !["various", "various artists", "unknown", "unknown artist", "no artist"].includes(norm(a.name));
 const credit = (a: DiscogsArtist[]) => a.map((item, i) => artistName(item.name) + (i < a.length - 1 ? ` ${item.join || "&"} ` : "")).join("");
+const discogsCredits = (main: DiscogsArtist[], extra: RawExtraArtist[] | undefined): ArtistCredit[] => {
+  const primary: ArtistCredit[] = main.map(a => ({
+    name: artistName(a.name),
+    role: "primary",
+    source: "discogs",
+    sourceId: String(a.id),
+    joinPhrase: a.join,
+  }));
+  const secondary = (Array.isArray(extra) ? extra : []).flatMap(row => {
+    if (!row || !validId(row.id) || typeof row.name !== "string" || !row.name.trim() || typeof row.role !== "string") return [];
+    const roleText = norm(row.role);
+    const role = /\bremix(?:ed|er)?\b/.test(roleText) ? "remixer" : /\bproduc(?:ed|er|tion)\b/.test(roleText) ? "producer" : null;
+    if (!role) return [];
+    return [{ name: artistName(row.name), role, source: "discogs" as const, sourceId: String(row.id) }];
+  });
+  return [...primary, ...secondary];
+};
 const releaseNode = (r: DiscogsReleaseEvidence): DiscogsPathNode => ({ kind: "release", id: r.releaseId, name: r.title, url: r.sourceUrl });
 const labelNode = (l: { id: number; name: string }): DiscogsPathNode => ({ kind: "label", ...l, url: `https://www.discogs.com/label/${l.id}` });
 const artistNode = (a: DiscogsArtist): DiscogsPathNode => ({ kind: "artist", id: a.id, name: a.name, url: `https://www.discogs.com/artist/${a.id}` });
@@ -59,7 +77,7 @@ export function parseDiscogsRelease(raw: RawRelease): Release | null {
     // Never attribute an uncredited compilation/DJ-mix track to its curator.
     const trackArtists = explicit.length ? explicit : !compilation && !mixed && releaseArtists.length === 1 && realArtist(releaseArtists[0]) ? releaseArtists : [];
     if (!trackArtists.length || trackArtists.some(a => !realArtist(a))) return [];
-    return [{ title: t.title.trim(), position: typeof t.position === "string" ? t.position : "", artists: trackArtists }];
+    return [{ title: t.title.trim(), position: typeof t.position === "string" ? t.position : "", artists: trackArtists, credits: discogsCredits(trackArtists, t.extraartists) }];
   });
   return { releaseId: raw.id, masterId: validId(raw.master_id) ? raw.master_id : undefined, title: raw.title,
     artists: releaseArtists, labels: (Array.isArray(raw.labels) ? raw.labels : []).filter(l => l && validId(l.id) && typeof l.name === "string" && l.name.trim() && !norm(l.name).startsWith("not on label"))
@@ -119,7 +137,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
     const tracks = ordered(r.tracks, input.session, t => `${r.releaseId}:${t.position}:${t.title}`);
     for (const t of tracks) {
       if (requiredArtist && !t.artists.some(a => a.id === requiredArtist)) continue;
-      if (t.artists.some(a => artistKey(a.name) === artistKey(seed.artist))) continue;
+      if (t.artists.some(a => matchingArtistIds.has(a.id) || seedCreditKeys.has(artistKey(a.name)) || artistKey(a.name) === artistKey(seed.artist))) continue;
       if (t.artists.some(a => seenArtists.has(a.id))) continue;
       if (seenArtists.size >= 4) break;
       for (const a of t.artists) seenArtists.add(a.id);
@@ -129,6 +147,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
         scene: "Connexion Discogs", label: r.labels[0]?.name || "", tags: [], year: 0, album: r.title,
         obscurity: 50, obscurityKnown: false, colors: ["#b6b56d", "#34382c"],
         externalIds: { discogs: r.sourceUrl },
+        credits: t.credits,
         discogs: { ...evidence, position: t.position, trackArtists: t.artists, role: r.compilation ? "compilation-track" : "release-track", path, audience: "unknown" },
         reason: `Discogs : « ${seed.title} » → ${path.map(n => n.name).join(" → ")} → « ${t.title} » par ${name}.${origin === "discogs-scene" ? " Voisinage éditorial, pas une scène certifiée." : ""}`,
         origin, relevance: origin === "discogs-deep" ? 80 : origin === "discogs-label" && input.direction === "Labels" ? 90 : 65 });
@@ -139,12 +158,22 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
   const searchRows = Array.isArray(search?.results) ? search.results.filter(r => r && validId(r.id)) : [];
   // Album agreement is useful, but full track credits still have to match.
   const sorted = [...searchRows].sort((a, b) => Number(!!seed.album && norm(b.title || "").includes(norm(seed.album))) - Number(!!seed.album && norm(a.title || "").includes(norm(seed.album))));
+  const seedCreditKeys = new Set((seed.credits || [])
+    .filter(c => c.role === "primary" || c.role === "featured")
+    .map(c => artistKey(c.name)));
+  const sameArtists = (trackArtists: DiscogsArtist[]) => {
+    if (!seedCreditKeys.size) return artistKey(credit(trackArtists)) === artistKey(seed.artist);
+    const keys = new Set(trackArtists.map(a => artistKey(a.name)));
+    return keys.size === seedCreditKeys.size && [...keys].every(key => seedCreditKeys.has(key));
+  };
   for (const row of sorted.slice(0, 3)) {
     const r = await fromRow(row);
-    if (r?.tracks.some(t => norm(t.title) === norm(seed.title) && artistKey(credit(t.artists)) === artistKey(seed.artist))) matches.push(r);
+    if (r?.tracks.some(t => norm(t.title) === norm(seed.title) && sameArtists(t.artists))) matches.push(r);
   }
-  const matchingArtistIds = new Set(matches.flatMap(r => r.tracks.filter(t => norm(t.title) === norm(seed.title) && artistKey(credit(t.artists)) === artistKey(seed.artist)).flatMap(t => t.artists.map(a => a.id))));
-  if (!matches.length || matchingArtistIds.size !== 1) return { candidates: [], notes: [...notes, "Discogs : identité du morceau insuffisamment confirmée ; aucune connexion ajoutée."] };
+  const matchedTracks = matches.flatMap(r => r.tracks.filter(t => norm(t.title) === norm(seed.title) && sameArtists(t.artists)));
+  const signatures = new Set(matchedTracks.map(t => t.artists.map(a => a.id).sort((a,b)=>a-b).join(",")));
+  const matchingArtistIds = new Set(matchedTracks.flatMap(t => t.artists.map(a => a.id)));
+  if (!matches.length || !matchingArtistIds.size || signatures.size !== 1) return { candidates: [], notes: [...notes, "Discogs : identité du morceau insuffisamment confirmée ; aucune connexion ajoutée."] };
   const root = matches.find(r => seed.album && norm(r.title) === norm(seed.album)) || matches[0];
   const roots = [root, ...matches.filter(r => r.releaseId !== root.releaseId)];
   const deep = input.direction === "Rabbit hole" || input.direction === "Surprends-moi" && input.obscurity >= 80;
