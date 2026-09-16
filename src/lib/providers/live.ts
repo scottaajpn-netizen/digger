@@ -108,6 +108,7 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
     const lastfm = ordered.find(t => t.lastfmListeners !== undefined);
     const lb = ordered.find(t => t.popularity !== undefined);
     return { ...base, relevance: Math.max(...group.map(t => t.relevance)),
+      credits: mergeCredits(group),
       lastfmListeners: lastfm?.lastfmListeners, popularity: lb?.popularity,
       obscurity: lastfm?.obscurity ?? lb?.obscurity ?? base.obscurity,
       obscurityKnown: lastfm || lb ? true : base.obscurityKnown,
