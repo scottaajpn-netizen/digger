@@ -2,6 +2,7 @@ import { recommendLive, mbidPattern } from "@/lib/providers/live";
 import { MusicServiceError } from "@/lib/providers/http";
 import { directions, feedbackValues, type DigRequest } from "@/lib/types";
 import { suggest } from "@/lib/search/service";
+import { loadDiscoveryMemorySnapshot } from "@/lib/discovery/memory";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
@@ -56,7 +57,8 @@ export async function POST(request: Request) {
       }).slice(0, 12) : undefined,
       source: ["musicbrainz", "lastfm", "discogs", "mixed"].includes(body.seedTrack.source) ? body.seedTrack.source : undefined,
     } : undefined;
-    return Response.json(await recommendLive({ ...body, seed: body.seed.trim(), seedTrack } as DigRequest, signal));
+    const memory = await loadDiscoveryMemorySnapshot();
+    return Response.json(await recommendLive({ ...body, seed: body.seed.trim(), seedTrack, memory } as DigRequest, signal));
   } catch (error) {
     if (error instanceof MusicServiceError) return Response.json({ error: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return Response.json({ error: "Demande illisible." }, { status: 400 });
