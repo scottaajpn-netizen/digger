@@ -1,5 +1,6 @@
 import type { ArtistCredit, DigRequest, Recommendation, Track } from "../types";
 import { normalizeMusicTags } from "../music/taxonomy";
+import { discogsPath } from "../discovery/paths";
 import { discogsJson, type DiscogsGet } from "./discogs-http";
 
 export type DiscogsOrigin = "discogs-label" | "discogs-compilation" | "discogs-scene" | "discogs-deep";
@@ -145,10 +146,12 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
       for (const a of t.artists) seenArtists.add(a.id);
       const { tracks: _, ...evidence } = r;
       const name = credit(t.artists);
-      candidates.push({ id: `discogs-track:${hash(`${norm(name)}:${norm(t.title)}`)}`, title: t.title, artist: name,
+      const candidateId = `discogs-track:${hash(`${norm(name)}:${norm(t.title)}`)}`;
+      candidates.push({ id: candidateId, title: t.title, artist: name,
         scene: "Connexion Discogs", label: r.labels[0]?.name || "", tags: [], year: 0, album: r.title,
         obscurity: 50, obscurityKnown: false, colors: ["#b6b56d", "#34382c"],
         externalIds: { discogs: r.sourceUrl },
+        discoveryPath: discogsPath(seed, "editorial", path, { id: candidateId, title: t.title, artist: name, externalIds: { discogs: r.sourceUrl } }),
         credits: t.credits,
         discogs: { ...evidence, position: t.position, trackArtists: t.artists, role: r.compilation ? "compilation-track" : "release-track", path, audience: "unknown" },
         reason: `Discogs : « ${seed.title} » → ${path.map(n => n.name).join(" → ")} → « ${t.title} » par ${name}.${origin === "discogs-scene" ? " Voisinage éditorial, pas une scène certifiée." : ""}`,
