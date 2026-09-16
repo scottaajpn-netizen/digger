@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 
-type SoulseekResult = { username: string; filename: string; size: number; bitRate?: number; uploadSpeed?: number; freeUploadSlot?: boolean; queueLength?: number };
+import type { SoulseekResult } from "../lib/soulseek/results";
 import { directions, feedbackValues, type Direction, type DigResponse, type Feedback, type FeedbackMap, type Recommendation, type Track } from "@/lib/types";
 
 import { SeedSearch } from "./seed-search";
@@ -45,6 +45,11 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
   const [soulseekResults, setSoulseekResults] = useState<SoulseekResult[]>([]);
   const [soulseekBusy, setSoulseekBusy] = useState(false);
   const [soulseekError, setSoulseekError] = useState("");
+  const [soulseekProgress, setSoulseekProgress] = useState("");
+  const soulseekController = useRef<AbortController | null>(null);
+  const soulseekId = useRef<string | null>(null);
+  useEffect(() => () => { soulseekController.current?.abort(); }, []);
+  function cancelSoulseek() { soulseekController.current?.abort(); }
 
   useEffect(() => {
     try {
@@ -117,25 +122,41 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
   }
   async function searchSoulseek(track: Recommendation) {
     if (soulseekBusy) return;
-    setSoulseekTrack(track);
-    setSoulseekResults([]);
-    setSoulseekError("");
-    setSoulseekBusy(true);
+    const controller = new AbortController();
+    soulseekController.current = controller;
+    soulseekId.current = null;
+    setSoulseekTrack(track); setSoulseekResults([]); setSoulseekError(""); setSoulseekProgress("Démarrage de la recherche…"); setSoulseekBusy(true);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]);
     try {
-      const response = await fetch("/api/soulseek/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artist: track.artist, title: track.title }),
-        signal: AbortSignal.timeout(15000),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Recherche Soulseek indisponible.");
-      setSoulseekResults(Array.isArray(data.results) ? data.results : []);
+      const response = await fetch("/api/soulseek/search", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artist: track.artist, title: track.title }), signal });
+      const created = await response.json();
+      if (!response.ok) throw new Error(created.error ?? "Recherche Soulseek indisponible.");
+      soulseekId.current = created.id;
+      let emptyCompletePolls = 0;
+      while (true) {
+        signal.throwIfAborted();
+        const r = await fetch(`/api/soulseek/search?id=${created.id}`, { signal });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? "Recherche Soulseek indisponible.");
+        setSoulseekResults(data.results || []);
+        setSoulseekProgress(`${data.responseCount} réponses · ${data.fileCount} fichiers repérés${data.complete ? " · finalisation" : " · recherche en cours…"}`);
+        if (data.failed) throw new Error("La recherche a échoué dans slskd.");
+        if (data.cancelled) throw new DOMException("Recherche annulée.", "AbortError");
+        if (data.ready) { setSoulseekProgress(`${data.totalAudio} fichiers audio disponibles · ${data.results.length} affichés`); break; }
+        if (data.complete && ++emptyCompletePolls >= 4) { setSoulseekProgress("Recherche terminée : aucun fichier audio accessible dans les réponses."); break; }
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(signal.reason); };
+          const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, 1000);
+          signal.addEventListener("abort", abort, { once: true });
+          if (signal.aborted) abort();
+        });
+      }
     } catch (e) {
-      setSoulseekError(e instanceof Error && e.name === "TimeoutError" ? "Soulseek met trop de temps à répondre." : e instanceof Error ? e.message : "Recherche Soulseek indisponible.");
-    } finally {
-      setSoulseekBusy(false);
-    }
+      setSoulseekError(e instanceof Error && e.name === "AbortError" ? "Recherche annulée." : e instanceof Error && e.name === "TimeoutError"
+        ? "Délai de 60 secondes atteint. Les résultats déjà reçus restent visibles ; tu peux réessayer." : e instanceof Error ? e.message : "Recherche Soulseek indisponible.");
+      if (soulseekId.current) void fetch(`/api/soulseek/search?id=${soulseekId.current}`, { method: "PUT" }).catch(() => undefined);
+    } finally { setSoulseekBusy(false); soulseekController.current = null; }
   }
 
   function submit(e: FormEvent) { e.preventDefault(); void explore(); }
@@ -156,11 +177,11 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
     {tab === "explore" && result?.notes?.map(note => <p className="result-context" key={note}>{note}</p>)}
     {busy && <p className="loading-status" role="status">Exploration des sources musicales… Cela peut prendre quelques secondes.</p>}
     {soulseekTrack && <section className="soulseek-panel" aria-live="polite">
-      <div className="soulseek-panel-head"><div><span>SOULSEEK</span><h3>{soulseekTrack.title} — {soulseekTrack.artist}</h3></div><button onClick={() => { setSoulseekTrack(null); setSoulseekResults([]); setSoulseekError(""); }} aria-label="Fermer les résultats Soulseek">×</button></div>
-      {soulseekBusy && <p>Recherche des partages disponibles…</p>}
+      <div className="soulseek-panel-head"><div><span>SOULSEEK</span><h3>{soulseekTrack.title} — {soulseekTrack.artist}</h3></div><button onClick={() => { cancelSoulseek(); setSoulseekTrack(null); setSoulseekResults([]); setSoulseekError(""); }} aria-label="Fermer les résultats Soulseek">×</button></div>
+      {soulseekBusy && <button onClick={() => void cancelSoulseek()}>Annuler la recherche</button>}<p role="status">{soulseekProgress}</p>{soulseekBusy && <p>Recherche des partages disponibles…</p>}
       {soulseekError && <p className="error">{soulseekError}</p>}
       {!soulseekBusy && !soulseekError && soulseekResults.length === 0 && <p>Aucun résultat audio exploitable trouvé pour le moment.</p>}
-      {soulseekResults.length > 0 && <div className="soulseek-results">{soulseekResults.slice(0, 12).map((item, index) => <div className="soulseek-result" key={item.username + item.filename + index}><div><strong>{item.filename.split(/[\\/]/).pop()}</strong><span>{item.username}{item.freeUploadSlot ? " · slot libre" : ""}{typeof item.queueLength === "number" ? ` · file ${item.queueLength}` : ""}</span></div><div><span>{(item.size / 1024 / 1024).toFixed(1)} MB</span>{item.bitRate ? <span>{Math.round(item.bitRate / 1000)} kb/s</span> : null}</div></div>)}</div>}
+      {soulseekResults.length > 0 && <div className="soulseek-results">{soulseekResults.map((item, index) => <div className="soulseek-result" key={item.username + item.filename + index}><div><strong>{item.filename.split(/[\\/]/).pop()}</strong><span>{item.username}{item.freeUploadSlot ? " · slot libre" : ""}{typeof item.queueLength === "number" ? ` · file ${item.queueLength}` : ""}</span></div><div><span>{item.format} · {(item.size / 1024 / 1024).toFixed(1)} Mo</span>{item.uploadSpeed !== undefined ? <span>Vitesse annoncée : {(item.uploadSpeed / 1024).toFixed(0)} Ko/s</span> : null}{item.bitRate ? <span>{Math.round(item.bitRate)} kb/s</span> : null}</div></div>)}</div>}
       <p className="soulseek-note">Étape 1 : recherche uniquement. Aucun téléchargement n’est lancé depuis Digger.</p>
     </section>}
     <div className="track-grid">{visible.map((track, i) => <TrackCard key={track.id} track={track} index={i} feedback={feedback[track.id]} onFeedback={react} onExplore={(value, track) => { setSeed(value); setSelectedSeed({ text: value, track }); void explore(value, track); }} onSoulseek={searchSoulseek} />)}</div>
