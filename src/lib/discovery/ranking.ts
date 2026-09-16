@@ -120,6 +120,7 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
             discogs: editorial.discogs,
             origin: editorial.origin,
             reason: editorial.reason,
+            discoveryPath: editorial.discoveryPath || base.discoveryPath,
             label: base.label || editorial.label,
             album: base.album || editorial.album,
             externalIds: { ...editorial.externalIds, ...base.externalIds },
