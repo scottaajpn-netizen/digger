@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildMusicalProfile } from "../src/lib/music/profile";
-import { rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
+import { discoveryPathScoreAdjustment, rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
 import type { Candidate } from "../src/lib/discovery/ranking";
-import type { DigRequest, Track } from "../src/lib/types";
+import type { DigRequest, DiscoveryPath, Track } from "../src/lib/types";
 
 const seed: Track = {
   id: "seed",
@@ -122,4 +122,61 @@ test("Surprends-moi jitter is deterministic for a session", () => {
     first.map(track => [track.id, track.score]),
     second.map(track => [track.id, track.score]),
   );
+});
+
+
+const path = (
+  evidence: DiscoveryPath["evidence"],
+  distance: number,
+  kinds: DiscoveryPath["nodes"][number]["kind"][] = ["track", "track"],
+): DiscoveryPath => ({
+  source: evidence === "editorial" ? "discogs" : "lastfm",
+  evidence,
+  distance,
+  nodes: kinds.map((kind, index) => ({
+    kind,
+    name: `${kind}-${index}`,
+    source: evidence === "editorial" ? "discogs" : "lastfm",
+  })),
+});
+
+test("path scoring rewards verified depth without making longest path automatically best", () => {
+  const directListening = discoveryPathScoreAdjustment(path("listening", 1), "Rabbit hole");
+  const deepListening = discoveryPathScoreAdjustment(path("listening", 3), "Rabbit hole");
+  const veryDeepTag = discoveryPathScoreAdjustment(path("tag", 8), "Rabbit hole");
+  assert.ok(deepListening > directListening);
+  assert.ok(deepListening > veryDeepTag);
+});
+
+test("path scoring favors label evidence specifically in Labels", () => {
+  const labelPath = path("editorial", 2, ["track", "label", "track"]);
+  const releasePath = path("editorial", 2, ["track", "release", "track"]);
+  assert.ok(
+    discoveryPathScoreAdjustment(labelPath, "Labels") >
+      discoveryPathScoreAdjustment(releasePath, "Labels"),
+  );
+});
+
+test("path scoring values explicit scene context in Même scène", () => {
+  const contextPath = path("editorial", 2, ["track", "context", "track"]);
+  const plainPath = path("editorial", 2, ["track", "release", "track"]);
+  assert.ok(
+    discoveryPathScoreAdjustment(contextPath, "Même scène") >
+      discoveryPathScoreAdjustment(plainPath, "Même scène"),
+  );
+});
+
+test("path-aware Rabbit hole ranking can prefer a coherent deeper path at equal relevance", () => {
+  const direct = candidate("direct-path", {
+    relevance: 70,
+    origin: "lastfm-similar",
+    discoveryPath: path("listening", 1),
+  });
+  const deep = candidate("deep-path", {
+    relevance: 70,
+    origin: "lastfm-similar",
+    discoveryPath: path("listening", 3),
+  });
+  const ranked = rank([direct, deep], request({ direction: "Rabbit hole", obscurity: 70 }));
+  assert.equal(ranked[0].id, "deep-path");
 });
