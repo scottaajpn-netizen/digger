@@ -7,3 +7,4 @@ node_modules/
 *.tsbuildinfo
 verification/
 *.log
+.digger/
