@@ -49,6 +49,10 @@ test("discovery memory persists path feedback and known tracks", async () => {
     "Rabbit hole",
     file,
   );
+  const rawStore = JSON.parse(await readFile(file, "utf8"));
+  const rememberedTrack = Object.values(rawStore.tracks)[0] as { discoveryPath?: { nodes?: unknown[] } };
+  assert.equal(rememberedTrack.discoveryPath?.nodes?.length, 3);
+
   const positive = await loadDiscoveryMemorySnapshot(file);
   const key = discoveryPathPreferenceKey(discoveryPath, "Rabbit hole");
   assert.ok(key);
