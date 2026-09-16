@@ -1,5 +1,5 @@
 import { discoverDiscogs, profileFromDiscogsRelease, type DiscogsOrigin } from "./discogs";
-import type { DigRequest, DigResponse, Recommendation, Track } from "../types";
+import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } from "../types";
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, compareMusicalProfiles, discoveryTags } from "../music/profile";
 
@@ -52,14 +52,30 @@ export function musicBrainzQuery(query: string) {
   if (parts.length === 2) return `(recording:${quote(parts[0])} AND artist:${quote(parts[1])}) OR (recording:${quote(parts[1])} AND artist:${quote(parts[0])})`;
   return query.split(/\s+/).filter(Boolean).map(quote).join(" AND ");
 }
+export function musicBrainzCredits(rows: Credit[]): ArtistCredit[] {
+  return rows.flatMap((row, index) => {
+    const name = (row.name || row.artist?.name || "").trim();
+    if (!name) return [];
+    const previousJoin = index > 0 ? rows[index - 1]?.joinphrase || "" : "";
+    const role = /\b(?:feat(?:uring)?|ft)\.?\b/i.test(previousJoin) ? "featured" : "primary";
+    return [{
+      name,
+      role,
+      source: "musicbrainz" as const,
+      sourceId: row.artist?.id,
+      joinPhrase: row.joinphrase || undefined,
+    }];
+  });
+}
 export function fromRecording(r: Recording): Track | null {
   if (!r || !mbidPattern.test(r.id) || typeof r.title !== "string") return null;
-  const credits = Array.isArray(r["artist-credit"]) ? r["artist-credit"] : [];
-  const artist = credits.map(c => (c.name || c.artist?.name || "") + (c.joinphrase || "")).join("");
+  const rows = Array.isArray(r["artist-credit"]) ? r["artist-credit"] : [];
+  const artist = rows.map(c => (c.name || c.artist?.name || "") + (c.joinphrase || "")).join("");
   if (!artist) return null;
+  const credits = musicBrainzCredits(rows);
   const release = r.releases?.find(item => !normalized(item.title).startsWith(normalized(r.title))) || r.releases?.[0];
   const tags = (r.tags || []).filter(t => typeof t.name === "string").sort((a,b) => (b.count || 0) - (a.count || 0)).map(t => t.name).slice(0, 6);
-  return { id: r.id, title: r.title, artist, artistId: credits[0]?.artist?.id, country: credits[0]?.artist?.country, releaseId: release?.id, album: release?.title, scene: tags[0] || "MusicBrainz", label: "", tags, year: Number(r["first-release-date"]?.slice(0, 4)) || 0, obscurity: 50, colors: colors[hash(r.id) % colors.length], externalIds: { musicbrainz: r.id } };
+  return { id: r.id, title: r.title, artist, artistId: credits.find(c => c.role === "primary")?.sourceId, credits, country: rows[0]?.artist?.country, releaseId: release?.id, album: release?.title, scene: tags[0] || "MusicBrainz", label: "", tags, year: Number(r["first-release-date"]?.slice(0, 4)) || 0, obscurity: 50, colors: colors[hash(r.id) % colors.length], externalIds: { musicbrainz: r.id } };
 }
 export function deduplicate<T extends Track>(tracks: T[]): T[] {
   const ids = new Set<string>(), names = new Set<string>();
