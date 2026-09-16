@@ -141,7 +141,7 @@ export async function recordDiscoveryFeedback(
   direction: Direction,
   file = discoveryMemoryFile(),
 ): Promise<void> {
-  writeQueue = writeQueue.then(async () => {
+  writeQueue = writeQueue.catch(() => undefined).then(async () => {
     const store = await readStore(file);
     const now = new Date().toISOString();
     const identity = trackIdentity({
