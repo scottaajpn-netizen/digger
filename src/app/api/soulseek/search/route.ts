@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     const startedAt = Date.now();
     while (Date.now() - startedAt < 12000) {
       await new Promise(resolve => setTimeout(resolve, 700));
-      const stateRequest = await slskdFetch(`/searches/${id}`, {
+      const stateRequest = await slskdFetch(`/searches/${id}?includeResponses=true`, {
         signal: AbortSignal.timeout(2500),
       });
       if (!stateRequest.ok) break;
