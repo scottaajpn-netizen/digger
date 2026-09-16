@@ -17,10 +17,38 @@ const visibleCredits = (track: Track) => (track.credits || []).filter((credit, i
 );
 
 
+const pathSourceLabel = (source: NonNullable<Track["discoveryPath"]>["source"]) =>
+  source === "discogs" ? "Discogs" :
+  source === "lastfm" ? "Last.fm" :
+  source === "listenbrainz" ? "ListenBrainz" : "MusicBrainz";
+
+const pathEvidenceLabel = (evidence: NonNullable<Track["discoveryPath"]>["evidence"]) =>
+  evidence === "editorial" ? "lien éditorial vérifié" :
+  evidence === "catalogue" ? "chemin de catalogue" :
+  evidence === "listening" ? "proximité d’écoute" :
+  evidence === "tag" ? "contexte de tag" : "même sortie";
+
+function DiscoveryPathView({ track }: { track: Track }) {
+  const path = track.discoveryPath;
+  if (!path?.nodes?.length) return null;
+  return <div className="discovery-path" aria-label="Chemin de découverte">
+    <div className="discovery-path-head">
+      <span>POURQUOI CE MORCEAU ?</span>
+      <small>{pathSourceLabel(path.source)} · {pathEvidenceLabel(path.evidence)} · {path.distance} {path.distance > 1 ? "étapes" : "étape"}</small>
+    </div>
+    <div className="discovery-path-nodes">
+      {path.nodes.map((node, index) => <span className="discovery-path-step" key={`${node.kind}:${node.id || node.name}:${index}`}>
+        {index > 0 ? <i aria-hidden="true">→</i> : null}
+        {node.url ? <a href={node.url} target="_blank" rel="noreferrer" title={node.name}>{node.name}</a> : <b title={node.name}>{node.name}</b>}
+      </span>)}
+    </div>
+  </div>;
+}
+
 function TrackCard({ track, index, feedback, onFeedback, onExplore, onSoulseek }: { track: Recommendation; index: number; feedback?: Feedback; onFeedback: (id: string, value: Feedback) => void; onExplore: (seed: string, track: Track) => void; onSoulseek: (track: Recommendation) => void }) {
   return <article className="track-card">
     <div className={`cover cover-${index % 4}`} style={{ "--cover": track.colors[0], "--ink": track.colors[1] } as CSSProperties} aria-hidden="true"><div className="cover-top"><span>D / RECORDS</span><span>{String(index + 1).padStart(2, "0")}</span></div><div className="cover-art"><i /><i /><i /></div><div className="cover-name">{track.artist}</div><span className="cover-caption">EXPLORATIONS SONORES</span></div>
-    <div className="card-body"><div className="track-meta"><span>{track.scene}</span><span>{track.analysis?.similarity !== undefined && track.analysis.similarity > 0 ? `Affinité des métadonnées : ${track.analysis.similarity}%` : track.popularity !== undefined ? `Popularité LB : ${Math.round(track.popularity)}%` : "Affinité non mesurée"}</span></div><h3>{track.title}</h3><p className="artist">{track.artist}</p>{visibleCredits(track).length > 1 || visibleCredits(track).some(c => c.role !== "primary") ? <p className="reason">Crédits vérifiés : {visibleCredits(track).map(c => `${creditRoleLabel(c.role)} ${c.name}`.trim()).join(" · ")}</p> : null}<div className="tags">{[...(track.analysis?.subgenres ?? []), ...(track.analysis?.genres ?? []), ...(track.analysis?.traits ?? []), ...track.tags].filter((tag, index, all) => all.indexOf(tag) === index).slice(0, 4).map(tag => <span key={tag}>{tag}</span>)}</div><p className="reason">{track.reason}</p>{track.externalIds?.musicbrainz && <a className="source-link" href={`https://musicbrainz.org/recording/${track.externalIds.musicbrainz}`} target="_blank" rel="noreferrer">Fiche MusicBrainz ↗</a>}{track.externalIds?.lastfm && <a className="source-link" href={track.externalIds.lastfm} target="_blank" rel="noreferrer">Fiche Last.fm ↗</a>}{track.discogs && <p className="reason">Sortie : {track.discogs.title}{track.discogs.year ? ` · ${track.discogs.year}` : ""}{track.discogs.country ? ` · ${track.discogs.country} (édition)` : ""}{track.discogs.styles.length ? ` · Styles de la sortie : ${track.discogs.styles.join(" / ")}` : ""}{track.discogs.labels.length ? ` · ${track.discogs.labels.map(l => [l.name, l.catalogNumber].filter(Boolean).join(" — ")).join(" / ")}` : ""}{track.lastfmListeners === undefined && track.popularity === undefined ? " · Audience inconnue" : ""}</p>}{track.externalIds?.discogs && <a className="source-link" href={track.externalIds.discogs} target="_blank" rel="noreferrer">Source : Discogs ↗</a>}<div className="track-links"><a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(track.artist + " " + track.title)}`} target="_blank" rel="noreferrer">YouTube ↗</a><button className="soulseek-link" title="Chercher ce morceau sur Soulseek" aria-label={`Chercher ${track.title} sur Soulseek`} onClick={() => onSoulseek(track)}>Soulseek ↓</button><button title="Explorer à partir de ce morceau" aria-label={`Explorer depuis ${track.title}`} onClick={() => onExplore(`${track.title} — ${track.artist}`, track)}>↳</button></div><div className="feedback" aria-label={`Ton avis sur ${track.title}`}>{reactions.map(r => <button key={r.value} title={r.label} aria-label={`${r.label} : ${track.title}`} aria-pressed={feedback === r.value} onClick={() => onFeedback(track.id, r.value)}>{r.icon}</button>)}</div></div>
+    <div className="card-body"><div className="track-meta"><span>{track.scene}</span><span>{track.analysis?.similarity !== undefined && track.analysis.similarity > 0 ? `Affinité des métadonnées : ${track.analysis.similarity}%` : track.popularity !== undefined ? `Popularité LB : ${Math.round(track.popularity)}%` : "Affinité non mesurée"}</span></div><h3>{track.title}</h3><p className="artist">{track.artist}</p>{visibleCredits(track).length > 1 || visibleCredits(track).some(c => c.role !== "primary") ? <p className="reason">Crédits vérifiés : {visibleCredits(track).map(c => `${creditRoleLabel(c.role)} ${c.name}`.trim()).join(" · ")}</p> : null}<div className="tags">{[...(track.analysis?.subgenres ?? []), ...(track.analysis?.genres ?? []), ...(track.analysis?.traits ?? []), ...track.tags].filter((tag, index, all) => all.indexOf(tag) === index).slice(0, 4).map(tag => <span key={tag}>{tag}</span>)}</div><DiscoveryPathView track={track} /><p className="reason">{track.reason}</p>{track.externalIds?.musicbrainz && <a className="source-link" href={`https://musicbrainz.org/recording/${track.externalIds.musicbrainz}`} target="_blank" rel="noreferrer">Fiche MusicBrainz ↗</a>}{track.externalIds?.lastfm && <a className="source-link" href={track.externalIds.lastfm} target="_blank" rel="noreferrer">Fiche Last.fm ↗</a>}{track.discogs && <p className="reason">Sortie : {track.discogs.title}{track.discogs.year ? ` · ${track.discogs.year}` : ""}{track.discogs.country ? ` · ${track.discogs.country} (édition)` : ""}{track.discogs.styles.length ? ` · Styles de la sortie : ${track.discogs.styles.join(" / ")}` : ""}{track.discogs.labels.length ? ` · ${track.discogs.labels.map(l => [l.name, l.catalogNumber].filter(Boolean).join(" — ")).join(" / ")}` : ""}{track.lastfmListeners === undefined && track.popularity === undefined ? " · Audience inconnue" : ""}</p>}{track.externalIds?.discogs && <a className="source-link" href={track.externalIds.discogs} target="_blank" rel="noreferrer">Source : Discogs ↗</a>}<div className="track-links"><a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(track.artist + " " + track.title)}`} target="_blank" rel="noreferrer">YouTube ↗</a><button className="soulseek-link" title="Chercher ce morceau sur Soulseek" aria-label={`Chercher ${track.title} sur Soulseek`} onClick={() => onSoulseek(track)}>Soulseek ↓</button><button title="Explorer à partir de ce morceau" aria-label={`Explorer depuis ${track.title}`} onClick={() => onExplore(`${track.title} — ${track.artist}`, track)}>↳</button></div><div className="feedback" aria-label={`Ton avis sur ${track.title}`}>{reactions.map(r => <button key={r.value} title={r.label} aria-label={`${r.label} : ${track.title}`} aria-pressed={feedback === r.value} onClick={() => onFeedback(track.id, r.value)}>{r.icon}</button>)}</div></div>
   </article>;
 }
 
