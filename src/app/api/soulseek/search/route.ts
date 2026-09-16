@@ -1,7 +1,7 @@
 type SlskdFile = { filename?: string; size?: number; bitRate?: number; bitrate?: number };
 type SlskdResponse = { username?: string; hasFreeUploadSlot?: boolean; uploadSpeed?: number; queueLength?: number; files?: SlskdFile[] };
 
-export const maxDuration = 20;
+export const maxDuration = 30;
 
 const audioExtensions = /\.(flac|mp3|m4a|aac|ogg|opus|wav|aiff?)$/i;
 
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         id,
         searchText: `${artist} ${title}`,
-        searchTimeout: 7000,
+        searchTimeout: 10000,
         fileLimit: 2500,
         responseLimit: 120,
         filterResponses: true,
@@ -54,7 +54,21 @@ export async function POST(request: Request) {
       return Response.json({ error: `slskd refuse la recherche (${create.status}).`, detail: detail.slice(0, 300) }, { status: 502 });
     }
 
-    await new Promise(resolve => setTimeout(resolve, 4500));
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 11500) {
+      await new Promise(resolve => setTimeout(resolve, 650));
+      const stateRequest = await slskdFetch(`/searches/${id}`, {
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!stateRequest.ok) break;
+      const state = await stateRequest.json().catch(() => ({}));
+      const label = String(state?.state ?? state?.status ?? "").toLowerCase();
+      const done =
+        state?.isComplete === true ||
+        state?.completed === true ||
+        ["completed", "complete", "stopped", "cancelled", "failed"].includes(label);
+      if (done) break;
+    }
 
     const responsesRequest = await slskdFetch(`/searches/${id}/responses`, {
       signal: AbortSignal.timeout(5000),
