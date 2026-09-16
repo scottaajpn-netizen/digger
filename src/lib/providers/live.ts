@@ -134,7 +134,8 @@ export function selectDiverseRecommendations(ranked: RankedCandidate[], seedArti
     if (selected.some(item => item.id === track.id || editionKey(item) === editionKey(track))) return false;
     const artist = normalized(track.artist);
     const labels = [...new Set([normalized(track.label || ""), ...(track.discogs?.labels.flatMap(l => [`discogs:${l.id}`, normalized(l.name)]) || [])].filter(Boolean))];
-    const artistKeys = [...new Set([artist, ...(track.credits || []).filter(c => c.role === "primary" || c.role === "featured").flatMap(c => [normalized(c.name), ...(c.sourceId ? [`${c.source}:${c.sourceId}`] : [])]), ...(track.discogs?.trackArtists.flatMap(a => [`discogs:${a.id}`, normalized(a.name.replace(/\s*\(\d+\)$/, ""))]) || [])])];
+    const structuredKeys = track.discogs ? [] : (track.credits || []).filter(c => c.role === "primary" || c.role === "featured").flatMap(c => [normalized(c.name), ...(c.sourceId ? [`${c.source}:${c.sourceId}`] : [])]);
+    const artistKeys = [...new Set([artist, ...structuredKeys, ...(track.discogs?.trackArtists.flatMap(a => [`discogs:${a.id}`, normalized(a.name.replace(/\s*\(\d+\)$/, ""))]) || [])])];
     const artistCount = Math.max(...artistKeys.map(key => artistCounts.get(key) || 0));
 
     const originCount = originCounts.get(track.origin) || 0;
