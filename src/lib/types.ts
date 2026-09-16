@@ -69,6 +69,11 @@ export interface SeedReference {
   credits?: ArtistCredit[];
   source?: SeedSource;
 }
-export interface DigRequest { seed: string; seedId?: string; seedTrack?: SeedReference; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number }
+export interface DiscoveryMemorySnapshot {
+  pathScores: Record<string, number>;
+  knownTracks: string[];
+  updatedAt?: string;
+}
+export interface DigRequest { seed: string; seedId?: string; seedTrack?: SeedReference; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number; memory?: DiscoveryMemorySnapshot }
 export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[] }
 export interface MusicProvider { id: string; search(query: string): Promise<Track[]>; candidates(seed: Track): Promise<Track[]> }
