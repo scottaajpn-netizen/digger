@@ -1,6 +1,7 @@
 import { buildMusicalProfile, compareMusicalProfiles, type MusicalProfile } from "../music/profile";
 import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
+import { discoveryPathPreferenceKey } from "./paths";
 import {
   deduplicate,
   normalized,
@@ -97,6 +98,7 @@ export function rankDiscoveryCandidates({
         trackIdentity(track) !== trackIdentity(seed) &&
         normalized(track.artist) !== normalized(seed.artist) &&
         !seedParticipantKeys.has(normalized(track.artist)) &&
+        !(input.memory?.knownTracks || []).includes(trackIdentity(track)) &&
         ![track.id, ...(track.feedbackIds || [])].some(id =>
           ["known", "neutral"].includes(input.feedback[id]),
         ),
@@ -142,6 +144,8 @@ export function rankDiscoveryCandidates({
       if (input.obscurity >= 80 && track.origin === "lastfm-crate") score += 24;
 
       score += discoveryPathScoreAdjustment(track.discoveryPath, input.direction);
+      const memoryKey = discoveryPathPreferenceKey(track.discoveryPath, input.direction);
+      if (memoryKey) score += input.memory?.pathScores[memoryKey] || 0;
 
       if (track.discogs) {
         // Editorial metadata is release-scoped, separate from track similarity.
