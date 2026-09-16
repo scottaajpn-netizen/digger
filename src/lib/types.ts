@@ -10,12 +10,22 @@ export interface MusicalAnalysis {
   traits: string[];
   similarity?: number;
 }
+export type ArtistRole = "primary" | "featured" | "remixer" | "producer";
+export type ArtistSource = "musicbrainz" | "discogs" | "lastfm";
+export interface ArtistCredit {
+  name: string;
+  role: ArtistRole;
+  source: ArtistSource;
+  sourceId?: string;
+  joinPhrase?: string;
+}
 export interface Track {
   id: string; title: string; artist: string; scene: string; label: string;
   tags: string[]; obscurity: number; year: number; colors: [string, string];
   artistId?: string; releaseId?: string; country?: string; album?: string;
   popularity?: number; listenCount?: number; lastfmListeners?: number;
   analysis?: MusicalAnalysis;
+  credits?: ArtistCredit[];
   obscurityKnown?: boolean;
   discogs?: DiscogsEvidence;
   externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string };
@@ -35,6 +45,7 @@ export interface SeedReference {
   country?: string;
   album?: string;
   externalIds?: Track["externalIds"];
+  credits?: ArtistCredit[];
   source?: SeedSource;
 }
 export interface DigRequest { seed: string; seedId?: string; seedTrack?: SeedReference; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number }
