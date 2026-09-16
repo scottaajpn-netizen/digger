@@ -132,6 +132,8 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
     }
     return ordered(rows.filter(r => r && validId(r.id)), input.session, r => String(r.id));
   }
+  let seedCreditKeys = new Set<string>();
+  let matchingArtistIds = new Set<number>();
   function add(r: Release, origin: DiscogsOrigin, path: DiscogsPathNode[], requiredArtist?: number) {
     const seenArtists = new Set<number>();
     const tracks = ordered(r.tracks, input.session, t => `${r.releaseId}:${t.position}:${t.title}`);
@@ -158,7 +160,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
   const searchRows = Array.isArray(search?.results) ? search.results.filter(r => r && validId(r.id)) : [];
   // Album agreement is useful, but full track credits still have to match.
   const sorted = [...searchRows].sort((a, b) => Number(!!seed.album && norm(b.title || "").includes(norm(seed.album))) - Number(!!seed.album && norm(a.title || "").includes(norm(seed.album))));
-  const seedCreditKeys = new Set((seed.credits || [])
+  seedCreditKeys = new Set((seed.credits || [])
     .filter(c => c.role === "primary" || c.role === "featured")
     .map(c => artistKey(c.name)));
   const sameArtists = (trackArtists: DiscogsArtist[]) => {
@@ -172,7 +174,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
   }
   const matchedTracks = matches.flatMap(r => r.tracks.filter(t => norm(t.title) === norm(seed.title) && sameArtists(t.artists)));
   const signatures = new Set(matchedTracks.map(t => t.artists.map(a => a.id).sort((a,b)=>a-b).join(",")));
-  const matchingArtistIds = new Set(matchedTracks.flatMap(t => t.artists.map(a => a.id)));
+  matchingArtistIds = new Set(matchedTracks.flatMap(t => t.artists.map(a => a.id)));
   if (!matches.length || !matchingArtistIds.size || signatures.size !== 1) return { candidates: [], notes: [...notes, "Discogs : identité du morceau insuffisamment confirmée ; aucune connexion ajoutée."] };
   const root = matches.find(r => seed.album && norm(r.title) === norm(seed.album)) || matches[0];
   const roots = [root, ...matches.filter(r => r.releaseId !== root.releaseId)];
