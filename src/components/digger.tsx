@@ -96,6 +96,7 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
       country: seedTrack.country,
       album: seedTrack.album,
       externalIds: seedTrack.externalIds,
+      credits: seedTrack.credits,
       source,
     } : undefined;
     setBusy(true); setError(""); setChoices([]); setTab("explore");
