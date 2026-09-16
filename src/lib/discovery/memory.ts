@@ -232,3 +232,15 @@ export async function loadDiscoveryMemorySnapshot(
 export function memoryTrackIdentity(artist: string, title: string) {
   return `${normalized(artist)}\u0000${normalized(title)}`;
 }
+
+
+export async function clearDiscoveryMemory(
+  file = discoveryMemoryFile(),
+): Promise<void> {
+  writeQueue = writeQueue.catch(() => undefined).then(async () => {
+    const store = emptyStore();
+    store.updatedAt = new Date().toISOString();
+    await writeStore(store, file);
+  });
+  return writeQueue;
+}
