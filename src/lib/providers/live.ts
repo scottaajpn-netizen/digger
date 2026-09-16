@@ -1,8 +1,9 @@
 import { discoverDiscogs, profileFromDiscogsRelease } from "./discogs";
 import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } from "../types";
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
-import { buildMusicalProfile, compareMusicalProfiles, discoveryTags } from "../music/profile";
-import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, trackIdentity, type Candidate, type CandidateOrigin, type RankedCandidate } from "../discovery/ranking";
+import { buildMusicalProfile, discoveryTags } from "../music/profile";
+import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
+import { rankDiscoveryCandidates } from "../discovery/scoring";
 export { deduplicate, mergeDiscoveryCandidates, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -490,94 +491,13 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     }
   }
 
-  const preferred = new Set(pool.filter(t => ["love", "curious"].includes(input.feedback[t.id])).flatMap(t=>t.tags));
-  const ranked: RankedCandidate[] = deduplicate(pool.sort((a,b)=>b.relevance-a.relevance))
-    .filter(t => t.id !== seed.id && trackIdentity(t) !== trackIdentity(seed) && normalized(t.artist) !== normalized(seed.artist) && !seedParticipantKeys.has(normalized(t.artist)) && ![t.id, ...(t.feedbackIds || [])].some(id => ["known", "neutral"].includes(input.feedback[id])))
-    .map(t => {
-      const candidateProfile = buildMusicalProfile(t);
-      const comparison = compareMusicalProfiles(seedProfile, candidateProfile);
-      const shared = t.tags.filter(tag => seed.tags.includes(tag)).length;
-
-      let score = t.relevance + comparison.musicalSimilarity * 55 + shared * 3 + t.tags.filter(tag => preferred.has(tag)).length * 4;
-      if (t.popularity !== undefined) {
-        score -= Math.abs(t.obscurity - input.obscurity) * .45;
-        if (input.obscurity >= 80 && t.popularity > 35) score -= (t.popularity - 35) * 1.25;
-        if (input.obscurity >= 95 && t.popularity > 20) score -= (t.popularity - 20) * 1.5;
-      }
-      if (input.obscurity >= 80 && t.listenCount !== undefined && t.listenCount > 0) {
-        score -= Math.max(0, Math.log10(t.listenCount + 1) - 3) * 8;
-      }
-      if (input.obscurity >= 75 && t.lastfmListeners !== undefined) {
-        const audiencePenalty = Math.max(0, Math.log10(t.lastfmListeners + 1) - 3.2);
-        score -= audiencePenalty * (input.obscurity >= 95 ? 18 : 11);
-        score -= Math.abs(t.obscurity - input.obscurity) * 0.65;
-      }
-      if (input.obscurity >= 80 && t.origin === "lastfm-tag") score -= 35;
-      if (input.obscurity >= 90 && t.origin === "lastfm-deep") score += 26;
-      if (input.obscurity >= 80 && t.origin === "lastfm-crate") score += 24;
-
-      if (t.discogs) {
-        // Editorial metadata is release-scoped, separate from track similarity.
-        const releaseProfile = profileFromDiscogsRelease(t.discogs);
-        const styleOverlap = releaseProfile.subgenres.filter(s => seedProfile.subgenres.includes(s)).length;
-        const styleWeight = t.discogs.compilation ? 2 : 5;
-        score += Math.min(2, styleOverlap) * styleWeight;
-        if (input.direction === "Labels" && t.origin === "discogs-label") score += 45;
-        if (input.direction === "Même scène" && t.origin === "discogs-scene") score += 25;
-        if (input.direction === "Rabbit hole" && t.origin === "discogs-deep") score += 45;
-        if (input.direction === "Surprends-moi" && input.obscurity >= 80 && t.origin === "discogs-deep") score += 35;
-      }
-
-      if (input.direction === "Même vibe") {
-        score += comparison.musicalSimilarity * 35;
-        if (t.origin === "tag" || t.origin === "lastfm-tag") score += 10;
-        if (t.origin === "lastfm-similar") score += 14;
-      }
-      if (input.direction === "Même scène") {
-        if (comparison.country) score += 22;
-        score += comparison.subgenre * 16 + comparison.rawTags * 10;
-      }
-      if (input.direction === "Labels") {
-        if (seed.label && t.label && normalized(seed.label) === normalized(t.label)) score += 34;
-        score += comparison.subgenre * 12;
-      }
-      if (input.direction === "Rabbit hole") {
-        score += 18;
-        if (t.origin === "lastfm-deep") score += 22;
-        if (t.origin === "lastfm-crate") score += 28;
-        if (t.origin === "lastfm-tag") score -= 12;
-        score += (1 - comparison.musicalSimilarity) * 8 + comparison.genre * 12 + comparison.traits * 12;
-      }
-
-      const jitter = hash(`${t.id}:${input.session}`) % 31;
-      if (input.direction === "Surprends-moi") {
-        score += jitter * 2.2 + (1 - comparison.musicalSimilarity) * 14;
-        if (input.obscurity >= 80 && t.origin === "lastfm-deep") score += 30;
-        if (input.obscurity >= 80 && t.origin === "lastfm-similar") score += 8;
-        if (input.obscurity >= 80 && t.origin === "release") score += 10;
-        if (comparison.genre === 0 && comparison.subgenre === 0 && comparison.traits === 0 && comparison.rawTags === 0) score -= 20;
-      } else {
-        score += jitter * .12;
-      }
-
-      const sharedSubgenres = candidateProfile.subgenres.filter(value => seedProfile.subgenres.includes(value));
-      const sharedTraits = candidateProfile.traits.filter(value => seedProfile.traits.includes(value));
-      let reason = t.reason;
-      if (sharedSubgenres.length) reason = `Sous-genre commun : ${sharedSubgenres.slice(0, 2).join(" / ")}. ${reason}`;
-      else if (sharedTraits.length) reason = `Traits musicaux communs : ${sharedTraits.slice(0, 2).join(" / ")}. ${reason}`;
-      return {
-        ...t,
-        reason,
-        score,
-        analysis: {
-          genres: candidateProfile.genres,
-          subgenres: candidateProfile.subgenres,
-          traits: candidateProfile.traits,
-          similarity: Math.round(comparison.musicalSimilarity * 100),
-        },
-      };
-    })
-    .sort((a,b)=>b.score-a.score);
+  const ranked = rankDiscoveryCandidates({
+    pool,
+    seed,
+    seedProfile,
+    input,
+    seedParticipantKeys,
+  });
 
   const deepRanked = input.obscurity >= 90
     ? ranked.filter(track => track.origin !== "lastfm-tag" && passesDeepAudienceGate(track, input.obscurity))
