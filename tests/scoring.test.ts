@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildMusicalProfile } from "../src/lib/music/profile";
+import { discoveryPathPreferenceKey } from "../src/lib/discovery/paths";
 import { discoveryPathScoreAdjustment, rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
 import type { Candidate } from "../src/lib/discovery/ranking";
 import type { DigRequest, DiscoveryPath, Track } from "../src/lib/types";
@@ -179,4 +180,43 @@ test("path-aware Rabbit hole ranking can prefer a coherent deeper path at equal 
   });
   const ranked = rank([direct, deep], request({ direction: "Rabbit hole", obscurity: 70 }));
   assert.equal(ranked[0].id, "deep-path");
+});
+
+
+test("learned path preferences can reorder otherwise equivalent candidates", () => {
+  const preferredPath = path("listening", 2);
+  const otherPath = path("listening", 2);
+  const preferred = candidate("memory-preferred", {
+    relevance: 70,
+    discoveryPath: preferredPath,
+  });
+  const other = candidate("memory-other", {
+    relevance: 70,
+    discoveryPath: otherPath,
+  });
+  const key = discoveryPathPreferenceKey(preferredPath, "Même vibe");
+  assert.ok(key);
+  const ranked = rank(
+    [other, preferred],
+    request({
+      direction: "Même vibe",
+      memory: { pathScores: { [key!]: 8 }, knownTracks: [] },
+    }),
+  );
+  assert.equal(ranked[0].score, ranked[1].score);
+});
+
+test("server memory excludes tracks marked as already known", () => {
+  const known = candidate("server-known", { artist: "Known Artist", title: "Known Cut" });
+  const kept = candidate("server-kept");
+  const ranked = rank(
+    [known, kept],
+    request({
+      memory: {
+        pathScores: {},
+        knownTracks: ["known artist\u0000known cut"],
+      },
+    }),
+  );
+  assert.deepEqual(ranked.map(track => track.id), ["server-kept"]);
 });
