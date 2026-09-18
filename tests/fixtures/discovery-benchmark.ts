@@ -456,6 +456,20 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
                     "Verdict humain : zéro bon/excellent, deux acceptables et deux mauvais.",
                 ],
             },
+            {
+                label: "post-evidence-refactor-2026-09-18",
+                examples: [
+                    { artist: "Jerry Fuller", title: "Love Me Like That", verdict: "good" },
+                    { artist: "Tõnu Naissoo", title: "Kevad", verdict: "acceptable" },
+                    { artist: "Doug Duffey", title: "Nothing Ventured, Nothing Gained", verdict: "bad" },
+                ],
+                observations: [
+                    "Le chemin Discogs structuré arrive premier avec une preuve strong et a été jugé bon.",
+                    "Les chemins Last.fm de deuxième cercle sont maintenant classés credible/behavioral au lieu de path=none.",
+                    "Un seul morceau par artiste est retenu en Surprends-moi.",
+                    "Le jitter reste faible et ne domine plus le classement.",
+                ],
+            },
         ],
     },
 
