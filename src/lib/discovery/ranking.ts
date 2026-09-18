@@ -126,6 +126,7 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
     return {
       ...base,
       relevance: Math.max(...group.map(track => track.relevance)),
+      artistId: group.find(track => track.artistId)?.artistId ?? base.artistId,
       credits: mergeCredits(group),
       lastfmListeners: lastfm?.lastfmListeners,
       popularity: lb?.popularity,
@@ -216,6 +217,7 @@ export function selectDiverseRecommendations(
     const artistKeys = [
       ...new Set([
         artist,
+        ...(track.artistId ? [`musicbrainz:${track.artistId}`] : []),
         ...structuredKeys,
         ...(track.discogs?.trackArtists.flatMap(item => [
           `discogs:${item.id}`,

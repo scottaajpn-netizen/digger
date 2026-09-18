@@ -489,6 +489,63 @@ test("discovery selection prefers a fifth artist before doubles and collapses ed
   assert.equal(selected.filter(t => t.title.startsWith('Track -')).length, 1);
 });
 
+test("discovery selection collapses artist aliases that share a MusicBrainz artist id", () => {
+  const sharedArtistId = "e56aee57-d90e-40cf-a70d-beb70f6f3c69";
+  const rows = [
+    {
+      id: "kaytradamus-cut",
+      title: "I'll Try (interlude) / BOOM!",
+      artist: "Kaytradamus",
+      artistId: sharedArtistId,
+      scene: "",
+      label: "",
+      tags: [],
+      obscurity: 90,
+      year: 0,
+      colors: ["a", "b"] as [string, string],
+      reason: "ListenBrainz",
+      relevance: 70,
+      origin: "artist-radio" as const,
+      score: 20,
+      scoreBreakdown: emptyScoreBreakdown(),
+      evidence: {
+        tier: "strong" as const,
+        musical: true,
+        path: "behavioral" as const,
+        retrievalDepth: 1,
+      },
+    },
+    {
+      id: "kaytranada-cut",
+      title: "Snap My Finger (instrumental)",
+      artist: "KAYTRANADA",
+      artistId: sharedArtistId,
+      scene: "",
+      label: "",
+      tags: [],
+      obscurity: 90,
+      year: 0,
+      colors: ["a", "b"] as [string, string],
+      reason: "ListenBrainz",
+      relevance: 69,
+      origin: "artist-radio" as const,
+      score: 19,
+      scoreBreakdown: emptyScoreBreakdown(),
+      evidence: {
+        tier: "strong" as const,
+        musical: true,
+        path: "behavioral" as const,
+        retrievalDepth: 1,
+      },
+    },
+  ];
+
+  const selected = selectSurpriseRecommendations(rows, "LAUSSE THE CAT", 10);
+
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0]?.artist, "Kaytradamus");
+});
+
 test("discovery selection collapses instrumental variants of the same track", () => {
   const rows = [
     {
