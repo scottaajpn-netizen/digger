@@ -26,3 +26,62 @@
 .discovery-path-step a{color:#e2a17c;border-color:#5a493d}
 .discovery-path-step a:hover{border-color:var(--orange);color:#ffc09a}
 @media(max-width:700px){.discovery-path-step a,.discovery-path-step b{max-width:120px}.discovery-path{padding:9px}}
+
+
+/* --- Digger fanzine / vinyl art direction --- */
+:root{--paper:#e7e0cf;--olive:#a8b681;--salmon:#df7651;--ink:#111412}
+body{background:#111412}
+body:before{content:"";position:fixed;inset:0;z-index:9999;pointer-events:none;opacity:.08;background-image:repeating-radial-gradient(circle at 17% 31%,#fff 0 1px,transparent 1px 4px),repeating-linear-gradient(93deg,transparent 0 23px,#fff 24px 25px,transparent 26px 73px);background-size:7px 7px,97px 97px;mix-blend-mode:soft-light}
+.app-shell{position:relative}
+.topbar{height:82px;border-bottom:1px solid #3b3c35}
+.topbar .brand{font-size:30px;text-transform:none}
+.local-status{font-family:"Courier New",monospace;letter-spacing:1.4px;font-size:9px}
+.hero{min-height:365px;padding:50px 0 42px;border-bottom:1px solid #2b2e29;position:relative}
+.hero:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,var(--orange),transparent 34%)}
+.hero-copy-block{max-width:720px}
+.hero-catalog{font-family:"Courier New",monospace;color:#a9b58e;gap:12px}
+.hero-catalog>span{width:auto;height:auto;background:none;border-radius:0;color:#d8dfc9;border:1px solid #4c5547;padding:3px 7px;letter-spacing:1.2px}
+.hero h1{font-family:Impact,"Arial Narrow",Arial,sans-serif;font-size:clamp(68px,8.2vw,128px);line-height:.78;letter-spacing:-3px;margin:26px 0 28px;text-transform:uppercase;font-weight:900}
+.hero h1 span{color:var(--paper)}
+.hero h1 em{font-family:Impact,"Arial Narrow",Arial,sans-serif;color:var(--orange);font-style:italic;font-weight:900;letter-spacing:-4px}
+.hero-copy{font-family:Georgia,serif;font-style:italic;color:#d6d1c2;font-size:18px;line-height:1.45}
+.record-illustration{width:390px;height:280px;margin-right:48px}
+.record-sleeve{width:220px;height:232px;left:12px;top:16px;background:#d7d0bd;color:#171915;transform:rotate(-7deg);border:1px solid #797463;border-radius:2px;padding:16px;box-shadow:7px 9px 0 #0005}
+.abstract-sleeve{background:linear-gradient(135deg,#d9d1bc 0 53%,#a4b181 53% 100%);overflow:hidden}
+.sleeve-meta{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:2}
+.sleeve-meta b{font-size:30px;letter-spacing:-1.8px}.sleeve-meta small{font:700 8px/1 "Courier New",monospace;letter-spacing:.8px}
+.sleeve-art{position:absolute;inset:58px 14px 32px;overflow:hidden;border:1px solid #24251f;background:#171915}
+.sleeve-art span,.sleeve-art i{position:absolute;display:block}
+.sleeve-art span:nth-child(1){width:118px;height:118px;border:1px solid #d9d1bc;border-radius:50%;left:-25px;top:8px;box-shadow:0 0 0 8px #171915,0 0 0 9px #d9d1bc,0 0 0 17px #171915,0 0 0 18px #d9d1bc}
+.sleeve-art span:nth-child(2){width:68px;height:106px;background:var(--salmon);right:0;top:0;border-radius:68px 0 0 0}
+.sleeve-art span:nth-child(3){width:73px;height:37px;background:#9dac7f;right:0;bottom:0}
+.sleeve-art i{width:42px;height:74px;right:8px;bottom:8px;background:repeating-linear-gradient(90deg,#d9d1bc 0 4px,transparent 4px 8px)}
+.abstract-sleeve>small{position:absolute;bottom:12px;left:16px;font:700 7px/1 "Courier New",monospace;letter-spacing:.7px}
+.vinyl{left:155px;top:25px;width:225px;height:225px;box-shadow:8px 10px 0 #0006}
+.vinyl>span{background:var(--salmon)}
+.record-sticker{right:-15px;bottom:8px;font-family:"Courier New",monospace;font-style:normal;font-weight:700;font-size:12px;letter-spacing:1.5px;color:#cfd5c5;transform:rotate(-4deg);border-bottom:1px solid #62695e;padding-bottom:3px}
+.controls{border-radius:2px;background:#191c19;box-shadow:inset 0 0 0 1px #111;padding:24px 26px}
+.input-wrap,.dig-button,.direction-buttons button,.collection-filters button,.track-card,.discovery-path,.seed-choices,.suggestion-panel,.soulseek-panel{border-radius:2px}
+.dig-button{background:var(--orange);text-transform:uppercase;letter-spacing:.5px}
+.source-strip{display:flex;align-items:center;gap:11px;margin:14px 0 30px;color:#9ca394;font:10px/1.5 "Courier New",monospace}
+.source-strip>span:first-child{border:1px solid #4e5549;color:#c9d0bb;padding:4px 6px;font-size:8px;letter-spacing:.7px}
+.source-strip details{margin-left:auto;position:relative}
+.source-strip summary{cursor:pointer;color:#b6beab;list-style:none}.source-strip summary::-webkit-details-marker{display:none}
+.source-strip details[open]{z-index:40}
+.source-strip details p{position:absolute;right:0;top:18px;width:min(480px,80vw);margin:0;padding:12px 14px;background:#171a17;border:1px solid #464d42;box-shadow:0 10px 30px #0008;color:#aeb4a8;line-height:1.6;font-family:Arial,Helvetica,sans-serif}
+.results-heading{border-top:1px solid #2e312d;padding-top:26px}
+.results-heading h2{text-transform:uppercase;font-size:29px;letter-spacing:-1px}
+.track-card{box-shadow:3px 4px 0 #0a0c0a;border-color:#353a33}
+.cover:after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.16;background:repeating-linear-gradient(0deg,transparent 0 7px,#000 8px 9px),radial-gradient(circle at 30% 20%,#fff7 0 1px,transparent 1px 3px)}
+.cover-name{font-family:Impact,"Arial Narrow",Arial,sans-serif;letter-spacing:.1px}
+.dig-notes{margin:0 0 22px;border-top:1px solid #2f342d;border-bottom:1px solid #2f342d;padding:9px 0;color:#8f978b;font-size:10px}
+.dig-notes summary{cursor:pointer;list-style:none;color:#b7bfad;font-family:"Courier New",monospace;letter-spacing:.3px}
+.dig-notes summary::-webkit-details-marker{display:none}
+.dig-notes summary:before{content:"＋";color:var(--orange);margin-right:8px}.dig-notes[open] summary:before{content:"−"}
+.dig-notes summary span{display:inline-block;margin-left:6px;border:1px solid #3d4439;padding:1px 5px;color:#87907f}
+.dig-notes>div{display:grid;gap:4px;margin-top:9px;padding-left:17px}
+.dig-notes p{margin:0;line-height:1.5}
+footer{font-family:"Courier New",monospace;letter-spacing:.4px}
+footer p{color:#c7ceba;font-weight:700}
+@media(max-width:1150px){.record-illustration{margin-right:0;transform:scale(.86);transform-origin:right center}}
+@media(max-width:700px){.hero h1{font-size:64px;line-height:.82}.hero-copy{font-size:16px}.source-strip{align-items:flex-start;flex-wrap:wrap}.source-strip details{margin-left:0;width:100%}.source-strip details p{left:0;right:auto;width:100%}.results-heading{padding-top:20px}}
