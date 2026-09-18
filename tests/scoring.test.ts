@@ -215,6 +215,39 @@ test("Surprends-moi keeps retrieval rank and jitter subordinate to recommendatio
   assert.equal(ranked[0].evidence?.musical, false);
 });
 
+test("Surprends-moi does not treat a Discogs origin as recommendation proof by itself", () => {
+  const ranked = rank([
+    candidate("discogs-source-only", {
+      relevance: 80,
+      tags: [],
+      year: 0,
+      country: undefined,
+      origin: "discogs-deep",
+      discogs: {
+        releaseId: 1,
+        title: "Fixture release",
+        artists: [{ id: 1, name: "Fixture Artist" }],
+        labels: [],
+        genres: [],
+        styles: [],
+        compilation: false,
+        sourceUrl: "https://www.discogs.com/release/1",
+        fetchedAt: "2026-09-18T00:00:00.000Z",
+        position: "A1",
+        trackArtists: [{ id: 1, name: "Fixture Artist" }],
+        role: "release-track",
+        path: [],
+        audience: "unknown",
+      },
+    }),
+  ], request({ direction: "Surprends-moi", obscurity: 100 }));
+
+  assert.equal(ranked.length, 1);
+  assert.equal(ranked[0].scoreBreakdown.discogs, 0);
+  assert.equal(ranked[0].evidence?.tier, "credible");
+  assert.equal(ranked[0].evidence?.path, "structured");
+});
+
 test("path scoring rewards verified depth without making longest path automatically best", () => {
   const directListening = discoveryPathScoreAdjustment(path("listening", 1), "Rabbit hole");
   const deepListening = discoveryPathScoreAdjustment(path("listening", 3), "Rabbit hole");
