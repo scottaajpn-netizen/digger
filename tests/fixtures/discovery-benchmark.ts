@@ -27,6 +27,12 @@ export type BenchmarkPoolObservation = {
         unknownAudience?: number;
     };
 };
+export type BenchmarkFollowUpRun = {
+    label: string;
+    examples: BenchmarkExample[];
+    observations: string[];
+};
+
 export type DiscoveryBenchmarkCase = {
     id: string;
     seed: {
@@ -39,6 +45,7 @@ export type DiscoveryBenchmarkCase = {
     examples: BenchmarkExample[];
     observations: string[];
     poolObservation?: BenchmarkPoolObservation;
+    followUpRuns?: BenchmarkFollowUpRun[];
 };
 
 export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
@@ -433,6 +440,23 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
             "Last.fm deep répète plusieurs morceaux des mêmes branches.",
             "Les scores sont très élevés malgré une affinité musicale non mesurée.",
         ],
+        followUpRuns: [
+            {
+                label: "pre-evidence-refactor-2026-09-18",
+                examples: [
+                    { artist: "Doug Duffey", title: "Nothing Ventured, Nothing Gained", verdict: "bad" },
+                    { artist: "Tõnu Naissoo", title: "Kevad", verdict: "acceptable" },
+                    { artist: "Doug Duffey", title: "Workin' Man's Blues", verdict: "bad" },
+                    { artist: "Tõnu Naissoo", title: "Komistades", verdict: "acceptable" },
+                ],
+                observations: [
+                    "Quatre places occupées par seulement deux artistes.",
+                    "Aucun des quatre candidats n'avait de similarité musicale, tag partagé ou preuve Discogs mesurée.",
+                    "Les scores de 173 à 188 étaient surtout produits par retrieval relevance, origin, direction et un jitter pouvant dépasser +60.",
+                    "Verdict humain : zéro bon/excellent, deux acceptables et deux mauvais.",
+                ],
+            },
+        ],
     },
 
     {
@@ -481,5 +505,20 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
                 unknownAudience: 1,
             },
         },
+        followUpRuns: [
+            {
+                label: "post-lastfm-identity-fix-2026-09-18",
+                examples: [
+                    { artist: "Teleclere", title: "Affection / Defection", verdict: "bad" },
+                    { artist: "Stevie Fontaine", title: "Right Girl Wrong Time", verdict: "excellent" },
+                ],
+                observations: [
+                    "La contamination vers les artistes allemands a disparu après la vérification d'identité Last.fm.",
+                    "Affection / Defection affichait 71 % d'affinité métadonnées mais a été jugé mauvais.",
+                    "Right Girl Wrong Time affichait seulement 2 % d'affinité métadonnées mais a été jugé excellent.",
+                    "La version Saxophone Instrumental était une variante du même morceau et ne doit pas compter comme découverte indépendante.",
+                ],
+            },
+        ],
     },
 ];
