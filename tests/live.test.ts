@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, searchLive, selectDiverseRecommendations } from "../src/lib/providers/live";
+import { passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, searchLive, selectDiverseRecommendations, selectSurpriseRecommendations } from "../src/lib/providers/live";
 
 const emptyScoreBreakdown = () => ({
   relevance: 0,
@@ -168,6 +168,81 @@ test("deep discovery favors second-circle sources", () => {
   assert.ok(selected.filter(track => track.origin === "lastfm-deep").length >= 3);
 });
 
+
+test("Surprends-moi selection prefers evidence-backed unique artists and caps wildcards", () => {
+  const make = (
+    id: string,
+    artist: string,
+    score: number,
+    tier: "strong" | "credible" | "exploratory",
+  ) => ({
+    id,
+    title: id,
+    artist,
+    scene: "",
+    label: "",
+    tags: [],
+    obscurity: 90,
+    year: 0,
+    colors: ["a", "b"] as [string, string],
+    reason: "fixture",
+    relevance: 60,
+    origin: "lastfm-deep" as const,
+    score,
+    scoreBreakdown: emptyScoreBreakdown(),
+    evidence: {
+      tier,
+      musical: tier === "strong",
+      path: tier === "exploratory" ? "catalogue" as const : "behavioral" as const,
+      retrievalDepth: 2,
+    },
+  });
+
+  const selected = selectSurpriseRecommendations([
+    make("supported-a1", "Artist A", 70, "credible"),
+    make("supported-a2", "Artist A", 69, "credible"),
+    make("supported-b", "Artist B", 60, "strong"),
+    make("wild-1", "Wild 1", 200, "exploratory"),
+    make("wild-2", "Wild 2", 190, "exploratory"),
+    make("wild-3", "Wild 3", 180, "exploratory"),
+  ], "Seed Artist", 10);
+
+  assert.deepEqual(
+    selected.map(track => track.id),
+    ["supported-a1", "supported-b", "wild-1", "wild-2"],
+  );
+  assert.equal(new Set(selected.map(track => track.artist)).size, selected.length);
+  assert.equal(selected.filter(track => track.evidence?.tier === "exploratory").length, 2);
+});
+
+test("Surprends-moi selection does not fill the list with repeated supported artists", () => {
+  const rows = Array.from({ length: 4 }, (_, index) => ({
+    id: `rita-${index}`,
+    title: `Track ${index}`,
+    artist: index < 2 ? "Doug Duffey" : "Tõnu Naissoo",
+    scene: "",
+    label: "",
+    tags: [],
+    obscurity: 90,
+    year: 0,
+    colors: ["a", "b"] as [string, string],
+    reason: "second circle",
+    relevance: 76,
+    origin: "lastfm-deep" as const,
+    score: 40 - index,
+    scoreBreakdown: emptyScoreBreakdown(),
+    evidence: {
+      tier: "credible" as const,
+      musical: false,
+      path: "behavioral" as const,
+      retrievalDepth: 2,
+    },
+  }));
+
+  const selected = selectSurpriseRecommendations(rows, "Rita Moss", 10);
+  assert.equal(selected.length, 2);
+  assert.equal(new Set(selected.map(track => track.artist)).size, 2);
+});
 
 test("Last.fm audience maps mainstream tracks to lower obscurity", () => {
   assert.ok(obscurityFromLastFmListeners(500) > obscurityFromLastFmListeners(500000));

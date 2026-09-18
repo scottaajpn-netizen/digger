@@ -153,6 +153,7 @@ export function selectDiverseRecommendations(
   ranked: RankedCandidate[],
   seedArtist: string,
   limit = 10,
+  options: { allowArtistRepeats?: boolean } = {},
 ) {
   ranked = [...ranked].sort(
     (a, b) => b.score - a.score || a.id.localeCompare(b.id),
@@ -229,7 +230,8 @@ export function selectDiverseRecommendations(
     const originCount = originCounts.get(track.origin) || 0;
 
     if (artist === seedArtistName && artistCount >= 1) return false;
-    if (artistCount >= (relaxed ? 2 : 1)) return false;
+    const artistLimit = relaxed && options.allowArtistRepeats !== false ? 2 : 1;
+    if (artistCount >= artistLimit) return false;
     if (
       labels.some(
         label => (labelCounts.get(label) || 0) >= (relaxed ? 3 : 2),
@@ -262,4 +264,44 @@ export function selectDiverseRecommendations(
     if (selected.length >= limit) break;
   }
   return selected;
+}
+
+/**
+ * Surprise mode is intentionally conservative about evidence quality.
+ * Credible/strong candidates get the main list; unsupported retrievals may
+ * appear only as a small wildcard quota. Repeated artists never fill slots.
+ */
+export function selectSurpriseRecommendations(
+  ranked: RankedCandidate[],
+  seedArtist: string,
+  limit = 10,
+) {
+  const supported = ranked.filter(track => track.evidence?.tier !== "exploratory");
+  const primary = selectDiverseRecommendations(
+    supported,
+    seedArtist,
+    limit,
+    { allowArtistRepeats: false },
+  );
+
+  if (primary.length >= limit) return primary;
+
+  const usedArtists = new Set(primary.map(track => normalized(track.artist)));
+  const usedIds = new Set(primary.map(track => track.id));
+  const wildcardLimit = Math.min(2, limit - primary.length);
+
+  const exploratory = ranked.filter(track =>
+    track.evidence?.tier === "exploratory" &&
+    !usedIds.has(track.id) &&
+    !usedArtists.has(normalized(track.artist))
+  );
+
+  const wildcards = selectDiverseRecommendations(
+    exploratory,
+    seedArtist,
+    wildcardLimit,
+    { allowArtistRepeats: false },
+  );
+
+  return [...primary, ...wildcards];
 }
