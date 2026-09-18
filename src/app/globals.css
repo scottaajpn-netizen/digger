@@ -154,3 +154,113 @@ footer p{color:#c7ceba;font-weight:700}
   .hero-copy-block .hero-copy{font-size:17px}
   .hero-copy-block:after{display:none}
 }
+
+
+/* --- track title stickers on record sleeves --- */
+.cover{
+  overflow:visible;
+}
+.track-title-sticker{
+  position:absolute;
+  z-index:6;
+  left:12px;
+  bottom:42px;
+  width:min(78%,210px);
+  padding:9px 10px 8px;
+  color:#191b17;
+  background:#e7dfc9;
+  border:1px solid rgba(38,38,31,.46);
+  box-shadow:4px 5px 0 rgba(0,0,0,.32);
+  font-family:"Courier New",monospace;
+  line-height:1.05;
+  transform-origin:left center;
+  clip-path:polygon(1% 2%,28% 0,53% 2%,76% 0,99% 3%,98% 96%,73% 99%,48% 97%,21% 100%,0 96%);
+}
+.track-title-sticker:before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:.26;
+  background:
+    repeating-linear-gradient(0deg,rgba(0,0,0,.06) 0 1px,transparent 1px 4px),
+    radial-gradient(circle at 18% 22%,rgba(0,0,0,.28) 0 1px,transparent 1px 3px),
+    radial-gradient(circle at 84% 70%,rgba(255,255,255,.75) 0 1px,transparent 1px 4px);
+  mix-blend-mode:multiply;
+}
+.track-title-sticker>*{position:relative;z-index:1}
+.track-title-sticker .sticker-kicker{
+  display:block;
+  margin-bottom:5px;
+  font-size:6px;
+  font-weight:700;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:#8c4d38;
+}
+.track-title-sticker strong{
+  display:block;
+  font-family:Arial,Helvetica,sans-serif;
+  font-size:15px;
+  line-height:1.02;
+  letter-spacing:-.35px;
+  text-transform:none;
+  overflow-wrap:anywhere;
+}
+.track-title-sticker small{
+  display:block;
+  margin-top:5px;
+  font-size:7px;
+  line-height:1.15;
+  letter-spacing:.35px;
+  opacity:.72;
+  overflow-wrap:anywhere;
+}
+.sticker-0{transform:rotate(-2.4deg);background:#e6dfc9}
+.sticker-1{transform:rotate(2.1deg);background:#d9c78e;left:16px}
+.sticker-2{transform:rotate(-1deg);background:#d7a0a0;left:10px}
+.sticker-3{transform:rotate(2.8deg);background:#d8e0cb;left:17px}
+
+.cover-name{
+  position:absolute;
+  left:14px;
+  right:14px;
+  bottom:14px;
+  max-width:72%;
+  font-family:"Courier New",monospace;
+  font-size:8px;
+  line-height:1.1;
+  letter-spacing:.75px;
+  text-transform:uppercase;
+  opacity:.78;
+  text-shadow:none;
+}
+.cover-bottom{
+  position:absolute;
+  right:12px;
+  bottom:14px;
+  margin:0;
+  justify-content:flex-end;
+  max-width:42%;
+  font-size:5px;
+}
+.cover-stamp{
+  top:38px;
+  right:10px;
+  bottom:auto;
+  transform:rotate(-10deg) scale(.92);
+}
+.cover-art{
+  inset:30px 15px 52px;
+  opacity:.52;
+}
+.track-card:hover .track-title-sticker{
+  box-shadow:5px 6px 0 rgba(0,0,0,.38);
+}
+@media(max-width:700px){
+  .track-title-sticker{width:82%;padding:7px 8px 7px;bottom:36px}
+  .track-title-sticker strong{font-size:13px}
+  .track-title-sticker small{font-size:6px}
+  .cover-name{font-size:6px;bottom:10px}
+  .cover-bottom{bottom:10px;font-size:4.5px}
+}
