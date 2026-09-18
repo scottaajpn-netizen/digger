@@ -463,6 +463,53 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
             "Quelques très bonnes pistes mais beaucoup de répétitions de branches.",
             "Obscurité 100 laisse passer des artistes beaucoup trop évidents.",
         ],
+        followUpRuns: [
+            {
+                label: "post-evidence-refactor-2026-09-18",
+                examples: [
+                    {
+                        artist: "Novelist & Qendresa",
+                        title: "DON'T CRY 4 ME",
+                        verdict: "acceptable",
+                        note: "Jugé bof ; conserve une proximité directe avec Qendresa.",
+                    },
+                    {
+                        artist: "Little Dragon & Keinemusik",
+                        title: "Saving My Love",
+                        verdict: "good",
+                    },
+                    {
+                        artist: "Teebs",
+                        title: "SPCD / There's a Watermelon in My Pocket",
+                        verdict: "acceptable",
+                        note: "Jugé niche donc acceptable dans un mode obscurité 100.",
+                    },
+                    {
+                        artist: "Bien à toi feat. Biig Piig",
+                        title: "Rainbow Tables",
+                        verdict: "good",
+                    },
+                    {
+                        artist: "Beyonce feat. J. Cole",
+                        title: "Party (remix)",
+                        verdict: "bad",
+                        note: "Musicalement non évalué comme mauvais, mais jugé beaucoup trop mainstream pour obscurité 100.",
+                    },
+                    {
+                        artist: "threetwenty",
+                        title: "fruit",
+                        verdict: "good",
+                        known: true,
+                        note: "Déjà connu mais apprécié ; wildcard catalogue.",
+                    },
+                ],
+                observations: [
+                    "Biig Piig — Me gustas tú n'a pas reçu de verdict d'écoute car le morceau n'a pas été retrouvé pendant le test, malgré un fort intérêt pour l'artiste.",
+                    "Le run est globalement meilleur que la baseline, mais l'obscurité 100 laisse encore passer un artiste extrêmement mainstream via une version/remix peu écoutée.",
+                    "La popularité au niveau morceau ne suffit donc pas toujours : la notoriété artiste doit être distinguée de l'audience de la piste.",
+                ],
+            },
+        ],
     },
 
     {
