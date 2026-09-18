@@ -123,6 +123,7 @@ test("Diversity limits shared labels across all Discogs origins, including co-la
       preferredTags: 0,
       popularityObscurity: 0,
       audience: 0,
+      artistAudience: 0,
       origin: 0,
       discoveryPath: 0,
       memory: 0,
