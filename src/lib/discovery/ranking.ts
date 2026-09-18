@@ -18,7 +18,25 @@ export type Candidate = Recommendation & {
   feedbackIds?: string[];
 };
 
-export type RankedCandidate = Candidate & { score: number };
+export type ScoreBreakdown = {
+  relevance: number;
+  musicalSimilarity: number;
+  sharedTags: number;
+  preferredTags: number;
+  popularityObscurity: number;
+  audience: number;
+  origin: number;
+  discoveryPath: number;
+  memory: number;
+  discogs: number;
+  direction: number;
+  jitter: number;
+};
+
+export type RankedCandidate = Candidate & {
+  score: number;
+  scoreBreakdown: ScoreBreakdown;
+};
 
 export function obscurityFromLastFmListeners(listeners: number) {
   if (!Number.isFinite(listeners) || listeners <= 0) return 90;
@@ -117,14 +135,14 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
       ],
       ...(editorial
         ? {
-            discogs: editorial.discogs,
-            origin: editorial.origin,
-            reason: editorial.reason,
-            discoveryPath: editorial.discoveryPath || base.discoveryPath,
-            label: base.label || editorial.label,
-            album: base.album || editorial.album,
-            externalIds: { ...editorial.externalIds, ...base.externalIds },
-          }
+          discogs: editorial.discogs,
+          origin: editorial.origin,
+          reason: editorial.reason,
+          discoveryPath: editorial.discoveryPath || base.discoveryPath,
+          label: base.label || editorial.label,
+          album: base.album || editorial.album,
+          externalIds: { ...editorial.externalIds, ...base.externalIds },
+        }
         : {}),
     };
   });
@@ -150,7 +168,7 @@ export function selectDiverseRecommendations(
     trackIdentity({
       ...track,
       title: track.title.replace(
-        /\s*(?:[-–—]|\()\s*(?:radio edit|extended mix|original mix|mixed)\)?\s*$/i,
+        /\s*(?:[-–—]|\()\s*(?:radio edit|extended mix|original mix|mixed|(?:[a-z]+\s+)?instrumental)\)?\s*$/i,
         "",
       ),
     });
@@ -183,15 +201,15 @@ export function selectDiverseRecommendations(
     const structuredKeys = track.discogs
       ? []
       : (track.credits || [])
-          .filter(
-            credit => credit.role === "primary" || credit.role === "featured",
-          )
-          .flatMap(credit => [
-            normalized(credit.name),
-            ...(credit.sourceId
-              ? [`${credit.source}:${credit.sourceId}`]
-              : []),
-          ]);
+        .filter(
+          credit => credit.role === "primary" || credit.role === "featured",
+        )
+        .flatMap(credit => [
+          normalized(credit.name),
+          ...(credit.sourceId
+            ? [`${credit.source}:${credit.sourceId}`]
+            : []),
+        ]);
 
     const artistKeys = [
       ...new Set([

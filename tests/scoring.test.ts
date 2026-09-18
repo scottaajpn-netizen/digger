@@ -60,7 +60,30 @@ function rank(pool: Candidate[], input = request()) {
     seedParticipantKeys: new Set(["seed artist"]),
   });
 }
+test("scoreBreakdown sums to the final score", () => {
+  const ranked = rank([
+    candidate("breakdown-check", {
+      relevance: 73,
+      lastfmListeners: 2400,
+      obscurity: 82,
+      origin: "lastfm-deep",
+    }),
+  ], request({
+    direction: "Surprends-moi",
+    obscurity: 90,
+  }));
 
+  assert.equal(ranked.length, 1);
+
+  const track = ranked[0];
+  const breakdownTotal = Object.values(track.scoreBreakdown)
+    .reduce((sum, value) => sum + value, 0);
+
+  assert.ok(
+    Math.abs(track.score - breakdownTotal) < 0.000001,
+    `score=${track.score}, breakdown=${breakdownTotal}`,
+  );
+});
 test("scoring preserves Même vibe preference for musically close tracks", () => {
   const close = candidate("close");
   const far = candidate("far", {
@@ -154,7 +177,7 @@ test("path scoring favors label evidence specifically in Labels", () => {
   const releasePath = path("editorial", 2, ["track", "release", "track"]);
   assert.ok(
     discoveryPathScoreAdjustment(labelPath, "Labels") >
-      discoveryPathScoreAdjustment(releasePath, "Labels"),
+    discoveryPathScoreAdjustment(releasePath, "Labels"),
   );
 });
 
@@ -163,7 +186,7 @@ test("path scoring values explicit scene context in Même scène", () => {
   const plainPath = path("editorial", 2, ["track", "release", "track"]);
   assert.ok(
     discoveryPathScoreAdjustment(contextPath, "Même scène") >
-      discoveryPathScoreAdjustment(plainPath, "Même scène"),
+    discoveryPathScoreAdjustment(plainPath, "Même scène"),
   );
 });
 

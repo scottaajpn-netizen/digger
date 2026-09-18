@@ -51,7 +51,24 @@ export interface Track {
   discogs?: DiscogsEvidence;
   externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string };
 }
-export interface Recommendation extends Track { reason: string }
+export interface Recommendation extends Track {
+  reason: string;
+  score?: number;
+  scoreBreakdown?: {
+    relevance: number;
+    musicalSimilarity: number;
+    sharedTags: number;
+    preferredTags: number;
+    popularityObscurity: number;
+    audience: number;
+    origin: number;
+    discoveryPath: number;
+    memory: number;
+    discogs: number;
+    direction: number;
+    jitter: number;
+  };
+}
 export type SeedSource = "musicbrainz" | "lastfm" | "discogs" | "mixed";
 export interface SeedReference {
   id: string;

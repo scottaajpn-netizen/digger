@@ -80,19 +80,25 @@ export function parseDiscogsRelease(raw: RawRelease): Release | null {
     if (!trackArtists.length || trackArtists.some(a => !realArtist(a))) return [];
     return [{ title: t.title.trim(), position: typeof t.position === "string" ? t.position : "", artists: trackArtists, credits: discogsCredits(trackArtists, t.extraartists) }];
   });
-  return { releaseId: raw.id, masterId: validId(raw.master_id) ? raw.master_id : undefined, title: raw.title,
+  return {
+    releaseId: raw.id, masterId: validId(raw.master_id) ? raw.master_id : undefined, title: raw.title,
     artists: releaseArtists, labels: (Array.isArray(raw.labels) ? raw.labels : []).filter(l => l && validId(l.id) && typeof l.name === "string" && l.name.trim() && !norm(l.name).startsWith("not on label"))
       .map(l => ({ id: l.id, name: l.name, catalogNumber: typeof l.catno === "string" ? l.catno : undefined })),
     genres: strings(raw.genres), styles: strings(raw.styles), country: typeof raw.country === "string" && raw.country ? raw.country : undefined,
     year: Number.isInteger(raw.year) && raw.year! > 0 ? raw.year : undefined, compilation,
-    sourceUrl: `https://www.discogs.com/release/${raw.id}`, fetchedAt: new Date().toISOString(), tracks };
+    sourceUrl: `https://www.discogs.com/release/${raw.id}`, fetchedAt: new Date().toISOString(), tracks
+  };
 }
 export function profileFromDiscogsRelease(release: DiscogsReleaseEvidence) {
   return { ...normalizeMusicTags([...release.styles, ...release.genres]), scope: "release" as const };
 }
 
 export async function discoverDiscogs(seed: Track, input: DigRequest, parentSignal: AbortSignal,
-  options: { get?: DiscogsGet; enabled?: boolean } = {}): Promise<{ candidates: DiscogsCandidate[]; notes: string[] }> {
+  options: { get?: DiscogsGet; enabled?: boolean } = {}): Promise<{
+    candidates: DiscogsCandidate[];
+    notes: string[];
+    seedRelease?: DiscogsReleaseEvidence;
+  }> {
   if (!(options.enabled ?? !!process.env.DISCOGS_TOKEN?.trim())) return { candidates: [], notes: [] };
   const get = options.get ?? discogsJson;
   const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(22000)]);
@@ -147,7 +153,8 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
       const { tracks: _, ...evidence } = r;
       const name = credit(t.artists);
       const candidateId = `discogs-track:${hash(`${norm(name)}:${norm(t.title)}`)}`;
-      candidates.push({ id: candidateId, title: t.title, artist: name,
+      candidates.push({
+        id: candidateId, title: t.title, artist: name,
         scene: "Connexion Discogs", label: r.labels[0]?.name || "", tags: [], year: 0, album: r.title,
         obscurity: 50, obscurityKnown: false, colors: ["#b6b56d", "#34382c"],
         externalIds: { discogs: r.sourceUrl },
@@ -155,7 +162,8 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
         credits: t.credits,
         discogs: { ...evidence, position: t.position, trackArtists: t.artists, role: r.compilation ? "compilation-track" : "release-track", path, audience: "unknown" },
         reason: `Discogs : « ${seed.title} » → ${path.map(n => n.name).join(" → ")} → « ${t.title} » par ${name}.${origin === "discogs-scene" ? " Voisinage éditorial, pas une scène certifiée." : ""}`,
-        origin, relevance: origin === "discogs-deep" ? 80 : origin === "discogs-label" && input.direction === "Labels" ? 90 : 65 });
+        origin, relevance: origin === "discogs-deep" ? 80 : origin === "discogs-label" && input.direction === "Labels" ? 90 : 65
+      });
     }
   }
   const search = await read<Listing>("database/search", { type: "release", artist: seed.artist, track: seed.title, per_page: "8", page: "1" });
@@ -176,7 +184,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
     if (r?.tracks.some(t => norm(t.title) === norm(seed.title) && sameArtists(t.artists))) matches.push(r);
   }
   const matchedTracks = matches.flatMap(r => r.tracks.filter(t => norm(t.title) === norm(seed.title) && sameArtists(t.artists)));
-  const signatures = new Set(matchedTracks.map(t => t.artists.map(a => a.id).sort((a,b)=>a-b).join(",")));
+  const signatures = new Set(matchedTracks.map(t => t.artists.map(a => a.id).sort((a, b) => a - b).join(",")));
   matchingArtistIds = new Set(matchedTracks.flatMap(t => t.artists.map(a => a.id)));
   if (!matches.length || !matchingArtistIds.size || signatures.size !== 1) return { candidates: [], notes: [...notes, "Discogs : identité du morceau insuffisamment confirmée ; aucune connexion ajoutée."] };
   const root = matches.find(r => seed.album && norm(r.title) === norm(seed.album)) || matches[0];
@@ -245,5 +253,9 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
       add(r, "discogs-scene", [...rootPath, { kind: "context", name: `${root.styles[0]} · ${root.country} · ${root.year}`, url }, releaseNode(r)]);
     }
   }
-  return { candidates, notes: [...notes] };
+  return {
+    candidates,
+    notes: [...notes],
+    seedRelease: root,
+  };
 }

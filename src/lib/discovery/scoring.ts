@@ -104,22 +104,59 @@ export function rankDiscoveryCandidates({
         ),
     )
     .map(track => {
-      const candidateProfile = buildMusicalProfile(track);
+      const candidateProfile = track.discogs
+        ? buildMusicalProfile({
+          ...track,
+          tags: [
+            ...track.tags,
+            ...track.discogs.styles,
+            ...track.discogs.genres,
+          ],
+        })
+        : buildMusicalProfile(track);
       const comparison = compareMusicalProfiles(seedProfile, candidateProfile);
       const shared = track.tags.filter(tag => seed.tags.includes(tag)).length;
 
+      const scoreBreakdown = {
+        relevance: track.relevance,
+        musicalSimilarity: comparison.musicalSimilarity * 55,
+        sharedTags: shared * 3,
+        preferredTags:
+          track.tags.filter(tag => preferred.has(tag)).length * 4,
+        popularityObscurity: 0,
+        audience: 0,
+        origin: 0,
+        discoveryPath: 0,
+        memory: 0,
+        discogs: 0,
+        direction: 0,
+        jitter: 0,
+      };
+
       let score =
-        track.relevance +
-        comparison.musicalSimilarity * 55 +
-        shared * 3 +
-        track.tags.filter(tag => preferred.has(tag)).length * 4;
+        scoreBreakdown.relevance +
+        scoreBreakdown.musicalSimilarity +
+        scoreBreakdown.sharedTags +
+        scoreBreakdown.preferredTags;
 
       if (track.popularity !== undefined) {
-        score -= Math.abs(track.obscurity - input.obscurity) * 0.45;
-        if (input.obscurity >= 80 && track.popularity > 35)
-          score -= (track.popularity - 35) * 1.25;
-        if (input.obscurity >= 95 && track.popularity > 20)
-          score -= (track.popularity - 20) * 1.5;
+        const obscurityPenalty =
+          -Math.abs(track.obscurity - input.obscurity) * 0.45;
+
+        score += obscurityPenalty;
+        scoreBreakdown.popularityObscurity += obscurityPenalty;
+
+        if (input.obscurity >= 80 && track.popularity > 35) {
+          const popularityPenalty = -(track.popularity - 35) * 1.25;
+          score += popularityPenalty;
+          scoreBreakdown.popularityObscurity += popularityPenalty;
+        }
+
+        if (input.obscurity >= 95 && track.popularity > 20) {
+          const strictPopularityPenalty = -(track.popularity - 20) * 1.5;
+          score += strictPopularityPenalty;
+          scoreBreakdown.popularityObscurity += strictPopularityPenalty;
+        }
       }
 
       if (
@@ -127,25 +164,61 @@ export function rankDiscoveryCandidates({
         track.listenCount !== undefined &&
         track.listenCount > 0
       ) {
-        score -= Math.max(0, Math.log10(track.listenCount + 1) - 3) * 8;
+        const listenCountPenalty =
+          -Math.max(0, Math.log10(track.listenCount + 1) - 3) * 8;
+
+        score += listenCountPenalty;
+        scoreBreakdown.audience += listenCountPenalty;
       }
 
       if (input.obscurity >= 75 && track.lastfmListeners !== undefined) {
-        const audiencePenalty = Math.max(
-          0,
-          Math.log10(track.lastfmListeners + 1) - 3.2,
-        );
-        score -= audiencePenalty * (input.obscurity >= 95 ? 18 : 11);
-        score -= Math.abs(track.obscurity - input.obscurity) * 0.65;
+        const audiencePenalty =
+          -Math.max(
+            0,
+            Math.log10(track.lastfmListeners + 1) - 3.2,
+          ) * (input.obscurity >= 95 ? 18 : 11);
+
+        const audienceObscurityPenalty =
+          -Math.abs(track.obscurity - input.obscurity) * 0.65;
+
+        score += audiencePenalty;
+        score += audienceObscurityPenalty;
+
+        scoreBreakdown.audience += audiencePenalty;
+        scoreBreakdown.audience += audienceObscurityPenalty;
       }
 
-      if (input.obscurity >= 80 && track.origin === "lastfm-tag") score -= 35;
-      if (input.obscurity >= 90 && track.origin === "lastfm-deep") score += 26;
-      if (input.obscurity >= 80 && track.origin === "lastfm-crate") score += 24;
+      if (input.obscurity >= 80 && track.origin === "lastfm-tag") {
+        score -= 35;
+        scoreBreakdown.origin -= 35;
+      }
 
-      score += discoveryPathScoreAdjustment(track.discoveryPath, input.direction);
-      const memoryKey = discoveryPathPreferenceKey(track.discoveryPath, input.direction);
-      if (memoryKey) score += input.memory?.pathScores[memoryKey] || 0;
+      if (input.obscurity >= 90 && track.origin === "lastfm-deep") {
+        score += 26;
+        scoreBreakdown.origin += 26;
+      }
+
+      if (input.obscurity >= 80 && track.origin === "lastfm-crate") {
+        score += 24;
+        scoreBreakdown.origin += 24;
+      }
+
+      const discoveryPathAdjustment =
+        discoveryPathScoreAdjustment(track.discoveryPath, input.direction);
+
+      score += discoveryPathAdjustment;
+      scoreBreakdown.discoveryPath += discoveryPathAdjustment;
+
+      const memoryKey = discoveryPathPreferenceKey(
+        track.discoveryPath,
+        input.direction,
+      );
+
+      if (memoryKey) {
+        const memoryAdjustment = input.memory?.pathScores[memoryKey] || 0;
+        score += memoryAdjustment;
+        scoreBreakdown.memory += memoryAdjustment;
+      }
 
       if (track.discogs) {
         // Editorial metadata is release-scoped, separate from track similarity.
@@ -154,31 +227,69 @@ export function rankDiscoveryCandidates({
           seedProfile.subgenres.includes(style),
         ).length;
         const styleWeight = track.discogs.compilation ? 2 : 5;
-        score += Math.min(2, styleOverlap) * styleWeight;
 
-        if (input.direction === "Labels" && track.origin === "discogs-label")
+        const styleBonus = Math.min(2, styleOverlap) * styleWeight;
+        score += styleBonus;
+        scoreBreakdown.discogs += styleBonus;
+
+        if (input.direction === "Labels" && track.origin === "discogs-label") {
           score += 45;
-        if (input.direction === "Même scène" && track.origin === "discogs-scene")
+          scoreBreakdown.discogs += 45;
+        }
+
+        if (
+          input.direction === "Même scène" &&
+          track.origin === "discogs-scene"
+        ) {
           score += 25;
-        if (input.direction === "Rabbit hole" && track.origin === "discogs-deep")
+          scoreBreakdown.discogs += 25;
+        }
+
+        if (
+          input.direction === "Rabbit hole" &&
+          track.origin === "discogs-deep"
+        ) {
           score += 45;
+          scoreBreakdown.discogs += 45;
+        }
+
         if (
           input.direction === "Surprends-moi" &&
           input.obscurity >= 80 &&
           track.origin === "discogs-deep"
-        )
+        ) {
           score += 35;
+          scoreBreakdown.discogs += 35;
+        }
       }
 
       if (input.direction === "Même vibe") {
-        score += comparison.musicalSimilarity * 35;
-        if (track.origin === "tag" || track.origin === "lastfm-tag") score += 10;
-        if (track.origin === "lastfm-similar") score += 14;
+        const vibeSimilarityBonus = comparison.musicalSimilarity * 35;
+        score += vibeSimilarityBonus;
+        scoreBreakdown.direction += vibeSimilarityBonus;
+
+        if (track.origin === "tag" || track.origin === "lastfm-tag") {
+          score += 10;
+          scoreBreakdown.direction += 10;
+        }
+
+        if (track.origin === "lastfm-similar") {
+          score += 14;
+          scoreBreakdown.direction += 14;
+        }
       }
 
       if (input.direction === "Même scène") {
-        if (comparison.country) score += 22;
-        score += comparison.subgenre * 16 + comparison.rawTags * 10;
+        if (comparison.country) {
+          score += 22;
+          scoreBreakdown.direction += 22;
+        }
+
+        const sceneSimilarityBonus =
+          comparison.subgenre * 16 + comparison.rawTags * 10;
+
+        score += sceneSimilarityBonus;
+        scoreBreakdown.direction += sceneSimilarityBonus;
       }
 
       if (input.direction === "Labels") {
@@ -186,37 +297,85 @@ export function rankDiscoveryCandidates({
           seed.label &&
           track.label &&
           normalized(seed.label) === normalized(track.label)
-        )
+        ) {
           score += 34;
-        score += comparison.subgenre * 12;
+          scoreBreakdown.direction += 34;
+        }
+
+        const labelSimilarityBonus = comparison.subgenre * 12;
+        score += labelSimilarityBonus;
+        scoreBreakdown.direction += labelSimilarityBonus;
       }
 
       if (input.direction === "Rabbit hole") {
         score += 18;
-        if (track.origin === "lastfm-deep") score += 22;
-        if (track.origin === "lastfm-crate") score += 28;
-        if (track.origin === "lastfm-tag") score -= 12;
-        score +=
+        scoreBreakdown.direction += 18;
+
+        if (track.origin === "lastfm-deep") {
+          score += 22;
+          scoreBreakdown.direction += 22;
+        }
+
+        if (track.origin === "lastfm-crate") {
+          score += 28;
+          scoreBreakdown.direction += 28;
+        }
+
+        if (track.origin === "lastfm-tag") {
+          score -= 12;
+          scoreBreakdown.direction -= 12;
+        }
+
+        const rabbitHoleBonus =
           (1 - comparison.musicalSimilarity) * 8 +
           comparison.genre * 12 +
           comparison.traits * 12;
+
+        score += rabbitHoleBonus;
+        scoreBreakdown.direction += rabbitHoleBonus;
       }
 
       const jitter = hash(`${track.id}:${input.session}`) % 31;
+
       if (input.direction === "Surprends-moi") {
-        score += jitter * 2.2 + (1 - comparison.musicalSimilarity) * 14;
-        if (input.obscurity >= 80 && track.origin === "lastfm-deep") score += 30;
-        if (input.obscurity >= 80 && track.origin === "lastfm-similar") score += 8;
-        if (input.obscurity >= 80 && track.origin === "release") score += 10;
+        const jitterBonus = jitter * 2.2;
+        score += jitterBonus;
+        scoreBreakdown.jitter += jitterBonus;
+
+        const surpriseDistanceBonus =
+          (1 - comparison.musicalSimilarity) * 14;
+
+        score += surpriseDistanceBonus;
+        scoreBreakdown.direction += surpriseDistanceBonus;
+
+        if (input.obscurity >= 80 && track.origin === "lastfm-deep") {
+          score += 30;
+          scoreBreakdown.direction += 30;
+        }
+
+        if (input.obscurity >= 80 && track.origin === "lastfm-similar") {
+          score += 8;
+          scoreBreakdown.direction += 8;
+        }
+
+        if (input.obscurity >= 80 && track.origin === "release") {
+          score += 10;
+          scoreBreakdown.direction += 10;
+        }
+
         if (
           comparison.genre === 0 &&
           comparison.subgenre === 0 &&
           comparison.traits === 0 &&
           comparison.rawTags === 0
-        )
+        ) {
           score -= 20;
+          scoreBreakdown.direction -= 20;
+        }
       } else {
-        score += jitter * 0.12;
+        const jitterBonus = jitter * 0.12;
+        score += jitterBonus;
+        scoreBreakdown.jitter += jitterBonus;
       }
 
       const sharedSubgenres = candidateProfile.subgenres.filter(value =>
@@ -236,6 +395,7 @@ export function rankDiscoveryCandidates({
         ...track,
         reason,
         score,
+        scoreBreakdown,
         analysis: {
           genres: candidateProfile.genres,
           subgenres: candidateProfile.subgenres,
