@@ -266,14 +266,6 @@ export function rankDiscoveryCandidates({
           scoreBreakdown.discogs += 45;
         }
 
-        if (
-          input.direction === "Surprends-moi" &&
-          input.obscurity >= 80 &&
-          track.origin === "discogs-deep"
-        ) {
-          score += 35;
-          scoreBreakdown.discogs += 35;
-        }
       }
 
       if (input.direction === "Même vibe") {
