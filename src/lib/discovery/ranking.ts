@@ -1,5 +1,5 @@
 import type { DiscogsOrigin } from "../providers/discogs";
-import type { ArtistCredit, Recommendation, Track } from "../types";
+import type { ArtistCredit, CandidateEvidence, Recommendation, Track } from "../types";
 
 export type CandidateOrigin =
   | DiscogsOrigin
@@ -36,6 +36,7 @@ export type ScoreBreakdown = {
 export type RankedCandidate = Candidate & {
   score: number;
   scoreBreakdown: ScoreBreakdown;
+  evidence?: CandidateEvidence;
 };
 
 export function obscurityFromLastFmListeners(listeners: number) {

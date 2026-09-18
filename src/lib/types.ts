@@ -10,6 +10,14 @@ export interface MusicalAnalysis {
   traits: string[];
   similarity?: number;
 }
+export type CandidateEvidenceTier = "strong" | "credible" | "exploratory";
+export type CandidateEvidencePath = "structured" | "behavioral" | "catalogue" | "tag" | "none";
+export interface CandidateEvidence {
+  tier: CandidateEvidenceTier;
+  musical: boolean;
+  path: CandidateEvidencePath;
+  retrievalDepth: number;
+}
 export type DiscoveryPathSource = "discogs" | "lastfm" | "listenbrainz" | "musicbrainz";
 export type DiscoveryPathEvidence =
   | "editorial"
@@ -54,6 +62,7 @@ export interface Track {
 export interface Recommendation extends Track {
   reason: string;
   score?: number;
+  evidence?: CandidateEvidence;
   scoreBreakdown?: {
     relevance: number;
     musicalSimilarity: number;

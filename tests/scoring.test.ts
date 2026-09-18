@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildMusicalProfile } from "../src/lib/music/profile";
+import { assessCandidateEvidence } from "../src/lib/discovery/evidence";
 import { discoveryPathPreferenceKey } from "../src/lib/discovery/paths";
 import { discoveryPathScoreAdjustment, rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
 import type { Candidate } from "../src/lib/discovery/ranking";
@@ -162,6 +163,56 @@ const path = (
     name: `${kind}-${index}`,
     source: evidence === "editorial" ? "discogs" : "lastfm",
   })),
+});
+
+test("evidence separates a credible behavioral path from unsupported catalogue retrieval", () => {
+  const noMusicalOverlap = {
+    genre: 0,
+    subgenre: 0,
+    traits: 0,
+    rawTags: 0,
+    labels: 0,
+    country: 0,
+    year: 0,
+  };
+
+  const behavioral = assessCandidateEvidence(
+    { discoveryPath: path("listening", 2) },
+    noMusicalOverlap,
+  );
+  const catalogue = assessCandidateEvidence(
+    { discoveryPath: path("catalogue", 3) },
+    noMusicalOverlap,
+  );
+
+  assert.equal(behavioral.tier, "credible");
+  assert.equal(behavioral.path, "behavioral");
+  assert.equal(catalogue.tier, "exploratory");
+  assert.equal(catalogue.path, "catalogue");
+});
+
+test("Surprends-moi keeps retrieval rank and jitter subordinate to recommendation evidence", () => {
+  const ranked = rank([
+    candidate("retrieval-heavy", {
+      relevance: 80,
+      tags: [],
+      year: 0,
+      country: undefined,
+      origin: "lastfm-deep",
+      discoveryPath: path("listening", 2),
+    }),
+  ], request({
+    direction: "Surprends-moi",
+    obscurity: 100,
+    session: 7,
+  }));
+
+  assert.equal(ranked.length, 1);
+  assert.equal(ranked[0].scoreBreakdown.relevance, 16);
+  assert.equal(ranked[0].scoreBreakdown.origin, 0);
+  assert.ok(Math.abs(ranked[0].scoreBreakdown.jitter) <= 3.75);
+  assert.equal(ranked[0].evidence?.tier, "credible");
+  assert.equal(ranked[0].evidence?.musical, false);
 });
 
 test("path scoring rewards verified depth without making longest path automatically best", () => {

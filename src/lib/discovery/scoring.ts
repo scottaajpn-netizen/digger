@@ -1,6 +1,7 @@
 import { buildMusicalProfile, compareMusicalProfiles, type MusicalProfile } from "../music/profile";
 import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
+import { assessCandidateEvidence } from "./evidence";
 import { discoveryPathPreferenceKey } from "./paths";
 import {
   deduplicate,
@@ -115,10 +116,14 @@ export function rankDiscoveryCandidates({
         })
         : buildMusicalProfile(track);
       const comparison = compareMusicalProfiles(seedProfile, candidateProfile);
+      const evidence = assessCandidateEvidence(track, comparison);
       const shared = track.tags.filter(tag => seed.tags.includes(tag)).length;
 
       const scoreBreakdown = {
-        relevance: track.relevance,
+        relevance:
+          input.direction === "Surprends-moi"
+            ? track.relevance * 0.2
+            : track.relevance,
         musicalSimilarity: comparison.musicalSimilarity * 55,
         sharedTags: shared * 3,
         preferredTags:
@@ -193,12 +198,20 @@ export function rankDiscoveryCandidates({
         scoreBreakdown.origin -= 35;
       }
 
-      if (input.obscurity >= 90 && track.origin === "lastfm-deep") {
+      if (
+        input.direction !== "Surprends-moi" &&
+        input.obscurity >= 90 &&
+        track.origin === "lastfm-deep"
+      ) {
         score += 26;
         scoreBreakdown.origin += 26;
       }
 
-      if (input.obscurity >= 80 && track.origin === "lastfm-crate") {
+      if (
+        input.direction !== "Surprends-moi" &&
+        input.obscurity >= 80 &&
+        track.origin === "lastfm-crate"
+      ) {
         score += 24;
         scoreBreakdown.origin += 24;
       }
@@ -338,40 +351,11 @@ export function rankDiscoveryCandidates({
       const jitter = hash(`${track.id}:${input.session}`) % 31;
 
       if (input.direction === "Surprends-moi") {
-        const jitterBonus = jitter * 2.2;
+        // Surprise controls exploration depth upstream. Randomness only breaks
+        // near ties here; it must never rescue an unsupported candidate.
+        const jitterBonus = (jitter - 15) * 0.25;
         score += jitterBonus;
         scoreBreakdown.jitter += jitterBonus;
-
-        const surpriseDistanceBonus =
-          (1 - comparison.musicalSimilarity) * 14;
-
-        score += surpriseDistanceBonus;
-        scoreBreakdown.direction += surpriseDistanceBonus;
-
-        if (input.obscurity >= 80 && track.origin === "lastfm-deep") {
-          score += 30;
-          scoreBreakdown.direction += 30;
-        }
-
-        if (input.obscurity >= 80 && track.origin === "lastfm-similar") {
-          score += 8;
-          scoreBreakdown.direction += 8;
-        }
-
-        if (input.obscurity >= 80 && track.origin === "release") {
-          score += 10;
-          scoreBreakdown.direction += 10;
-        }
-
-        if (
-          comparison.genre === 0 &&
-          comparison.subgenre === 0 &&
-          comparison.traits === 0 &&
-          comparison.rawTags === 0
-        ) {
-          score -= 20;
-          scoreBreakdown.direction -= 20;
-        }
       } else {
         const jitterBonus = jitter * 0.12;
         score += jitterBonus;
@@ -396,6 +380,7 @@ export function rankDiscoveryCandidates({
         reason,
         score,
         scoreBreakdown,
+        evidence,
         analysis: {
           genres: candidateProfile.genres,
           subgenres: candidateProfile.subgenres,
