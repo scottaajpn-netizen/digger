@@ -264,3 +264,187 @@ footer p{color:#c7ceba;font-weight:700}
   .cover-name{font-size:6px;bottom:10px}
   .cover-bottom{bottom:10px;font-size:4.5px}
 }
+
+
+/* --- record sleeve cards: real 33rpm object with vinyl peeking out --- */
+.record-card-art{
+  position:relative;
+  width:100%;
+  aspect-ratio:1.08;
+  overflow:visible;
+  isolation:isolate;
+  padding-right:24px;
+  margin-bottom:0;
+}
+.record-card-art .cover{
+  position:absolute;
+  z-index:2;
+  left:0;
+  top:0;
+  width:88%;
+  height:100%;
+  aspect-ratio:auto;
+  padding:14px;
+  overflow:visible;
+  background-color:var(--cover);
+  box-shadow:
+    7px 8px 0 rgba(0,0,0,.28),
+    inset 0 0 0 1px rgba(0,0,0,.22);
+}
+.record-card-art .cover-art{
+  display:none!important;
+}
+.card-vinyl{
+  position:absolute;
+  z-index:1;
+  right:1px;
+  top:8%;
+  width:76%;
+  aspect-ratio:1;
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 50% 50%,#0c0d0c 0 2.3%,transparent 2.4%),
+    radial-gradient(circle at 50% 50%,var(--cover) 0 16%,#131513 16.2% 17.5%,transparent 17.7%),
+    repeating-radial-gradient(circle at 50% 50%,#171917 0 2px,#0c0d0c 2.7px 3.7px,#212421 4.3px 5px);
+  box-shadow:
+    9px 11px 0 rgba(0,0,0,.26),
+    0 0 0 1px rgba(255,255,255,.045),
+    inset -10px -6px 18px rgba(255,255,255,.025);
+  transform:rotate(4deg);
+}
+.card-vinyl:before{
+  content:"";
+  position:absolute;
+  inset:6.5%;
+  border-radius:50%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%,transparent 0 7px,rgba(255,255,255,.035) 8px 9px,transparent 10px 15px);
+  opacity:.9;
+}
+.card-vinyl:after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  background:#0a0b0a;
+  transform:translate(-50%,-50%);
+  box-shadow:0 0 0 1px rgba(255,255,255,.06);
+}
+.card-vinyl>span{
+  position:absolute;
+  z-index:2;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%) rotate(-4deg);
+  width:25%;
+  aspect-ratio:1;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  color:var(--ink);
+  background:var(--cover);
+  border:1px solid rgba(0,0,0,.28);
+  font:700 7px/1 "Courier New",monospace;
+  letter-spacing:.7px;
+}
+.record-card-art .cover{
+  filter:saturate(.88) contrast(1.03);
+  clip-path:polygon(.8% .6%,26% .1%,51% .8%,77% .2%,99.3% .8%,99.7% 25%,99% 51%,99.6% 76%,99.1% 99.1%,76% 99.5%,50% 99.8%,25% 99.2%,.4% 99.6%,.9% 73%,.3% 47%,.8% 23%);
+}
+.record-card-art .cover:before{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:1;
+  pointer-events:none;
+  opacity:.58;
+  background:
+    linear-gradient(102deg,transparent 0 34%,rgba(255,255,255,.11) 34.3%,rgba(0,0,0,.08) 34.9%,transparent 35.6%),
+    linear-gradient(3deg,transparent 0 79%,rgba(0,0,0,.11) 79.4%,transparent 80%),
+    radial-gradient(circle at 12% 20%,rgba(255,255,255,.16) 0 1px,transparent 1px 4px),
+    radial-gradient(circle at 84% 76%,rgba(0,0,0,.22) 0 1px,transparent 1px 5px),
+    repeating-linear-gradient(0deg,transparent 0 9px,rgba(0,0,0,.045) 10px 11px);
+  mix-blend-mode:multiply;
+}
+.record-card-art .cover:after{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:1;
+  pointer-events:none;
+  opacity:.38;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.07),transparent 3%,transparent 96%,rgba(0,0,0,.12)),
+    linear-gradient(0deg,rgba(0,0,0,.12),transparent 4%,transparent 95%,rgba(255,255,255,.08));
+}
+.record-card-art .cover>*{
+  position:relative;
+  z-index:3;
+}
+
+/* old sleeves now read like printed jackets rather than abstract line drawings */
+.record-card-art .cover-0{
+  background-image:
+    radial-gradient(circle at 47% 34%,transparent 0 21%,rgba(20,22,18,.18) 21.5% 22.6%,transparent 23% 29%,rgba(20,22,18,.14) 29.5% 30.5%,transparent 31%),
+    linear-gradient(180deg,rgba(255,255,255,.03),rgba(0,0,0,.025));
+}
+.record-card-art .cover-1{
+  background-image:
+    repeating-linear-gradient(135deg,transparent 0 30px,rgba(20,22,18,.08) 31px 33px,transparent 34px 58px),
+    linear-gradient(180deg,rgba(255,255,255,.025),rgba(0,0,0,.025));
+}
+.record-card-art .cover-2{
+  background-image:
+    linear-gradient(90deg,transparent 0 19%,rgba(20,22,18,.10) 19.5% 22%,transparent 22.5% 44%,rgba(20,22,18,.07) 44.5% 47%,transparent 47.5%),
+    linear-gradient(180deg,rgba(255,255,255,.03),rgba(0,0,0,.03));
+}
+.record-card-art .cover-3{
+  background-image:
+    radial-gradient(ellipse at 60% 32%,rgba(20,22,18,.13) 0 18%,transparent 18.5%),
+    linear-gradient(180deg,rgba(255,255,255,.025),rgba(0,0,0,.035));
+}
+.record-card-art .track-title-sticker{
+  bottom:44px;
+  width:min(80%,210px);
+}
+.record-card-art .cover-name{
+  bottom:14px;
+}
+.record-card-art .cover-bottom{
+  bottom:14px;
+}
+
+/* preserve the object feel on hover without letting the disc jump */
+.track-card:hover .record-card-art .cover{
+  transform:translateY(-1px);
+}
+.track-card:hover .card-vinyl{
+  transform:translateX(2px) rotate(5deg);
+}
+.card-vinyl,.record-card-art .cover{
+  transition:transform .18s ease;
+}
+
+@media(max-width:1150px){
+  .record-card-art{padding-right:20px}
+  .card-vinyl{width:74%}
+}
+@media(max-width:700px){
+  .record-card-art{
+    aspect-ratio:1.02;
+    padding-right:15px;
+  }
+  .record-card-art .cover{
+    width:89%;
+    padding:11px;
+  }
+  .card-vinyl{
+    width:73%;
+    right:0;
+    top:10%;
+  }
+  .record-card-art .track-title-sticker{bottom:37px}
+}
