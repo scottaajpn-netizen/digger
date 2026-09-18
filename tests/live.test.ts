@@ -259,6 +259,8 @@ test("strict digging rejects mainstream and unknown audiences, including contrad
   assert.equal(passesDeepAudienceGate({ lastfmListeners: 500 }, 100), true);
   assert.equal(passesDeepAudienceGate({ popularity: 12 }, 100), true);
   assert.equal(passesDeepAudienceGate({ lastfmListeners: 500, popularity: 80 }, 100), false);
+  assert.equal(passesDeepAudienceGate({ lastfmListeners: 500, lastfmArtistListeners: 5000000 }, 100), false);
+  assert.equal(passesDeepAudienceGate({ lastfmListeners: 500, lastfmArtistListeners: 1500000 }, 100), true);
   assert.equal(passesDeepAudienceGate({}, 65), true);
 });
 
