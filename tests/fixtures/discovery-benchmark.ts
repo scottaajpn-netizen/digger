@@ -363,6 +363,42 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
             "ListenBrainz semble confondre proximité d'écoute et pertinence de digging.",
             "Plusieurs artistes très connus sont inadaptés à une obscurité de 100.",
         ],
+        followUpRuns: [
+            {
+                label: "post-evidence-refactor-2026-09-18",
+                examples: [
+                    {
+                        artist: "illiterate feat. lausse the cat",
+                        title: "catching moths",
+                        verdict: "excellent",
+                        note: "Excellent, mais LAUSSE THE CAT participe au morceau : découverte adjacente, pas nouvel artiste entièrement indépendant.",
+                    },
+                    {
+                        artist: "JID",
+                        title: "Interlude 3",
+                        verdict: "excellent",
+                        known: true,
+                        note: "Excellent mais déjà connu.",
+                    },
+                    {
+                        artist: "J.I.D feat. L.E. & Hollywood JB",
+                        title: "Heather",
+                        verdict: "good",
+                    },
+                    {
+                        artist: "KAYTRANADA",
+                        title: "Snap My Finger (instrumental)",
+                        verdict: "good",
+                    },
+                ],
+                observations: [
+                    "La qualité ListenBrainz s'est nettement améliorée par rapport à la baseline historique.",
+                    "New Order — Ruined In A Day (Dance Hall Groove) n'a pas reçu de verdict : le lien avec le seed n'était pas compris.",
+                    "Kaytradamus — I'll Try (interlude) / BOOM! n'a pas reçu de verdict car le morceau n'a pas été retrouvé pendant l'écoute.",
+                    "Le run expose deux besoins distincts : gérer les collaborations contenant l'artiste du seed sans les bannir, et canonicaliser les alias d'artistes.",
+                ],
+            },
+        ],
     },
 
     {
