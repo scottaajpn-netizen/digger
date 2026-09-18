@@ -286,6 +286,8 @@ test("Surprends-moi at 100 excludes popular second-hop tracks and does not inven
     assert.equal(result.tracks[0].artist, "Small fixture");
     assert.deepEqual(result.tracks[0].analysis?.subgenres, []);
     assert.equal(result.tracks[0].lastfmListeners, 500);
+    assert.equal(result.tracks[0].discoveryPath?.evidence, "listening");
+    assert.equal(result.tracks[0].evidence?.path, "behavioral");
   }
 });
 
@@ -374,7 +376,11 @@ test("a verified Last.fm seed can be explored without a MusicBrainz ID", async t
   assert.equal(result.seed.artist, "DÜK");
   assert.equal(result.seed.externalIds?.musicbrainz, undefined);
   assert.ok(result.notes?.some(note => note.includes("multi-source")));
-  assert.ok(result.tracks.some(track => track.artist === "Small Artist"));
+  const neighbour = result.tracks.find(track => track.artist === "Small Artist");
+  assert.ok(neighbour);
+  assert.equal(neighbour.discoveryPath?.source, "lastfm");
+  assert.equal(neighbour.discoveryPath?.evidence, "listening");
+  assert.equal(neighbour.evidence?.path, "behavioral");
 });
 
 
@@ -395,6 +401,8 @@ test("catalogue fallback serves sparse non-MBID seeds in every direction and sup
   const first = await recommendLive(request, AbortSignal.timeout(10000));
   assert.equal(first.tracks[0]?.artist, "Neighbour fixture");
   assert.equal(first.tracks[0]?.externalIds?.musicbrainz, undefined);
+  assert.equal(first.tracks[0]?.discoveryPath?.evidence, "catalogue");
+  assert.equal(first.tracks[0]?.evidence?.path, "catalogue");
   const second = await recommendLive({ ...request, seedTrack: first.tracks[0] }, AbortSignal.timeout(10000));
   assert.equal(second.seed.artist, "Neighbour fixture");
   assert.equal(second.tracks[0]?.artist, "Next fixture");
