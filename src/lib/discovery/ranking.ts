@@ -25,6 +25,7 @@ export type ScoreBreakdown = {
   preferredTags: number;
   popularityObscurity: number;
   audience: number;
+  artistAudience: number;
   origin: number;
   discoveryPath: number;
   memory: number;
@@ -48,13 +49,14 @@ export function obscurityFromLastFmListeners(listeners: number) {
 // Product thresholds, not a universal definition of underground music.
 // Unknown audience must never become a shortcut around strict digging.
 export function passesDeepAudienceGate(
-  track: Pick<Track, "lastfmListeners" | "popularity">,
+  track: Pick<Track, "lastfmListeners" | "lastfmArtistListeners" | "popularity">,
   obscurity: number,
 ) {
   if (obscurity < 90) return true;
   const listenerCap = obscurity >= 95 ? 10000 : 30000;
   const popularityCap = obscurity >= 95 ? 20 : 35;
   const listeners = track.lastfmListeners;
+  const artistListeners = track.lastfmArtistListeners;
   const popularity = track.popularity;
   const hasListeners =
     listeners !== undefined &&
@@ -65,6 +67,9 @@ export function passesDeepAudienceGate(
     Number.isFinite(popularity) &&
     popularity >= 0 &&
     popularity <= 100;
+  const hasArtistListeners = artistListeners !== undefined && Number.isFinite(artistListeners) && artistListeners >= 0;
+  const artistListenerCap = obscurity >= 95 ? 3000000 : 8000000;
+  if (hasArtistListeners && artistListeners > artistListenerCap) return false;
   if (hasListeners && listeners > listenerCap) return false;
   if (hasPopularity && popularity > popularityCap) return false;
   return hasListeners || hasPopularity;
@@ -129,6 +134,7 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
       artistId: group.find(track => track.artistId)?.artistId ?? base.artistId,
       credits: mergeCredits(group),
       lastfmListeners: lastfm?.lastfmListeners,
+      lastfmArtistListeners: ordered.find(track => track.lastfmArtistListeners !== undefined)?.lastfmArtistListeners,
       popularity: lb?.popularity,
       obscurity: lastfm?.obscurity ?? lb?.obscurity ?? base.obscurity,
       obscurityKnown: lastfm || lb ? true : base.obscurityKnown,

@@ -52,6 +52,7 @@ export interface Track {
   tags: string[]; obscurity: number; year: number; colors: [string, string];
   artistId?: string; releaseId?: string; country?: string; album?: string;
   popularity?: number; listenCount?: number; lastfmListeners?: number;
+  lastfmArtistListeners?: number;
   analysis?: MusicalAnalysis;
   discoveryPath?: DiscoveryPath;
   credits?: ArtistCredit[];
@@ -70,6 +71,7 @@ export interface Recommendation extends Track {
     preferredTags: number;
     popularityObscurity: number;
     audience: number;
+    artistAudience: number;
     origin: number;
     discoveryPath: number;
     memory: number;

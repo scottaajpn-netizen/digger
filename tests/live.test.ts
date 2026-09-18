@@ -9,6 +9,7 @@ const emptyScoreBreakdown = () => ({
   preferredTags: 0,
   popularityObscurity: 0,
   audience: 0,
+  artistAudience: 0,
   origin: 0,
   discoveryPath: 0,
   memory: 0,

@@ -130,6 +130,7 @@ export function rankDiscoveryCandidates({
           track.tags.filter(tag => preferred.has(tag)).length * 4,
         popularityObscurity: 0,
         audience: 0,
+        artistAudience: 0,
         origin: 0,
         discoveryPath: 0,
         memory: 0,
@@ -191,6 +192,16 @@ export function rankDiscoveryCandidates({
 
         scoreBreakdown.audience += audiencePenalty;
         scoreBreakdown.audience += audienceObscurityPenalty;
+      }
+
+      if (
+        input.obscurity >= 95 &&
+        track.lastfmArtistListeners !== undefined
+      ) {
+        const artistAudiencePenalty =
+          -Math.max(0, Math.log10(track.lastfmArtistListeners + 1) - 5.5) * 6;
+        score += artistAudiencePenalty;
+        scoreBreakdown.artistAudience += artistAudiencePenalty;
       }
 
       if (input.obscurity >= 80 && track.origin === "lastfm-tag") {

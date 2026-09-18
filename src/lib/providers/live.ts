@@ -34,6 +34,14 @@ type LastFmTrackInfoResponse = {
     };
   };
 };
+type LastFmArtistInfoResponse = {
+  artist?: {
+    name?: string;
+    mbid?: string;
+    url?: string;
+    stats?: { listeners?: string; playcount?: string };
+  };
+};
 type LastFmSearchTrack = { name?: string; artist?: string; mbid?: string; url?: string };
 type LastFmSearchResponse = { results?: { trackmatches?: { track?: LastFmSearchTrack[] } } };
 const colors: Track["colors"][] = [["#ca673c", "#392824"], ["#b6b56d", "#34382c"], ["#9fafd2", "#303148"], ["#dcab6f", "#803f34"], ["#74968c", "#25383c"], ["#bd7784", "#522f42"]];
@@ -575,6 +583,39 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
           lastfm: audience.url,
         };
       }
+    }
+  }
+
+  if (input.obscurity >= 95 && process.env.LASTFM_API_KEY) {
+    const artistTargets = new Map<string, { artistId?: string; artist: string }>();
+    for (const track of [...pool].sort((a, b) => b.relevance - a.relevance)) {
+      const key = track.artistId ? `mbid:${track.artistId}` : `name:${normalized(track.artist)}`;
+      if (!artistTargets.has(key)) artistTargets.set(key, { artistId: track.artistId, artist: track.artist });
+      if (artistTargets.size >= 24) break;
+    }
+
+    const targets = [...artistTargets.entries()];
+    const artistInfoRows: (LastFmArtistInfoResponse | null)[] = [];
+    for (let offset = 0; offset < targets.length; offset += 6) {
+      signal.throwIfAborted();
+      artistInfoRows.push(...await Promise.all(targets.slice(offset, offset + 6).map(([, target]) => optional(
+        lastFmJson<LastFmArtistInfoResponse>("artist.getInfo", target.artistId
+          ? { mbid: target.artistId, autocorrect: "1" }
+          : { artist: target.artist, autocorrect: "1" }, signal),
+        `Audience artiste Last.fm indisponible pour « ${target.artist} ».`
+      ))));
+    }
+
+    const artistAudience = new Map<string, number>();
+    targets.forEach(([key], index) => {
+      const listeners = Number(artistInfoRows[index]?.artist?.stats?.listeners || 0);
+      if (Number.isFinite(listeners) && listeners > 0) artistAudience.set(key, listeners);
+    });
+
+    for (const track of pool) {
+      const key = track.artistId ? `mbid:${track.artistId}` : `name:${normalized(track.artist)}`;
+      const listeners = artistAudience.get(key);
+      if (listeners !== undefined) track.lastfmArtistListeners = listeners;
     }
   }
 
