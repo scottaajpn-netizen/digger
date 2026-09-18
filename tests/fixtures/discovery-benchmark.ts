@@ -533,6 +533,21 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
                     "La version Saxophone Instrumental était une variante du même morceau et ne doit pas compter comme découverte indépendante.",
                 ],
             },
+            {
+                label: "post-evidence-refactor-2026-09-18",
+                examples: [
+                    { artist: "J. Parker Band", title: "Live Lady (TZ Edit)", verdict: "good" },
+                    { artist: "Henrietta Thomas", title: "I Want You (Right Now)", verdict: "good" },
+                    { artist: "Mister", title: "I Wanna Thank You", verdict: "excellent" },
+                    { artist: "Jason Joshua & The Beholders", title: "Are You Ready?", verdict: "excellent" },
+                ],
+                observations: [
+                    "Quatre recommandations sur quatre sont jugées positives après la refonte Evidence.",
+                    "Trois recommandations partagent une branche Discogs proche, mais elles sont toutes jugées bonnes ou excellentes.",
+                    "La concentration de branche ne doit donc pas être pénalisée brutalement sans preuve qu'elle dégrade la qualité.",
+                    "Jason Joshua reste excellent malgré une faible affinité métadonnées, confirmant qu'un chemin structuré crédible peut compenser un faible overlap de tags.",
+                ],
+            },
         ],
     },
 ];
