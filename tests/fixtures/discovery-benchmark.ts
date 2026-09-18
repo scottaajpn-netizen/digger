@@ -496,6 +496,12 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
                         note: "Musicalement non évalué comme mauvais, mais jugé beaucoup trop mainstream pour obscurité 100.",
                     },
                     {
+                        artist: "Rosie Lowe",
+                        title: "Me & Your Ghost (Andrealo remix)",
+                        verdict: "acceptable",
+                        note: "Remplacement de Beyoncé après filtrage par notoriété artiste ; morceau jugé plutôt bof, sans rejet net.",
+                    },
+                    {
                         artist: "threetwenty",
                         title: "fruit",
                         verdict: "good",
@@ -507,6 +513,7 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
                     "Biig Piig — Me gustas tú n'a pas reçu de verdict d'écoute car le morceau n'a pas été retrouvé pendant le test, malgré un fort intérêt pour l'artiste.",
                     "Le run est globalement meilleur que la baseline, mais l'obscurité 100 laisse encore passer un artiste extrêmement mainstream via une version/remix peu écoutée.",
                     "La popularité au niveau morceau ne suffit donc pas toujours : la notoriété artiste doit être distinguée de l'audience de la piste.",
+                    "Après ajout du filtre artiste, Beyoncé a été remplacée par Rosie Lowe — Me & Your Ghost (Andrealo remix), jugé acceptable mais pas spécialement apprécié.",
                 ],
             },
         ],
