@@ -8,6 +8,7 @@ import { findCredibleTrackMatch, recommendLive, searchLive } from "../src/lib/pr
 import {
   directions,
   type DigRequest,
+  type DigResponse,
   type Direction,
   type Recommendation,
   type SeedReference,
