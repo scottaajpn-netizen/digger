@@ -2,6 +2,8 @@ node_modules/
 .pnpm-store/
 .next/
 .test-build/
+.benchmark-build/
+benchmark-results/
 .env*
 !.env.example
 *.tsbuildinfo
