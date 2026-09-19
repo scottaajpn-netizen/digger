@@ -50,6 +50,7 @@ type BenchmarkRun = {
   seedResolution: {
     query: string;
     exact: boolean;
+    matchScore?: number;
     selected: {
       id: string;
       artist: string;
