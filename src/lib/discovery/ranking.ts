@@ -1,5 +1,5 @@
 import type { DiscogsOrigin } from "../providers/discogs";
-import type { ArtistCredit, CandidateEvidence, Recommendation, Track } from "../types";
+import type { ArtistCredit, CandidateEvidence, Direction, Recommendation, Track } from "../types";
 
 export type CandidateOrigin =
   | DiscogsOrigin
@@ -156,14 +156,69 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
   });
 }
 
+type SelectionOptions = {
+  allowArtistRepeats?: boolean;
+  scoreAdjustment?: (track: RankedCandidate) => number;
+  originLimit?: number;
+};
+
+export function modeSelectionAdjustment(
+  track: RankedCandidate,
+  direction: Direction,
+) {
+  const distance = Math.max(0, track.discoveryPath?.distance || 0);
+  const evidence = track.evidence;
+  const structured = evidence?.path === "structured";
+  const behavioral = evidence?.path === "behavioral";
+  const catalogue = evidence?.path === "catalogue";
+  const musical = evidence?.musical === true;
+  const strong = evidence?.tier === "strong";
+
+  if (direction === "Même vibe") {
+    let adjustment = distance <= 1 ? 14 : -Math.min(18, (distance - 1) * 5);
+    if (musical) adjustment += 10;
+    if (strong) adjustment += 4;
+    if (behavioral) adjustment += 4;
+    return adjustment;
+  }
+
+  if (direction === "Rabbit hole") {
+    let adjustment = Math.min(6, distance) * 4;
+    if (distance <= 1) adjustment -= 10;
+    if (structured) adjustment += 12;
+    else if (catalogue) adjustment += 6;
+    if (distance >= 3) adjustment += 8;
+    return adjustment;
+  }
+
+  if (direction === "Surprends-moi") {
+    let adjustment = 0;
+    if (structured) adjustment += 10;
+    if (distance >= 2) adjustment += 6;
+    if (distance >= 4) adjustment += 6;
+    if (evidence?.tier === "strong" || evidence?.tier === "credible") {
+      adjustment += 4;
+    }
+    if (behavioral && distance <= 1) adjustment -= 4;
+    return adjustment;
+  }
+
+  return 0;
+}
+
 export function selectDiverseRecommendations(
   ranked: RankedCandidate[],
   seedArtist: string,
   limit = 10,
-  options: { allowArtistRepeats?: boolean } = {},
+  options: SelectionOptions = {},
 ) {
+  const selectionScore = (track: RankedCandidate) =>
+    track.score + (options.scoreAdjustment?.(track) || 0);
   ranked = [...ranked].sort(
-    (a, b) => b.score - a.score || a.id.localeCompare(b.id),
+    (a, b) =>
+      selectionScore(b) - selectionScore(a) ||
+      b.score - a.score ||
+      a.id.localeCompare(b.id),
   );
   const selected: RankedCandidate[] = [];
   const artistCounts = new Map<string, number>();
@@ -246,7 +301,17 @@ export function selectDiverseRecommendations(
       )
     )
       return false;
-    if (originCount >= (relaxed || newArtists ? 6 : 4)) return false;
+    const maxOriginCount =
+      options.originLimit === undefined
+        ? relaxed || newArtists
+          ? 6
+          : 4
+        : relaxed
+          ? options.originLimit + 2
+          : newArtists
+            ? options.originLimit + 1
+            : options.originLimit;
+    if (originCount >= maxOriginCount) return false;
 
     selected.push(track);
     for (const key of artistKeys) {
@@ -283,13 +348,14 @@ export function selectSurpriseRecommendations(
   ranked: RankedCandidate[],
   seedArtist: string,
   limit = 10,
+  options: Pick<SelectionOptions, "scoreAdjustment" | "originLimit"> = {},
 ) {
   const supported = ranked.filter(track => track.evidence?.tier !== "exploratory");
   const primary = selectDiverseRecommendations(
     supported,
     seedArtist,
     limit,
-    { allowArtistRepeats: false },
+    { allowArtistRepeats: false, ...options },
   );
 
   if (primary.length >= limit) return primary;
@@ -308,8 +374,37 @@ export function selectSurpriseRecommendations(
     exploratory,
     seedArtist,
     wildcardLimit,
-    { allowArtistRepeats: false },
+    { allowArtistRepeats: false, ...options },
   );
 
   return [...primary, ...wildcards];
+}
+
+export function selectModeRecommendations(
+  ranked: RankedCandidate[],
+  seedArtist: string,
+  direction: Direction,
+  limit = 10,
+) {
+  const scoreAdjustment = (track: RankedCandidate) =>
+    modeSelectionAdjustment(track, direction);
+
+  if (direction === "Surprends-moi") {
+    return selectSurpriseRecommendations(
+      ranked,
+      seedArtist,
+      limit,
+      { scoreAdjustment, originLimit: 2 },
+    );
+  }
+
+  return selectDiverseRecommendations(
+    ranked,
+    seedArtist,
+    limit,
+    {
+      scoreAdjustment,
+      ...(direction === "Rabbit hole" ? { originLimit: 3 } : {}),
+    },
+  );
 }

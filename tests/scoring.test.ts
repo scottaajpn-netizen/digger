@@ -4,7 +4,7 @@ import { buildMusicalProfile } from "../src/lib/music/profile";
 import { assessCandidateEvidence } from "../src/lib/discovery/evidence";
 import { discoveryPathPreferenceKey } from "../src/lib/discovery/paths";
 import { discoveryPathScoreAdjustment, rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
-import type { Candidate } from "../src/lib/discovery/ranking";
+import { modeSelectionAdjustment, selectModeRecommendations, type Candidate, type RankedCandidate } from "../src/lib/discovery/ranking";
 import type { DigRequest, DiscoveryPath, Track } from "../src/lib/types";
 
 const seed: Track = {
@@ -322,4 +322,152 @@ test("server memory excludes tracks marked as already known", () => {
     }),
   );
   assert.deepEqual(ranked.map(track => track.id), ["server-kept"]);
+});
+
+
+const emptyBreakdown = () => ({
+  relevance: 0,
+  musicalSimilarity: 0,
+  sharedTags: 0,
+  preferredTags: 0,
+  popularityObscurity: 0,
+  audience: 0,
+  artistAudience: 0,
+  origin: 0,
+  discoveryPath: 0,
+  memory: 0,
+  discogs: 0,
+  direction: 0,
+  jitter: 0,
+});
+
+function rankedFixture(
+  id: string,
+  score: number,
+  origin: RankedCandidate["origin"],
+  distance: number,
+  evidence: RankedCandidate["evidence"],
+): RankedCandidate {
+  return {
+    ...candidate(id, {
+      artist: `Artist ${id}`,
+      origin,
+      discoveryPath: {
+        source: origin.startsWith("discogs") ? "discogs" : "lastfm",
+        evidence:
+          evidence?.path === "structured"
+            ? "editorial"
+            : evidence?.path === "catalogue"
+              ? "catalogue"
+              : "listening",
+        nodes: [],
+        distance,
+      },
+    }),
+    score,
+    scoreBreakdown: emptyBreakdown(),
+    evidence,
+  };
+}
+
+test("mode policy separates direct vibe from deep rabbit-hole selection", () => {
+  const direct = rankedFixture(
+    "direct",
+    100,
+    "artist-radio",
+    1,
+    { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+  );
+  const deepStructured = rankedFixture(
+    "deep-structured",
+    94,
+    "discogs-deep",
+    5,
+    { tier: "strong", musical: true, path: "structured", retrievalDepth: 5 },
+  );
+  const secondHop = rankedFixture(
+    "second-hop",
+    96,
+    "lastfm-deep",
+    2,
+    { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 2 },
+  );
+
+  assert.ok(
+    modeSelectionAdjustment(direct, "Même vibe") >
+      modeSelectionAdjustment(deepStructured, "Même vibe"),
+  );
+  assert.ok(
+    modeSelectionAdjustment(deepStructured, "Rabbit hole") >
+      modeSelectionAdjustment(direct, "Rabbit hole"),
+  );
+
+  const vibe = selectModeRecommendations(
+    [direct, deepStructured, secondHop],
+    "Seed Artist",
+    "Même vibe",
+    3,
+  );
+  const rabbit = selectModeRecommendations(
+    [direct, deepStructured, secondHop],
+    "Seed Artist",
+    "Rabbit hole",
+    3,
+  );
+
+  assert.equal(vibe[0]?.id, "direct");
+  assert.equal(rabbit[0]?.id, "deep-structured");
+});
+
+test("Surprends-moi mode policy spreads origins before relaxing", () => {
+  const rows: RankedCandidate[] = [
+    rankedFixture(
+      "radio-1",
+      100,
+      "artist-radio",
+      1,
+      { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+    ),
+    rankedFixture(
+      "radio-2",
+      99,
+      "artist-radio",
+      1,
+      { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+    ),
+    rankedFixture(
+      "radio-3",
+      98,
+      "artist-radio",
+      1,
+      { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+    ),
+    rankedFixture(
+      "discogs-1",
+      88,
+      "discogs-label",
+      4,
+      { tier: "strong", musical: true, path: "structured", retrievalDepth: 4 },
+    ),
+    rankedFixture(
+      "deep-1",
+      86,
+      "lastfm-deep",
+      2,
+      { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 2 },
+    ),
+  ];
+
+  const selected = selectModeRecommendations(
+    rows,
+    "Seed Artist",
+    "Surprends-moi",
+    4,
+  );
+
+  assert.ok(selected.some(track => track.origin === "discogs-label"));
+  assert.ok(selected.some(track => track.origin === "lastfm-deep"));
+  assert.ok(
+    selected.filter(track => track.origin === "artist-radio").length <= 2,
+  );
 });

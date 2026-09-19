@@ -2,10 +2,10 @@ import { discoverDiscogs } from "./discogs";
 import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } from "../types";
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
-import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
+import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, listenBrainzPath } from "../discovery/paths";
-export { deduplicate, mergeDiscoveryCandidates, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
+export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Credit = { name?: string; joinphrase?: string; artist?: { id?: string; name?: string; country?: string } };
@@ -631,9 +631,12 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     ? ranked.filter(track => track.origin !== "lastfm-tag" && passesDeepAudienceGate(track, input.obscurity))
     : ranked;
 
-  const selected = input.direction === "Surprends-moi"
-    ? selectSurpriseRecommendations(deepRanked, seed.artist, 10)
-    : selectDiverseRecommendations(deepRanked, seed.artist, 10);
+  const selected = selectModeRecommendations(
+    deepRanked,
+    seed.artist,
+    input.direction,
+    10,
+  );
   if (selected.length < 10) notes.push(`Seulement ${selected.length} pistes exploitables avec ces données et tes exclusions. Aucun morceau inventé n’a été ajouté.`);
   if (input.obscurity >= 90) notes.push("Digging strict : les audiences trop élevées ou non vérifiées sont écartées, même si cela réduit la sélection. Les auditeurs Last.fm mesurent le morceau, pas la notoriété globale de l’artiste.");
   if (!selected.some(t => t.popularity !== undefined || t.lastfmListeners !== undefined)) notes.push("Popularité indisponible pour cette sélection : le curseur agit sur l’ouverture de la radio, sans indice d’obscurité individuel.");
