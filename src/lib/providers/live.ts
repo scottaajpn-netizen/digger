@@ -769,12 +769,43 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     : seedProfile;
   const merged = mergeDiscoveryCandidates(pool);
   pool.splice(0, pool.length, ...merged);
+  const retrievalStage = (
+    tracks: Array<Pick<Candidate, "origin" | "lastfmListeners" | "popularity">>,
+  ) => {
+    const byOrigin: Record<string, number> = {};
+    let withTrackAudience = 0;
+    for (const track of tracks) {
+      byOrigin[track.origin] = (byOrigin[track.origin] || 0) + 1;
+      if (
+        (track.lastfmListeners !== undefined &&
+          Number.isFinite(track.lastfmListeners)) ||
+        (track.popularity !== undefined && Number.isFinite(track.popularity))
+      ) {
+        withTrackAudience += 1;
+      }
+    }
+    return {
+      total: tracks.length,
+      byOrigin,
+      withTrackAudience,
+      withoutTrackAudience: tracks.length - withTrackAudience,
+    };
+  };
+  const retrievalDiagnostics = {
+    mergedPool: retrievalStage(pool),
+    trackAudienceTargets: retrievalStage([]),
+    afterTrackAudience: retrievalStage([]),
+    strictGateKept: retrievalStage([]),
+    strictGateRejected: retrievalStage([]),
+    selected: retrievalStage([]),
+  };
   if (input.obscurity >= 75 && process.env.LASTFM_API_KEY) {
     const enrichmentTargets = deduplicate(
       [...pool]
         .filter(track => track.id !== seed.id && normalized(track.artist) !== normalized(seed.artist) && track.lastfmListeners === undefined)
         .sort((a, b) => b.relevance - a.relevance)
     ).slice(0, 60);
+    retrievalDiagnostics.trackAudienceTargets = retrievalStage(enrichmentTargets);
 
     const audienceRows: (LastFmTrackInfoResponse | null)[] = [];
     // Bound outbound concurrency; abort still propagates through each HTTP request.
@@ -834,6 +865,8 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       }
     }
   }
+
+  retrievalDiagnostics.afterTrackAudience = retrievalStage(pool);
 
   let ranked = rankDiscoveryCandidates({
     pool,
@@ -1044,6 +1077,10 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const deepRanked = input.obscurity >= 90
     ? ranked.filter(track => track.origin !== "lastfm-tag" && passesDeepAudienceGate(track, input.obscurity))
     : ranked;
+  const deepRankedIds = new Set(deepRanked.map(track => track.id));
+  const rejectedRanked = ranked.filter(track => !deepRankedIds.has(track.id));
+  retrievalDiagnostics.strictGateKept = retrievalStage(deepRanked);
+  retrievalDiagnostics.strictGateRejected = retrievalStage(rejectedRanked);
 
   const selected = selectModeRecommendations(
     deepRanked,
@@ -1051,8 +1088,18 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     input.direction,
     10,
   );
+  retrievalDiagnostics.selected = retrievalStage(selected);
   if (selected.length < 10) notes.push(`Seulement ${selected.length} pistes exploitables avec ces données et tes exclusions. Aucun morceau inventé n’a été ajouté.`);
   if (input.obscurity >= 90) notes.push("Digging strict : les audiences trop élevées ou non vérifiées sont écartées, même si cela réduit la sélection. Digger croise l’audience du morceau et, quand elle est disponible, celle des artistes crédités.");
   if (!selected.some(t => t.popularity !== undefined || t.lastfmListeners !== undefined)) notes.push("Popularité indisponible pour cette sélection : le curseur agit sur l’ouverture de la radio, sans indice d’obscurité individuel.");
-  return { tracks: selected.map(({ relevance: _, feedbackIds: ___, ...track }) => track), seed, source: "live", fallback: false, direction: input.direction, obscurity: input.obscurity, notes: [...new Set(notes)] };
+  return {
+    tracks: selected.map(({ relevance: _, feedbackIds: ___, ...track }) => track),
+    seed,
+    source: "live",
+    fallback: false,
+    direction: input.direction,
+    obscurity: input.obscurity,
+    notes: [...new Set(notes)],
+    retrievalDiagnostics,
+  };
 }

@@ -62,6 +62,7 @@ type BenchmarkRun = {
   direction: Direction;
   obscurity: number;
   notes?: string[];
+  retrievalDiagnostics?: DigResponse["retrievalDiagnostics"];
   metrics: ReturnType<typeof measureTracks>;
   humanComparison: ReturnType<typeof measureHumanComparison>;
   tracks: BenchmarkRunTrack[];
@@ -517,6 +518,31 @@ function formatNumber(value: number | undefined) {
       : value.toFixed(1);
 }
 
+function formatOriginCounts(counts: Record<string, number>) {
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([origin, count]) => `${origin}:${count}`)
+    .join(", ");
+}
+
+function printRetrievalDiagnostics(
+  diagnostics: DigResponse["retrievalDiagnostics"],
+) {
+  if (!diagnostics) return;
+  const pool = diagnostics.mergedPool;
+  const targets = diagnostics.trackAudienceTargets;
+  const after = diagnostics.afterTrackAudience;
+  const kept = diagnostics.strictGateKept;
+  const rejected = diagnostics.strictGateRejected;
+  const selected = diagnostics.selected;
+  console.log(
+    `    retrieval: pool=${pool.total} [${formatOriginCounts(pool.byOrigin)}] | audience-targets=${targets.total} [${formatOriginCounts(targets.byOrigin)}]`,
+  );
+  console.log(
+    `    gate: audience-known=${after.withTrackAudience || 0}/${after.total} | kept=${kept.total} [${formatOriginCounts(kept.byOrigin)}] | rejected=${rejected.total} [${formatOriginCounts(rejected.byOrigin)}] | selected=${selected.total}`,
+  );
+}
+
 function printRun(
   benchmarkCase: DiscoveryBenchmarkCase,
   direction: Direction,
@@ -656,6 +682,7 @@ async function main() {
         );
 
         printRun(benchmarkCase, direction, tracks, metrics);
+        printRetrievalDiagnostics(response.retrievalDiagnostics);
         console.log(
           `    humain: match=${humanComparison.matchedCount}/${tracks.length} | positifs=${humanComparison.positiveCount} | bad=${humanComparison.badCount}`,
         );
@@ -685,6 +712,7 @@ async function main() {
           direction,
           obscurity: benchmarkCase.obscurity,
           notes: response.notes,
+          retrievalDiagnostics: response.retrievalDiagnostics,
           metrics,
           humanComparison,
           tracks: tracks.map(track => ({

@@ -104,5 +104,19 @@ export interface DiscoveryMemorySnapshot {
   updatedAt?: string;
 }
 export interface DigRequest { seed: string; seedId?: string; seedTrack?: SeedReference; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number; memory?: DiscoveryMemorySnapshot }
-export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[] }
+export interface RetrievalStageDiagnostics {
+  total: number;
+  byOrigin: Record<string, number>;
+  withTrackAudience?: number;
+  withoutTrackAudience?: number;
+}
+export interface RetrievalDiagnostics {
+  mergedPool: RetrievalStageDiagnostics;
+  trackAudienceTargets: RetrievalStageDiagnostics;
+  afterTrackAudience: RetrievalStageDiagnostics;
+  strictGateKept: RetrievalStageDiagnostics;
+  strictGateRejected: RetrievalStageDiagnostics;
+  selected: RetrievalStageDiagnostics;
+}
+export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics }
 export interface MusicProvider { id: string; search(query: string): Promise<Track[]>; candidates(seed: Track): Promise<Track[]> }
