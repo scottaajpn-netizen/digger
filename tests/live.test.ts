@@ -651,3 +651,20 @@ test("artist audience references fall back to the display artist", () => {
   assert.equal(references[0]?.artist, "Solo Artist");
   assert.equal(references[0]?.key, "name:solo artist");
 });
+
+
+test("artist audience top-up references include all credited participants", () => {
+  const references = artistAudienceReferences({
+    artist: "Fred again.., Lil Yachty & Overmono",
+    credits: [
+      { name: "Fred again..", role: "primary", source: "musicbrainz" },
+      { name: "Lil Yachty", role: "primary", source: "musicbrainz" },
+      { name: "Overmono", role: "primary", source: "musicbrainz" },
+    ],
+  });
+
+  assert.deepEqual(
+    references.map(reference => reference.artist),
+    ["Fred again..", "Lil Yachty", "Overmono"],
+  );
+});
