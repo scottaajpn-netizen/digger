@@ -430,9 +430,8 @@ export function selectModeRecommendations(
     limit,
     {
       scoreAdjustment,
-      ...(direction === "Rabbit hole"
-        ? { originLimit: 3, allowArtistRepeats: false }
-        : {}),
+      allowArtistRepeats: false,
+      ...(direction === "Rabbit hole" ? { originLimit: 3 } : {}),
     },
   );
 }

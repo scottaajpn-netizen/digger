@@ -553,3 +553,59 @@ test("artist audience shortlist follows mode policy and deduplicates artists", (
   assert.equal(vibe[0]?.id, "audience-direct");
   assert.equal(new Set(rabbit.map(track => track.artist)).size, rabbit.length);
 });
+
+
+test("all discovery modes keep artists unique while relaxing other caps", () => {
+  const first = rankedFixture(
+    "global-artist-a-1",
+    120,
+    "artist-radio",
+    1,
+    { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+  );
+  const duplicate = {
+    ...rankedFixture(
+      "global-artist-a-2",
+      119,
+      "lastfm-deep",
+      2,
+      { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 2 },
+    ),
+    artist: first.artist,
+    artistId: first.artistId,
+  };
+  const uniqueRows = Array.from({ length: 4 }, (_, index) =>
+    rankedFixture(
+      `global-unique-${index}`,
+      100 - index,
+      index % 2 === 0 ? "artist-radio" : "discogs-label",
+      index + 1,
+      {
+        tier: "strong",
+        musical: true,
+        path: index % 2 === 0 ? "behavioral" : "structured",
+        retrievalDepth: index + 1,
+      },
+    ),
+  );
+
+  for (const direction of [
+    "Même vibe",
+    "Même scène",
+    "Labels",
+    "Rabbit hole",
+    "Surprends-moi",
+  ] as const) {
+    const selected = selectModeRecommendations(
+      [first, duplicate, ...uniqueRows],
+      "Seed Artist",
+      direction,
+      6,
+    );
+    assert.equal(
+      new Set(selected.map(track => track.artist)).size,
+      selected.length,
+      `repeated artist in ${direction}`,
+    );
+  }
+});
