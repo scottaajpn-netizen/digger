@@ -242,12 +242,14 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
       );
       if (!matchingTracks.length) continue;
       if (
-        matchingTracks.some(
-          track =>
-            norm(track.title) !== norm(seed.title) ||
-            new Set(track.artists.map(a => artistKey(a.name))).size !==
-              seedCreditKeys.size,
-        )
+        matchingTracks.some(track => {
+          const trackKeys = new Set(track.artists.map(a => artistKey(a.name)));
+          const exactArtistMatch = seedCreditKeys.size
+            ? trackKeys.size === seedCreditKeys.size &&
+              [...trackKeys].every(key => seedCreditKeys.has(key))
+            : artistKey(credit(track.artists)) === artistKey(seed.artist);
+          return norm(track.title) !== norm(seed.title) || !exactArtistMatch;
+        })
       ) {
         tolerantIdentityUsed = true;
       }
