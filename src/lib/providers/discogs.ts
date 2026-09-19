@@ -38,7 +38,54 @@ interface Listing { results?: Row[]; releases?: Row[]; pagination?: { pages?: nu
 const norm = (s: string) => s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const artistName = (s: string) => s.replace(/\s*\(\d+\)$/, "").replace(/, The$/, "").trim();
 const artistKey = (s: string) => norm(artistName(s)).replace(/^the /, "");
+const seedQualifierPattern =
+  /\s*[([{]\s*(?:(?:feat(?:uring)?|ft)\.?|prod(?:uced)?(?:\s+by)?|official(?:\s+music)?\s+video|official\s+audio|lyrics?|visuali[sz]er)\b[^)\]}]*[)\]}]\s*/giu;
+const coreSeedTitle = (s: string) => norm(s.replace(seedQualifierPattern, " "));
 const hash = (s: string) => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7);
+
+export function discogsSeedMatchScore(
+  seed: Pick<Track, "title" | "artist" | "credits">,
+  track: { title: string; artists: DiscogsArtist[] },
+) {
+  const seedTitle = norm(seed.title);
+  const candidateTitle = norm(track.title);
+  const seedCore = coreSeedTitle(seed.title);
+  const candidateCore = coreSeedTitle(track.title);
+
+  let titleScore = 0;
+  if (seedTitle && candidateTitle === seedTitle) titleScore = 70;
+  else if (seedCore && candidateCore === seedCore) titleScore = 65;
+  else if (
+    seedCore.length >= 4 &&
+    candidateCore.length >= 4 &&
+    (candidateCore.includes(seedCore) || seedCore.includes(candidateCore))
+  ) {
+    titleScore = 45;
+  }
+
+  const seedKeys = [...new Set(
+    (seed.credits || [])
+      .filter(credit => credit.role === "primary" || credit.role === "featured")
+      .map(credit => artistKey(credit.name))
+      .filter(Boolean),
+  )];
+  const candidateKeys = [...new Set(track.artists.map(item => artistKey(item.name)).filter(Boolean))];
+
+  let artistScore = 0;
+  if (!seedKeys.length) {
+    artistScore =
+      artistKey(credit(track.artists)) === artistKey(seed.artist) ? 30 : 0;
+  } else {
+    const candidateSet = new Set(candidateKeys);
+    const overlap = seedKeys.filter(key => candidateSet.has(key)).length;
+    if (overlap > 0) {
+      const coverage = overlap / Math.max(1, seedKeys.length);
+      artistScore = 18 + Math.round(12 * coverage);
+    }
+  }
+
+  return titleScore + artistScore;
+}
 const validId = (id: unknown): id is number => Number.isSafeInteger(id) && Number(id) > 0;
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((s): s is string => typeof s === "string" && !!s.trim()) : [];
 const artists = (value: unknown): DiscogsArtist[] => Array.isArray(value) ? value.filter(a => a && validId(a.id) && typeof a.name === "string" && a.name.trim()).map(a => ({ id: a.id, name: a.name, join: typeof a.join === "string" ? a.join : undefined })) : [];
@@ -166,27 +213,107 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
       });
     }
   }
-  const search = await read<Listing>("database/search", { type: "release", artist: seed.artist, track: seed.title, per_page: "8", page: "1" });
-  const matches: Release[] = [];
-  const searchRows = Array.isArray(search?.results) ? search.results.filter(r => r && validId(r.id)) : [];
-  // Album agreement is useful, but full track credits still have to match.
-  const sorted = [...searchRows].sort((a, b) => Number(!!seed.album && norm(b.title || "").includes(norm(seed.album))) - Number(!!seed.album && norm(a.title || "").includes(norm(seed.album))));
   seedCreditKeys = new Set((seed.credits || [])
     .filter(c => c.role === "primary" || c.role === "featured")
     .map(c => artistKey(c.name)));
-  const sameArtists = (trackArtists: DiscogsArtist[]) => {
-    if (!seedCreditKeys.size) return artistKey(credit(trackArtists)) === artistKey(seed.artist);
-    const keys = new Set(trackArtists.map(a => artistKey(a.name)));
-    return keys.size === seedCreditKeys.size && [...keys].every(key => seedCreditKeys.has(key));
+
+  const matches: Release[] = [];
+  const inspectedReleaseIds = new Set<number>();
+  let tolerantIdentityUsed = false;
+
+  const inspectSearchRows = async (search: Listing | null) => {
+    const searchRows = Array.isArray(search?.results)
+      ? search.results.filter(r => r && validId(r.id))
+      : [];
+    // Album agreement is useful, but track identity remains decisive.
+    const sorted = [...searchRows].sort(
+      (a, b) =>
+        Number(!!seed.album && norm(b.title || "").includes(norm(seed.album))) -
+        Number(!!seed.album && norm(a.title || "").includes(norm(seed.album))),
+    );
+
+    for (const row of sorted.slice(0, 3)) {
+      if (inspectedReleaseIds.has(row.id)) continue;
+      inspectedReleaseIds.add(row.id);
+      const r = await fromRow(row);
+      if (!r) continue;
+      const matchingTracks = r.tracks.filter(
+        track => discogsSeedMatchScore(seed, track) >= 80,
+      );
+      if (!matchingTracks.length) continue;
+      if (
+        matchingTracks.some(
+          track =>
+            norm(track.title) !== norm(seed.title) ||
+            new Set(track.artists.map(a => artistKey(a.name))).size !==
+              seedCreditKeys.size,
+        )
+      ) {
+        tolerantIdentityUsed = true;
+      }
+      matches.push(r);
+    }
   };
-  for (const row of sorted.slice(0, 3)) {
-    const r = await fromRow(row);
-    if (r?.tracks.some(t => norm(t.title) === norm(seed.title) && sameArtists(t.artists))) matches.push(r);
+
+  const primarySearch = await read<Listing>("database/search", {
+    type: "release",
+    artist: seed.artist,
+    track: seed.title,
+    per_page: "8",
+    page: "1",
+  });
+  await inspectSearchRows(primarySearch);
+
+  if (!matches.length) {
+    const primaryCredit =
+      (seed.credits || []).find(credit => credit.role === "primary")?.name ||
+      seed.artist;
+    const simplifiedTitle = coreSeedTitle(seed.title);
+    const simplifiedArtist = artistName(primaryCredit);
+    if (
+      simplifiedTitle &&
+      simplifiedArtist &&
+      (norm(simplifiedTitle) !== norm(seed.title) ||
+        artistKey(simplifiedArtist) !== artistKey(seed.artist))
+    ) {
+      const fallbackSearch = await read<Listing>("database/search", {
+        type: "release",
+        artist: simplifiedArtist,
+        track: simplifiedTitle,
+        per_page: "8",
+        page: "1",
+      });
+      await inspectSearchRows(fallbackSearch);
+      if (matches.length) tolerantIdentityUsed = true;
+    }
   }
-  const matchedTracks = matches.flatMap(r => r.tracks.filter(t => norm(t.title) === norm(seed.title) && sameArtists(t.artists)));
-  const signatures = new Set(matchedTracks.map(t => t.artists.map(a => a.id).sort((a, b) => a - b).join(",")));
-  matchingArtistIds = new Set(matchedTracks.flatMap(t => t.artists.map(a => a.id)));
-  if (!matches.length || !matchingArtistIds.size || signatures.size !== 1) return { candidates: [], notes: [...notes, "Discogs : identité du morceau insuffisamment confirmée ; aucune connexion ajoutée."] };
+
+  const matchedTracks = matches.flatMap(r =>
+    r.tracks.filter(track => discogsSeedMatchScore(seed, track) >= 80),
+  );
+  const signatures = new Set(
+    matchedTracks.map(t =>
+      t.artists
+        .map(a => a.id)
+        .sort((a, b) => a - b)
+        .join(","),
+    ),
+  );
+  matchingArtistIds = new Set(
+    matchedTracks.flatMap(t => t.artists.map(a => a.id)),
+  );
+  if (!matches.length || !matchingArtistIds.size || signatures.size !== 1) {
+    return {
+      candidates: [],
+      notes: [
+        ...notes,
+        "Discogs : identité du morceau insuffisamment confirmée ; aucune connexion ajoutée.",
+      ],
+    };
+  }
+  if (tolerantIdentityUsed) {
+    notes.add("Discogs : identité du morceau confirmée par correspondance tolérante.");
+  }
   const root = matches.find(r => seed.album && norm(r.title) === norm(seed.album)) || matches[0];
   const roots = [root, ...matches.filter(r => r.releaseId !== root.releaseId)];
   const deep = input.direction === "Rabbit hole" || input.direction === "Surprends-moi" && input.obscurity >= 80;

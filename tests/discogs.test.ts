@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { discoverDiscogs, parseDiscogsRelease } from "../src/lib/providers/discogs";
+import { discogsSeedMatchScore, discoverDiscogs, parseDiscogsRelease } from "../src/lib/providers/discogs";
 import { createDiscogsClient, DiscogsError, type DiscogsGet } from "../src/lib/providers/discogs-http";
 import { mergeDiscoveryCandidates, passesDeepAudienceGate, selectDiverseRecommendations } from "../src/lib/providers/live";
 import type { DigRequest, Track } from "../src/lib/types";
@@ -300,4 +300,81 @@ test("Discogs confirms multi-artist seeds from structured credits even when join
   };
   const result = await discoverDiscogs(collabSeed, { ...input, seed: collabSeed.title, direction: "Même vibe" }, AbortSignal.timeout(1000), { enabled: true, get });
   assert.ok(result.candidates.some(c => c.artist === "Peer Artist"));
+});
+
+
+test("Discogs seed identity accepts metadata qualifiers but rejects remixes", () => {
+  const tolerantSeed: Track = {
+    ...seed,
+    title: "Good Love (Prod. by Hugo Mari)",
+    artist: "Qendresa x Hugo Mari",
+    credits: [
+      { name: "Qendresa", role: "primary", source: "musicbrainz", sourceId: "11111111-1111-1111-1111-111111111111" },
+      { name: "Hugo Mari", role: "primary", source: "musicbrainz", sourceId: "22222222-2222-2222-2222-222222222222" },
+    ],
+  };
+
+  assert.ok(
+    discogsSeedMatchScore(tolerantSeed, {
+      title: "Good Love",
+      artists: [a(10, "Qendresa")],
+    }) >= 80,
+  );
+  assert.ok(
+    discogsSeedMatchScore(tolerantSeed, {
+      title: "Good Love (Remix)",
+      artists: [a(10, "Qendresa")],
+    }) < 80,
+  );
+  assert.ok(
+    discogsSeedMatchScore(tolerantSeed, {
+      title: "Other Song",
+      artists: [a(10, "Qendresa")],
+    }) < 80,
+  );
+});
+
+test("Discogs retries one simplified seed search when metadata is decorated", async () => {
+  const tolerantSeed: Track = {
+    ...seed,
+    title: "Good Love (Prod. by Hugo Mari)",
+    artist: "Qendresa x Hugo Mari",
+    credits: [
+      { name: "Qendresa", role: "primary", source: "musicbrainz", sourceId: "11111111-1111-1111-1111-111111111111" },
+      { name: "Hugo Mari", role: "primary", source: "musicbrainz", sourceId: "22222222-2222-2222-2222-222222222222" },
+    ],
+  };
+  const tolerantRoot = {
+    ...root,
+    title: "Good Love EP",
+    tracklist: [
+      { title: "Good Love", position: "A1", artists: [a(10, "Qendresa")] },
+      { title: "Peer track", position: "B1", artists: [peer] },
+    ],
+  };
+  const searches: Record<string, string>[] = [];
+  const get: DiscogsGet = async <T>(path: string, params: Record<string, string>) => {
+    if (path === "database/search") {
+      searches.push(params);
+      return (searches.length === 1
+        ? { results: [] }
+        : { results: [{ id: 10, type: "release" }] }) as T;
+    }
+    if (path === "releases/10") return tolerantRoot as T;
+    if (path === "labels/50/releases") return { releases: [] } as T;
+    throw new Error(`Unexpected tolerant fixture path ${path}`);
+  };
+
+  const result = await discoverDiscogs(
+    tolerantSeed,
+    { ...input, direction: "Même vibe" },
+    AbortSignal.timeout(1000),
+    { enabled: true, get },
+  );
+
+  assert.equal(searches.length, 2);
+  assert.equal(searches[1].artist, "Qendresa");
+  assert.equal(searches[1].track, "good love");
+  assert.ok(result.candidates.some(candidate => candidate.artist === "Peer"));
+  assert.ok(result.notes.some(note => note.includes("correspondance tolérante")));
 });
