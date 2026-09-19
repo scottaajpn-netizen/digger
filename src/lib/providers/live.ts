@@ -12,6 +12,19 @@ type Credit = { name?: string; joinphrase?: string; artist?: { id?: string; name
 interface Recording { id: string; title: string; score?: number; disambiguation?: string; "artist-credit"?: Credit[]; tags?: { name: string; count?: number }[]; "first-release-date"?: string; releases?: Release[] }
 interface Release { id: string; title: string; date?: string; "label-info"?: { label?: { id: string; name: string } }[]; media?: { tracks?: { recording?: Recording }[] }[] }
 interface Metadata { artist?: { name?: string; artists?: { name: string; artist_mbid: string; area?: string }[] }; recording?: { name?: string; first_release_date?: string }; release?: { name?: string; mbid?: string; year?: number }; tag?: Record<string, { tag?: string; count?: number }[]> }
+type MusicBrainzArtistMetadata = {
+  tags?: { name: string; count?: number }[];
+  area?: { name: string };
+  country?: string;
+  relations?: { type?: string; url?: { resource?: string } }[];
+};
+function discogsArtistIdFromResource(resource: string | undefined) {
+  if (!resource) return undefined;
+  const match = resource.match(/(?:www\.)?discogs\.com\/artist\/(\d+)/i);
+  if (!match) return undefined;
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+}
 type Radio = { recording_mbid: string; similar_artist_name?: string; similar_artist_mbid?: string; total_listen_count?: number; percent?: number };
 type LastFmArtist = { name?: string; mbid?: string; url?: string };
 type LastFmTrack = { name?: string; mbid?: string; url?: string; match?: number | string; listeners?: number | string; artist?: LastFmArtist | { name?: string } };
@@ -416,25 +429,6 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     ...(seed.artistId && mbidPattern.test(seed.artistId) ? [seed.artistId] : []),
   ])].slice(0, 3);
 
-  // Start the bounded editorial graph alongside the existing providers.
-  const discogsJob = discoverDiscogs({ ...seed }, input, signal).catch(() => ({
-    candidates: [],
-    notes: ["Discogs indisponible ; les autres sources restent actives."],
-    seedRelease: undefined,
-    diagnostics: {
-      status: "provider-error" as const,
-      calls: 0,
-      primarySearchRows: 0,
-      fallbackSearchUsed: false,
-      fallbackSearchRows: 0,
-      inspectedReleases: 0,
-      bestMatchScore: 0,
-      matchedReleases: 0,
-      matchedTracks: 0,
-      candidateCount: 0,
-      byOrigin: {} as Record<string, number>,
-    },
-  }));
   const lastFmSeedJob = Promise.all([
     optional(
       lastFmJson<LastFmTagsResponse>("track.getTopTags", {
@@ -455,11 +449,60 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   ]);
   const [artistRows, release] = await Promise.all([
     Promise.all(seedArtistIds.map(id => optional(
-      musicJson<{ tags?: { name: string; count?: number }[]; area?: { name: string }; country?: string }>("mb", `artist/${id}`, { inc: "tags" }, signal),
+      musicJson<MusicBrainzArtistMetadata>("mb", `artist/${id}`, { inc: "tags+url-rels" }, signal),
       "Les informations d’un artiste crédité sont temporairement indisponibles."
     ))),
     seed.releaseId ? optional(musicJson<Release>("mb", `release/${seed.releaseId}`, { inc: "labels+recordings+artist-credits" }, signal), "Les informations de label sont temporairement indisponibles.") : null,
   ]);
+  const discogsArtistAnchors = artistRows.flatMap((row, index) => {
+    const sourceId = seedArtistIds[index];
+    const name =
+      seedParticipants.find(
+        participant =>
+          participant.source === "musicbrainz" &&
+          participant.sourceId === sourceId,
+      )?.name ||
+      seedParticipantNames[index] ||
+      seed.artist;
+    return (row?.relations || []).flatMap(relation => {
+      const id = discogsArtistIdFromResource(relation.url?.resource);
+      return id ? [{ id, name }] : [];
+    });
+  }).filter(
+    (anchor, index, all) =>
+      all.findIndex(other => other.id === anchor.id) === index,
+  ).slice(0, 3);
+
+  // Discogs can still be useful when the exact seed recording is absent from
+  // its database: MusicBrainz artist URL relations provide a curated,
+  // cross-source identity anchor without relying on fuzzy artist-name search.
+  const discogsJob = discoverDiscogs(
+    { ...seed },
+    input,
+    signal,
+    { artistAnchors: discogsArtistAnchors },
+  ).catch(() => ({
+    candidates: [],
+    notes: ["Discogs indisponible ; les autres sources restent actives."],
+    seedRelease: undefined,
+    diagnostics: {
+      status: "provider-error" as const,
+      calls: 0,
+      primarySearchRows: 0,
+      fallbackSearchUsed: false,
+      fallbackSearchRows: 0,
+      artistAnchorUsed: discogsArtistAnchors.length > 0,
+      artistAnchorCount: discogsArtistAnchors.length,
+      artistAnchorReleases: 0,
+      inspectedReleases: 0,
+      bestMatchScore: 0,
+      matchedReleases: 0,
+      matchedTracks: 0,
+      candidateCount: 0,
+      byOrigin: {} as Record<string, number>,
+    },
+  }));
+
   const artistTags = artistRows.flatMap(row => row?.tags || []).sort((a, b) => (b.count || 0) - (a.count || 0)).map(t => t.name);
   seed.tags = [...new Set([...seed.tags, ...artistTags])].slice(0, 8);
   seed.country = artistRows.find(row => row?.country)?.country || seed.country;

@@ -122,12 +122,17 @@ export interface DiscogsRetrievalDiagnostics {
     | "identity-unconfirmed"
     | "identity-ambiguous"
     | "confirmed-no-candidates"
+    | "artist-anchor-no-candidates"
+    | "artist-anchor-ok"
     | "ok"
     | "provider-error";
   calls: number;
   primarySearchRows: number;
   fallbackSearchUsed: boolean;
   fallbackSearchRows: number;
+  artistAnchorUsed: boolean;
+  artistAnchorCount: number;
+  artistAnchorReleases: number;
   inspectedReleases: number;
   bestMatchScore: number;
   matchedReleases: number;

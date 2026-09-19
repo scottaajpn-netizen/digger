@@ -141,7 +141,11 @@ export function profileFromDiscogsRelease(release: DiscogsReleaseEvidence) {
 }
 
 export async function discoverDiscogs(seed: Track, input: DigRequest, parentSignal: AbortSignal,
-  options: { get?: DiscogsGet; enabled?: boolean } = {}): Promise<{
+  options: {
+    get?: DiscogsGet;
+    enabled?: boolean;
+    artistAnchors?: DiscogsArtist[];
+  } = {}): Promise<{
     candidates: DiscogsCandidate[];
     notes: string[];
     seedRelease?: DiscogsReleaseEvidence;
@@ -153,6 +157,9 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
     primarySearchRows: 0,
     fallbackSearchUsed: false,
     fallbackSearchRows: 0,
+    artistAnchorUsed: false,
+    artistAnchorCount: options.artistAnchors?.length || 0,
+    artistAnchorReleases: 0,
     inspectedReleases: 0,
     bestMatchScore: 0,
     matchedReleases: 0,
@@ -344,6 +351,116 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
   if (!matches.length || !matchingArtistIds.size || signatures.size !== 1) {
     const totalSearchRows =
       diagnostics.primarySearchRows + diagnostics.fallbackSearchRows;
+
+    if (
+      totalSearchRows === 0 &&
+      (options.artistAnchors?.length || 0) > 0
+    ) {
+      diagnostics.artistAnchorUsed = true;
+      const anchors = (options.artistAnchors || []).slice(0, 2);
+      matchingArtistIds = new Set(anchors.map(anchor => anchor.id));
+      const deep =
+        input.direction === "Rabbit hole" ||
+        (input.direction === "Surprends-moi" && input.obscurity >= 80);
+
+      for (const anchor of anchors) {
+        if (calls >= 14) break;
+        const rows = await listing(`artists/${anchor.id}/releases`, {
+          sort: "year",
+          sort_order: "desc",
+        });
+        let usableAnchors = 0;
+
+        for (const row of rows.slice(0, 6)) {
+          if (calls >= 15 || usableAnchors >= 2) break;
+          const r = await fromRow(row);
+          if (!r) continue;
+          const containsAnchor =
+            r.artists.some(artist => artist.id === anchor.id) ||
+            r.tracks.some(track =>
+              track.artists.some(artist => artist.id === anchor.id),
+            );
+          if (!containsAnchor) continue;
+
+          usableAnchors += 1;
+          diagnostics.artistAnchorReleases += 1;
+          const anchorPath = [artistNode(anchor), releaseNode(r)];
+          const releaseArtistIds = new Set(
+            r.tracks.flatMap(track => track.artists.map(artist => artist.id)),
+          );
+
+          if (r.compilation || releaseArtistIds.size > 1) {
+            add(r, "discogs-compilation", anchorPath);
+          }
+
+          const label = r.labels[0];
+          if (label && calls < 14) {
+            const labelRows = await listing(`labels/${label.id}/releases`);
+            for (const labelRow of labelRows.slice(0, 4)) {
+              const linked = await fromRow(labelRow);
+              if (
+                !linked ||
+                linked.releaseId === r.releaseId ||
+                !linked.labels.some(item => item.id === label.id)
+              ) {
+                continue;
+              }
+              add(
+                linked,
+                "discogs-label",
+                [...anchorPath, labelNode(label), releaseNode(linked)],
+              );
+              break;
+            }
+          }
+
+          if (deep && releaseArtistIds.size > 1 && calls < 14) {
+            const peer = r.tracks
+              .flatMap(track => track.artists)
+              .find(artist => !matchingArtistIds.has(artist.id));
+            if (peer) {
+              const peerRows = await listing(`artists/${peer.id}/releases`, {
+                sort: "year",
+                sort_order: "desc",
+              });
+              for (const peerRow of peerRows
+                .filter(item => item.role === "Main" || !item.role)
+                .slice(0, 3)) {
+                const linked = await fromRow(peerRow);
+                if (!linked || linked.releaseId === r.releaseId) continue;
+                add(
+                  linked,
+                  "discogs-deep",
+                  [...anchorPath, artistNode(peer), releaseNode(linked)],
+                  peer.id,
+                );
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      diagnostics.candidateCount = candidates.length;
+      for (const candidate of candidates) {
+        diagnostics.byOrigin[candidate.origin] =
+          (diagnostics.byOrigin[candidate.origin] || 0) + 1;
+      }
+      diagnostics.status = candidates.length
+        ? "artist-anchor-ok"
+        : "artist-anchor-no-candidates";
+      notes.add(
+        candidates.length
+          ? "Discogs : exploration ancrée sur un lien artiste vérifié par MusicBrainz, le morceau exact étant absent de Discogs."
+          : "Discogs : artiste relié par MusicBrainz, mais aucune connexion exploitable n’a été trouvée dans le budget.",
+      );
+      return {
+        candidates,
+        notes: [...notes],
+        diagnostics,
+      };
+    }
+
     diagnostics.status =
       totalSearchRows === 0
         ? "search-empty"

@@ -386,3 +386,89 @@ test("Discogs retries one simplified seed search when metadata is decorated", as
   assert.ok(result.candidates.some(candidate => candidate.artist === "Peer"));
   assert.ok(result.notes.some(note => note.includes("correspondance tolérante")));
 });
+
+
+test("Discogs can dig from a MusicBrainz-linked artist when the exact track is absent", async () => {
+  const linkedArtist = a(77, "Qendresa");
+  const anchorRelease = {
+    id: 170,
+    title: "Artist Anchor EP",
+    artists: [linkedArtist],
+    labels: [{ id: 88, name: "Anchor Label" }],
+    tracklist: [{ title: "Anchor Song", position: "A1" }],
+  };
+  const labelPeer = {
+    id: 171,
+    title: "Label Peer EP",
+    artists: [a(78, "Label Peer")],
+    labels: [{ id: 88, name: "Anchor Label" }],
+    tracklist: [{ title: "Peer Cut", position: "A1" }],
+  };
+  const get: DiscogsGet = async <T>(
+    path: string,
+    params: Record<string, string>,
+  ) => {
+    if (path === "database/search") return { results: [] } as T;
+    if (path === "artists/77/releases") {
+      return {
+        releases: [{ id: 170, type: "release", role: "Main" }],
+      } as T;
+    }
+    if (path === "releases/170") return anchorRelease as T;
+    if (path === "labels/88/releases") {
+      return { releases: [{ id: 171, type: "release" }] } as T;
+    }
+    if (path === "releases/171") return labelPeer as T;
+    throw new Error(`Unexpected artist-anchor fixture path ${path} ${JSON.stringify(params)}`);
+  };
+
+  const result = await discoverDiscogs(
+    {
+      ...seed,
+      title: "Missing From Discogs",
+      artist: "Qendresa",
+      credits: [
+        {
+          name: "Qendresa",
+          role: "primary",
+          source: "musicbrainz",
+          sourceId: "11111111-1111-1111-1111-111111111111",
+        },
+      ],
+    },
+    { ...input, direction: "Même vibe" },
+    AbortSignal.timeout(1000),
+    {
+      enabled: true,
+      get,
+      artistAnchors: [linkedArtist],
+    },
+  );
+
+  assert.equal(result.diagnostics.status, "artist-anchor-ok");
+  assert.equal(result.diagnostics.artistAnchorUsed, true);
+  assert.equal(result.diagnostics.artistAnchorCount, 1);
+  assert.ok(result.diagnostics.artistAnchorReleases >= 1);
+  assert.ok(result.candidates.some(candidate => candidate.artist === "Label Peer"));
+  assert.ok(result.candidates.some(candidate => candidate.origin === "discogs-label"));
+});
+
+test("Discogs does not use artist-name guessing when no verified artist anchor exists", async () => {
+  let artistReleaseCalls = 0;
+  const get: DiscogsGet = async <T>(path: string) => {
+    if (path === "database/search") return { results: [] } as T;
+    if (path.startsWith("artists/")) artistReleaseCalls += 1;
+    return { releases: [] } as T;
+  };
+
+  const result = await discoverDiscogs(
+    { ...seed, title: "Absent Track" },
+    input,
+    AbortSignal.timeout(1000),
+    { enabled: true, get },
+  );
+
+  assert.equal(result.diagnostics.status, "search-empty");
+  assert.equal(result.diagnostics.artistAnchorUsed, false);
+  assert.equal(artistReleaseCalls, 0);
+});
