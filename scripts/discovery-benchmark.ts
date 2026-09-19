@@ -15,6 +15,7 @@ import {
 } from "../src/lib/types";
 import {
   discoveryBenchmark,
+  type BenchmarkVerdict,
   type DiscoveryBenchmarkCase,
 } from "../tests/fixtures/discovery-benchmark";
 
@@ -27,6 +28,42 @@ type NumericSummary = {
   min?: number;
   max?: number;
   average?: number;
+};
+
+type HumanVerdictMatch = {
+  verdict: BenchmarkVerdict;
+  known?: boolean;
+  note?: string;
+  source: string;
+  match: "track" | "artist";
+};
+
+type BenchmarkRunTrack = ReturnType<typeof compactTrack> & {
+  humanVerdict?: HumanVerdictMatch;
+};
+
+type BenchmarkRun = {
+  caseId: string;
+  historicalOverall: DiscoveryBenchmarkCase["overall"];
+  historicalObservations: string[];
+  seed: DiscoveryBenchmarkCase["seed"];
+  seedResolution: {
+    query: string;
+    exact: boolean;
+    selected: {
+      id: string;
+      artist: string;
+      title: string;
+      externalIds?: Track["externalIds"];
+    };
+    alternatives: Array<{ id: string; artist: string; title: string }>;
+  };
+  direction: Direction;
+  obscurity: number;
+  notes?: string[];
+  metrics: ReturnType<typeof measureTracks>;
+  humanComparison: ReturnType<typeof measureHumanComparison>;
+  tracks: BenchmarkRunTrack[];
 };
 
 const defaultCaseIds = [
@@ -111,7 +148,10 @@ function hasExplicitEvidence(track: RuntimeRecommendation) {
   );
 }
 
-function measureTracks(tracks: RuntimeRecommendation[]) {
+function measureTracks(
+  tracks: RuntimeRecommendation[],
+  requestedObscurity: number,
+) {
   const artistCounts = countBy(
     tracks.map(track => normalized(track.artist) || track.artist),
   );
@@ -132,6 +172,35 @@ function measureTracks(tracks: RuntimeRecommendation[]) {
       track.lastfmArtistListeners === undefined &&
       track.popularity === undefined,
   ).length;
+  const negativeScoreCount = tracks.filter(
+    track => track.score !== undefined && track.score < 0,
+  ).length;
+  const artistAudienceUnknownCount = tracks.filter(
+    track => track.lastfmArtistListeners === undefined,
+  ).length;
+  const trackAudienceKnownArtistAudienceUnknownCount = tracks.filter(
+    track =>
+      track.lastfmListeners !== undefined &&
+      track.lastfmArtistListeners === undefined,
+  ).length;
+  const strictArtistAudienceLeakCount =
+    requestedObscurity >= 95
+      ? tracks.filter(
+          track =>
+            track.lastfmArtistListeners !== undefined &&
+            track.lastfmArtistListeners > 3_000_000,
+        ).length
+      : 0;
+  const artistToTrackAudienceRatios = tracks.flatMap(track => {
+    if (
+      !track.lastfmListeners ||
+      !track.lastfmArtistListeners ||
+      track.lastfmListeners <= 0
+    ) {
+      return [];
+    }
+    return [track.lastfmArtistListeners / track.lastfmListeners];
+  });
 
   return {
     trackCount: tracks.length,
@@ -148,6 +217,15 @@ function measureTracks(tracks: RuntimeRecommendation[]) {
     strongEvidenceRatio:
       tracks.length === 0 ? 0 : strongEvidenceCount / tracks.length,
     unknownAudienceCount,
+    negativeScoreCount,
+    negativeScoreRatio:
+      tracks.length === 0 ? 0 : negativeScoreCount / tracks.length,
+    artistAudienceUnknownCount,
+    trackAudienceKnownArtistAudienceUnknownCount,
+    strictArtistAudienceLeakCount,
+    artistToTrackAudienceRatio: summarizeNumbers(
+      artistToTrackAudienceRatios,
+    ),
     scores: summarizeNumbers(tracks.map(track => track.score)),
     obscurity: summarizeNumbers(tracks.map(track => track.obscurity)),
     trackListeners: summarizeNumbers(
@@ -158,6 +236,179 @@ function measureTracks(tracks: RuntimeRecommendation[]) {
     ),
     popularity: summarizeNumbers(tracks.map(track => track.popularity)),
   };
+}
+
+
+function historicalExamples(benchmarkCase: DiscoveryBenchmarkCase) {
+  const rows = benchmarkCase.examples.map(example => ({
+    ...example,
+    source: "baseline",
+  }));
+
+  for (const followUp of benchmarkCase.followUpRuns || []) {
+    rows.push(
+      ...followUp.examples.map(example => ({
+        ...example,
+        source: followUp.label,
+      })),
+    );
+  }
+
+  return rows;
+}
+
+function matchHistoricalVerdict(
+  benchmarkCase: DiscoveryBenchmarkCase,
+  track: Pick<Track, "artist" | "title">,
+): HumanVerdictMatch | undefined {
+  const rows = historicalExamples(benchmarkCase);
+  const artist = normalized(track.artist);
+  const title = normalized(track.title);
+
+  const exact = [...rows].reverse().find(
+    example =>
+      example.title &&
+      normalized(example.artist) === artist &&
+      normalized(example.title) === title,
+  );
+
+  if (exact) {
+    return {
+      verdict: exact.verdict,
+      known: exact.known,
+      note: exact.note,
+      source: exact.source,
+      match: "track",
+    };
+  }
+
+  const artistOnly = [...rows].reverse().find(
+    example => !example.title && normalized(example.artist) === artist,
+  );
+
+  if (!artistOnly) return undefined;
+
+  return {
+    verdict: artistOnly.verdict,
+    known: artistOnly.known,
+    note: artistOnly.note,
+    source: artistOnly.source,
+    match: "artist",
+  };
+}
+
+function measureHumanComparison(
+  benchmarkCase: DiscoveryBenchmarkCase,
+  tracks: RuntimeRecommendation[],
+) {
+  const matches = tracks.flatMap(track => {
+    const human = matchHistoricalVerdict(benchmarkCase, track);
+    return human ? [{ track, human }] : [];
+  });
+  const verdictCounts = countBy(matches.map(match => match.human.verdict));
+  const badReappearances = matches
+    .filter(match => match.human.verdict === "bad")
+    .map(match => ({
+      artist: match.track.artist,
+      title: match.track.title,
+      source: match.human.source,
+    }));
+  const knownReappearances = matches
+    .filter(match => match.human.known === true)
+    .map(match => ({
+      artist: match.track.artist,
+      title: match.track.title,
+      verdict: match.human.verdict,
+    }));
+  const positiveCount =
+    (verdictCounts.excellent ?? 0) + (verdictCounts.good ?? 0);
+
+  return {
+    matchedCount: matches.length,
+    coverageRatio: tracks.length === 0 ? 0 : matches.length / tracks.length,
+    verdictCounts,
+    positiveCount,
+    badCount: verdictCounts.bad ?? 0,
+    positiveRatioAmongMatched:
+      matches.length === 0 ? 0 : positiveCount / matches.length,
+    badReappearances,
+    knownReappearances,
+  };
+}
+
+function identityKey(track: Pick<Track, "artist" | "title">) {
+  return `${normalized(track.artist)}\u0000${normalized(track.title)}`;
+}
+
+function artistKey(track: Pick<Track, "artist">) {
+  return normalized(track.artist);
+}
+
+function overlapRatio(left: Set<string>, right: Set<string>) {
+  const intersection = [...left].filter(value => right.has(value)).length;
+  const union = new Set([...left, ...right]).size;
+  return {
+    intersection,
+    union,
+    ratio: union === 0 ? 0 : intersection / union,
+  };
+}
+
+function buildModeOverlap(runs: BenchmarkRun[]) {
+  const byCase = new Map<string, BenchmarkRun[]>();
+
+  for (const run of runs) {
+    byCase.set(run.caseId, [...(byCase.get(run.caseId) || []), run]);
+  }
+
+  return [...byCase.entries()].map(([caseId, caseRuns]) => {
+    const pairs: Array<{
+      left: Direction;
+      right: Direction;
+      tracks: ReturnType<typeof overlapRatio>;
+      artists: ReturnType<typeof overlapRatio>;
+    }> = [];
+
+    for (let leftIndex = 0; leftIndex < caseRuns.length; leftIndex += 1) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < caseRuns.length;
+        rightIndex += 1
+      ) {
+        const left = caseRuns[leftIndex];
+        const right = caseRuns[rightIndex];
+        pairs.push({
+          left: left.direction,
+          right: right.direction,
+          tracks: overlapRatio(
+            new Set(left.tracks.map(identityKey)),
+            new Set(right.tracks.map(identityKey)),
+          ),
+          artists: overlapRatio(
+            new Set(left.tracks.map(artistKey)),
+            new Set(right.tracks.map(artistKey)),
+          ),
+        });
+      }
+    }
+
+    return { caseId, pairs };
+  });
+}
+
+function printModeOverlap(
+  overlap: ReturnType<typeof buildModeOverlap>,
+) {
+  console.log("\n[inter-modes] Chevauchement des modes");
+
+  for (const group of overlap) {
+    console.log(`  ${group.caseId}`);
+    for (const pair of group.pairs) {
+      console.log(
+        `    ${pair.left} ↔ ${pair.right}: tracks=${(pair.tracks.ratio * 100).toFixed(0)}% (${pair.tracks.intersection}/${pair.tracks.union}) | artistes=${(pair.artists.ratio * 100).toFixed(0)}%`,
+      );
+    }
+  }
 }
 
 function seedReference(track: Track): SeedReference {
@@ -256,7 +507,7 @@ function printRun(
     `\n=== ${benchmarkCase.id} | ${benchmarkCase.seed.artist} — ${benchmarkCase.seed.title} | ${direction} | obscurité ${benchmarkCase.obscurity} ===`,
   );
   console.log(
-    `tracks=${metrics.trackCount} | artistes=${metrics.uniqueArtistCount} | répétitions=${metrics.repeatedArtistSlots} | branches=${metrics.branchCount} | branche dominante=${(metrics.dominantBranchRatio * 100).toFixed(0)}% | preuve=${(metrics.evidenceCoverageRatio * 100).toFixed(0)}%`,
+    `tracks=${metrics.trackCount} | artistes=${metrics.uniqueArtistCount} | répétitions=${metrics.repeatedArtistSlots} | branches=${metrics.branchCount} | branche dominante=${(metrics.dominantBranchRatio * 100).toFixed(0)}% | preuve=${(metrics.evidenceCoverageRatio * 100).toFixed(0)}% | scores<0=${metrics.negativeScoreCount} | audience artiste inconnue=${metrics.artistAudienceUnknownCount}`,
   );
 
   tracks.forEach((track, index) => {
@@ -328,7 +579,7 @@ async function main() {
   }
 
   const generatedAt = new Date().toISOString();
-  const runs: unknown[] = [];
+  const runs: BenchmarkRun[] = [];
   const errors: Array<{
     caseId: string;
     direction?: Direction;
@@ -372,9 +623,21 @@ async function main() {
           AbortSignal.timeout(50_000),
         );
         const tracks = response.tracks as RuntimeRecommendation[];
-        const metrics = measureTracks(tracks);
+        const metrics = measureTracks(tracks, benchmarkCase.obscurity);
+        const humanComparison = measureHumanComparison(
+          benchmarkCase,
+          tracks,
+        );
 
         printRun(benchmarkCase, direction, tracks, metrics);
+        console.log(
+          `    humain: match=${humanComparison.matchedCount}/${tracks.length} | positifs=${humanComparison.positiveCount} | bad=${humanComparison.badCount}`,
+        );
+        if (humanComparison.badReappearances.length) {
+          console.log(
+            `    ⚠ anciens bad revenus: ${humanComparison.badReappearances.map(item => `${item.artist} — ${item.title}`).join(" | ")}`,
+          );
+        }
 
         runs.push({
           caseId: benchmarkCase.id,
@@ -396,7 +659,11 @@ async function main() {
           obscurity: benchmarkCase.obscurity,
           notes: response.notes,
           metrics,
-          tracks: tracks.map(compactTrack),
+          humanComparison,
+          tracks: tracks.map(track => ({
+            ...compactTrack(track),
+            humanVerdict: matchHistoricalVerdict(benchmarkCase, track),
+          })),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -412,7 +679,38 @@ async function main() {
     }
   }
 
+  const modeOverlap = buildModeOverlap(runs);
+  printModeOverlap(modeOverlap);
+
+  const aggregate = {
+    negativeScoreCount: runs.reduce(
+      (total, run) => total + run.metrics.negativeScoreCount,
+      0,
+    ),
+    historicalBadReappearanceCount: runs.reduce(
+      (total, run) =>
+        total + run.humanComparison.badReappearances.length,
+      0,
+    ),
+    strictArtistAudienceLeakCount: runs.reduce(
+      (total, run) =>
+        total + run.metrics.strictArtistAudienceLeakCount,
+      0,
+    ),
+    trackAudienceKnownArtistAudienceUnknownCount: runs.reduce(
+      (total, run) =>
+        total +
+        run.metrics.trackAudienceKnownArtistAudienceUnknownCount,
+      0,
+    ),
+  };
+
+  console.log(
+    `\n[diagnostic] scores<0=${aggregate.negativeScoreCount} | anciens bad revenus=${aggregate.historicalBadReappearanceCount} | fuites audience artiste strictes=${aggregate.strictArtistAudienceLeakCount} | piste connue mais audience artiste inconnue=${aggregate.trackAudienceKnownArtistAudienceUnknownCount}`,
+  );
+
   const output = {
+    schemaVersion: 2,
     generatedAt,
     profile: full ? "full" : "focused",
     sourceAvailability: {
@@ -424,6 +722,8 @@ async function main() {
     runCount: runs.length,
     errorCount: errors.length,
     errors,
+    aggregate,
+    modeOverlap,
     runs,
   };
 
