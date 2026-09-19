@@ -446,16 +446,21 @@ async function resolveSeed(benchmarkCase: DiscoveryBenchmarkCase) {
       normalized(track.title) === normalized(benchmarkCase.seed.title) &&
       normalized(track.artist) === normalized(benchmarkCase.seed.artist),
   );
-  const selected = exact ?? matches[0];
 
-  if (!selected) {
-    throw new Error(`Aucun seed résolu pour « ${query} ».`);
+  if (!exact) {
+    const alternatives = matches
+      .slice(0, 5)
+      .map(track => `${track.artist} — ${track.title}`)
+      .join(" | ");
+    throw new Error(
+      `Seed exact introuvable pour « ${query} ». Le benchmark refuse désormais de substituer un autre morceau.${alternatives ? ` Alternatives: ${alternatives}` : ""}`,
+    );
   }
 
   return {
     query,
-    exact: Boolean(exact),
-    selected,
+    exact: true,
+    selected: exact,
     alternatives: matches.slice(0, 5).map(track => ({
       id: track.id,
       artist: track.artist,
