@@ -115,7 +115,28 @@ export interface RetrievalRejectionDiagnostics {
   byReason: Record<string, number>;
   byOrigin: Record<string, number>;
 }
+export interface DiscogsRetrievalDiagnostics {
+  status:
+    | "disabled"
+    | "search-empty"
+    | "identity-unconfirmed"
+    | "identity-ambiguous"
+    | "confirmed-no-candidates"
+    | "ok"
+    | "provider-error";
+  calls: number;
+  primarySearchRows: number;
+  fallbackSearchUsed: boolean;
+  fallbackSearchRows: number;
+  inspectedReleases: number;
+  bestMatchScore: number;
+  matchedReleases: number;
+  matchedTracks: number;
+  candidateCount: number;
+  byOrigin: Record<string, number>;
+}
 export interface RetrievalDiagnostics {
+  discogs: DiscogsRetrievalDiagnostics;
   mergedPool: RetrievalStageDiagnostics;
   trackAudienceTargets: RetrievalStageDiagnostics;
   afterTrackAudience: RetrievalStageDiagnostics;

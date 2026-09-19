@@ -40,7 +40,11 @@ function fixture() {
 test("Discogs without token makes zero requests", async () => {
   let calls = 0;
   const result = await discoverDiscogs(seed, input, AbortSignal.timeout(1000), { enabled: false, get: async () => { calls++; throw Error("No request expected"); } });
-  assert.equal(calls, 0); assert.deepEqual(result, { candidates: [], notes: [] });
+  assert.equal(calls, 0);
+  assert.deepEqual(result.candidates, []);
+  assert.deepEqual(result.notes, []);
+  assert.equal(result.diagnostics.status, "disabled");
+  assert.equal(result.diagnostics.calls, 0);
 });
 
 test("Discogs parses track authors and never assigns Various, DJ curator or release styles to tracks", () => {
@@ -58,6 +62,10 @@ test("Rabbit hole walks real compilation, label, master and contextual links wit
   const { get, paths } = fixture();
   const result = await discoverDiscogs(seed, input, AbortSignal.timeout(1000), { enabled: true, get });
   assert.deepEqual(result.notes, []);
+  assert.equal(result.diagnostics.status, "ok");
+  assert.ok(result.diagnostics.candidateCount > 0);
+  assert.ok(result.diagnostics.matchedReleases > 0);
+  assert.ok(result.diagnostics.bestMatchScore >= 80);
   assert.ok(paths.includes("masters/40"));
   assert.ok(paths.length <= 18);
   assert.deepEqual(new Set(result.candidates.map(c => c.origin)), new Set(["discogs-label", "discogs-compilation", "discogs-deep", "discogs-scene"]));

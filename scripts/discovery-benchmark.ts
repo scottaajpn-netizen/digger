@@ -530,6 +530,7 @@ function printRetrievalDiagnostics(
   diagnostics: DigResponse["retrievalDiagnostics"],
 ) {
   if (!diagnostics) return;
+  const discogs = diagnostics.discogs;
   const pool = diagnostics.mergedPool;
   const targets = diagnostics.trackAudienceTargets;
   const after = diagnostics.afterTrackAudience;
@@ -538,6 +539,9 @@ function printRetrievalDiagnostics(
   const kept = diagnostics.strictGateKept;
   const rejected = diagnostics.strictGateRejected;
   const selected = diagnostics.selected;
+  console.log(
+    `    discogs: status=${discogs.status} | calls=${discogs.calls} | search=${discogs.primarySearchRows}+${discogs.fallbackSearchRows}${discogs.fallbackSearchUsed ? "(fallback)" : ""} | inspected=${discogs.inspectedReleases} | best-match=${discogs.bestMatchScore}/100 | matched=${discogs.matchedReleases} release(s)/${discogs.matchedTracks} track(s) | candidates=${discogs.candidateCount} [${formatOriginCounts(discogs.byOrigin)}]`,
+  );
   console.log(
     `    retrieval: pool=${pool.total} [${formatOriginCounts(pool.byOrigin)}] | audience-targets=${targets.total} [${formatOriginCounts(targets.byOrigin)}]`,
   );

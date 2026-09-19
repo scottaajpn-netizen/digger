@@ -1,4 +1,4 @@
-import type { ArtistCredit, DigRequest, Recommendation, Track } from "../types";
+import type { ArtistCredit, DigRequest, DiscogsRetrievalDiagnostics, Recommendation, Track } from "../types";
 import { normalizeMusicTags } from "../music/taxonomy";
 import { discogsPath } from "../discovery/paths";
 import { discogsJson, type DiscogsGet } from "./discogs-http";
@@ -145,8 +145,24 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
     candidates: DiscogsCandidate[];
     notes: string[];
     seedRelease?: DiscogsReleaseEvidence;
+    diagnostics: DiscogsRetrievalDiagnostics;
   }> {
-  if (!(options.enabled ?? !!process.env.DISCOGS_TOKEN?.trim())) return { candidates: [], notes: [] };
+  const diagnostics: DiscogsRetrievalDiagnostics = {
+    status: "disabled",
+    calls: 0,
+    primarySearchRows: 0,
+    fallbackSearchUsed: false,
+    fallbackSearchRows: 0,
+    inspectedReleases: 0,
+    bestMatchScore: 0,
+    matchedReleases: 0,
+    matchedTracks: 0,
+    candidateCount: 0,
+    byOrigin: {},
+  };
+  if (!(options.enabled ?? !!process.env.DISCOGS_TOKEN?.trim())) {
+    return { candidates: [], notes: [], diagnostics };
+  }
   const get = options.get ?? discogsJson;
   const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(22000)]);
   const candidates: DiscogsCandidate[] = [], notes = new Set<string>();
@@ -155,6 +171,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
   async function read<T>(path: string, params: Record<string, string> = {}): Promise<T | null> {
     if (calls >= 18 || signal.aborted) { notes.add("Exploration Discogs partielle : budget de recherche atteint."); return null; }
     calls++;
+    diagnostics.calls = calls;
     try { return await get<T>(path, params, signal); }
     catch { notes.add("Discogs est partiellement indisponible ; les autres sources restent actives."); return null; }
   }
@@ -237,9 +254,20 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
       inspectedReleaseIds.add(row.id);
       const r = await fromRow(row);
       if (!r) continue;
-      const matchingTracks = r.tracks.filter(
-        track => discogsSeedMatchScore(seed, track) >= 80,
-      );
+      diagnostics.inspectedReleases += 1;
+      const scoredTracks = r.tracks.map(track => ({
+        track,
+        score: discogsSeedMatchScore(seed, track),
+      }));
+      for (const item of scoredTracks) {
+        diagnostics.bestMatchScore = Math.max(
+          diagnostics.bestMatchScore,
+          item.score,
+        );
+      }
+      const matchingTracks = scoredTracks
+        .filter(item => item.score >= 80)
+        .map(item => item.track);
       if (!matchingTracks.length) continue;
       if (
         matchingTracks.some(track => {
@@ -264,6 +292,9 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
     per_page: "8",
     page: "1",
   });
+  diagnostics.primarySearchRows = Array.isArray(primarySearch?.results)
+    ? primarySearch.results.filter(row => row && validId(row.id)).length
+    : 0;
   await inspectSearchRows(primarySearch);
 
   if (!matches.length) {
@@ -278,6 +309,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
       (norm(simplifiedTitle) !== norm(seed.title) ||
         artistKey(simplifiedArtist) !== artistKey(seed.artist))
     ) {
+      diagnostics.fallbackSearchUsed = true;
       const fallbackSearch = await read<Listing>("database/search", {
         type: "release",
         artist: simplifiedArtist,
@@ -285,6 +317,9 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
         per_page: "8",
         page: "1",
       });
+      diagnostics.fallbackSearchRows = Array.isArray(fallbackSearch?.results)
+        ? fallbackSearch.results.filter(row => row && validId(row.id)).length
+        : 0;
       await inspectSearchRows(fallbackSearch);
       if (matches.length) tolerantIdentityUsed = true;
     }
@@ -301,16 +336,27 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
         .join(","),
     ),
   );
+  diagnostics.matchedReleases = matches.length;
+  diagnostics.matchedTracks = matchedTracks.length;
   matchingArtistIds = new Set(
     matchedTracks.flatMap(t => t.artists.map(a => a.id)),
   );
   if (!matches.length || !matchingArtistIds.size || signatures.size !== 1) {
+    const totalSearchRows =
+      diagnostics.primarySearchRows + diagnostics.fallbackSearchRows;
+    diagnostics.status =
+      totalSearchRows === 0
+        ? "search-empty"
+        : signatures.size > 1
+          ? "identity-ambiguous"
+          : "identity-unconfirmed";
     return {
       candidates: [],
       notes: [
         ...notes,
         "Discogs : identité du morceau insuffisamment confirmée ; aucune connexion ajoutée.",
       ],
+      diagnostics,
     };
   }
   if (tolerantIdentityUsed) {
@@ -382,9 +428,16 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
       add(r, "discogs-scene", [...rootPath, { kind: "context", name: `${root.styles[0]} · ${root.country} · ${root.year}`, url }, releaseNode(r)]);
     }
   }
+  diagnostics.candidateCount = candidates.length;
+  for (const candidate of candidates) {
+    diagnostics.byOrigin[candidate.origin] =
+      (diagnostics.byOrigin[candidate.origin] || 0) + 1;
+  }
+  diagnostics.status = candidates.length ? "ok" : "confirmed-no-candidates";
   return {
     candidates,
     notes: [...notes],
     seedRelease: root,
+    diagnostics,
   };
 }

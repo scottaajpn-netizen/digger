@@ -421,6 +421,19 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     candidates: [],
     notes: ["Discogs indisponible ; les autres sources restent actives."],
     seedRelease: undefined,
+    diagnostics: {
+      status: "provider-error" as const,
+      calls: 0,
+      primarySearchRows: 0,
+      fallbackSearchUsed: false,
+      fallbackSearchRows: 0,
+      inspectedReleases: 0,
+      bestMatchScore: 0,
+      matchedReleases: 0,
+      matchedTracks: 0,
+      candidateCount: 0,
+      byOrigin: {} as Record<string, number>,
+    },
   }));
   const lastFmSeedJob = Promise.all([
     optional(
@@ -792,6 +805,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     };
   };
   const retrievalDiagnostics = {
+    discogs: discogsResult.diagnostics,
     mergedPool: retrievalStage(pool),
     trackAudienceTargets: retrievalStage([]),
     afterTrackAudience: retrievalStage([]),
