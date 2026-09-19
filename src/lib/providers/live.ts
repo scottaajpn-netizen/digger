@@ -795,7 +795,11 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     mergedPool: retrievalStage(pool),
     trackAudienceTargets: retrievalStage([]),
     afterTrackAudience: retrievalStage([]),
-    preRankRejected: { total: 0, byReason: {}, byOrigin: {} },
+    preRankRejected: {
+      total: 0,
+      byReason: {} as Record<string, number>,
+      byOrigin: {} as Record<string, number>,
+    },
     ranked: retrievalStage([]),
     strictGateKept: retrievalStage([]),
     strictGateRejected: retrievalStage([]),
