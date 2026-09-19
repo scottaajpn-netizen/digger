@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { artistAudienceReferences, passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, searchLive, selectDiverseRecommendations, selectSurpriseRecommendations } from "../src/lib/providers/live";
+import { artistAudienceReferences, artistSearchParts, coreTrackTitle, findCredibleTrackMatch, passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, searchLive, selectDiverseRecommendations, selectSurpriseRecommendations, trackSearchMatchScore } from "../src/lib/providers/live";
 
 const emptyScoreBreakdown = () => ({
   relevance: 0,
@@ -667,4 +667,66 @@ test("artist audience top-up references include all credited participants", () =
     references.map(reference => reference.artist),
     ["Fred again..", "Lil Yachty", "Overmono"],
   );
+});
+
+
+test("tolerant seed matching accepts metadata variants but rejects different songs", () => {
+  const qendresa = {
+    id: "qendresa-good-love",
+    title: "Good Love",
+    artist: "Qendresa",
+    scene: "",
+    label: "",
+    tags: [],
+    obscurity: 50,
+    year: 0,
+    colors: ["a", "b"] as [string, string],
+  };
+  assert.equal(coreTrackTitle("Good Love (Prod. by Hugo Mari)"), "good love");
+  assert.deepEqual(
+    artistSearchParts("Goya Gumbani & Oliver Palfreyman"),
+    ["goya gumbani", "oliver palfreyman"],
+  );
+  assert.ok(
+    trackSearchMatchScore(
+      "Good Love (Prod. by Hugo Mari)",
+      "Qendresa",
+      qendresa,
+    ) >= 90,
+  );
+
+  const goya = {
+    ...qendresa,
+    id: "goya-fight",
+    title: "Fight For Love",
+    artist: "Goya Gumbani",
+  };
+  assert.ok(
+    trackSearchMatchScore(
+      "Fight For Love (Feat. George Riley)",
+      "Goya Gumbani & Oliver Palfreyman",
+      goya,
+    ) >= 80,
+  );
+
+  const wrong = {
+    ...goya,
+    id: "goya-signs",
+    title: "Signs*",
+    artist: "Goya Gumbani & Oliver Palfreyman",
+  };
+  assert.ok(
+    trackSearchMatchScore(
+      "Fight For Love (Feat. George Riley)",
+      "Goya Gumbani & Oliver Palfreyman",
+      wrong,
+    ) < 80,
+  );
+
+  const match = findCredibleTrackMatch(
+    "Fight For Love (Feat. George Riley)",
+    "Goya Gumbani & Oliver Palfreyman",
+    [wrong, goya],
+  );
+  assert.equal(match?.track.id, "goya-fight");
 });

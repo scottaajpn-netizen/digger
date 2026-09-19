@@ -93,6 +93,96 @@ export function artistAudienceReferences(
   });
 }
 const quote = (s: string) => `"${s.replace(/[\\"+\-!(){}\[\]^~*?:/|&]/g, " ").trim()}"`;
+const qualifierPattern =
+  /\s*[([{]\s*(?:(?:feat(?:uring)?|ft)\.?|prod(?:uced)?(?:\s+by)?|official(?:\s+music)?\s+video|official\s+audio|lyrics?|visuali[sz]er)\b[^)\]}]*[)\]}]\s*/giu;
+
+export function coreTrackTitle(value: string) {
+  return normalized(value.replace(qualifierPattern, " "));
+}
+
+export function artistSearchParts(value: string) {
+  return value
+    .split(/\s+(?:feat(?:uring)?|ft)\.?\s+|\s*(?:&|,|\/|\bx\b|\bvs\.?\b)\s*/giu)
+    .map(part => normalized(part))
+    .filter(Boolean);
+}
+
+function candidateArtistParts(track: Pick<Track, "artist" | "credits">) {
+  const credited = (track.credits || [])
+    .filter(credit => credit.role === "primary" || credit.role === "featured")
+    .map(credit => normalized(credit.name))
+    .filter(Boolean);
+  return credited.length ? [...new Set(credited)] : artistSearchParts(track.artist);
+}
+
+export function trackSearchMatchScore(
+  expectedTitle: string,
+  expectedArtist: string,
+  track: Pick<Track, "title" | "artist" | "credits">,
+) {
+  const expectedTitleExact = normalized(expectedTitle);
+  const candidateTitleExact = normalized(track.title);
+  const expectedTitleCore = coreTrackTitle(expectedTitle);
+  const candidateTitleCore = coreTrackTitle(track.title);
+
+  let titleScore = 0;
+  if (expectedTitleExact && candidateTitleExact === expectedTitleExact) {
+    titleScore = 70;
+  } else if (expectedTitleCore && candidateTitleCore === expectedTitleCore) {
+    titleScore = 65;
+  } else if (
+    expectedTitleCore.length >= 4 &&
+    candidateTitleCore.length >= 4 &&
+    (candidateTitleCore.includes(expectedTitleCore) ||
+      expectedTitleCore.includes(candidateTitleCore))
+  ) {
+    titleScore = 45;
+  }
+
+  const expectedArtistExact = normalized(expectedArtist);
+  const candidateArtistExact = normalized(track.artist);
+  let artistScore = 0;
+  if (expectedArtistExact && candidateArtistExact === expectedArtistExact) {
+    artistScore = 30;
+  } else {
+    const expectedParts = artistSearchParts(expectedArtist);
+    const candidateParts = candidateArtistParts(track);
+    const candidateSet = new Set(candidateParts);
+    const overlap = expectedParts.filter(part => candidateSet.has(part)).length;
+    if (overlap > 0) {
+      const coverage = overlap / Math.max(1, expectedParts.length);
+      artistScore = 18 + Math.round(12 * coverage);
+    }
+  }
+
+  return titleScore + artistScore;
+}
+
+export function findCredibleTrackMatch(
+  expectedTitle: string,
+  expectedArtist: string,
+  tracks: Track[],
+  minimumScore = 80,
+) {
+  const ranked = [...tracks]
+    .map(track => ({
+      track,
+      score: trackSearchMatchScore(expectedTitle, expectedArtist, track),
+    }))
+    .sort((a, b) => b.score - a.score || a.track.id.localeCompare(b.track.id));
+  return ranked[0] && ranked[0].score >= minimumScore ? ranked[0] : undefined;
+}
+
+function structuredSearchParts(query: string) {
+  const parts = query
+    .split(/\s+[—–-]\s+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  return parts.length === 2
+    ? { title: parts[0], artist: parts[1] }
+    : undefined;
+}
+
 export function musicBrainzQuery(query: string) {
   const parts = query.split(/\s+[—–-]\s+/);
   if (parts.length === 2) return `(recording:${quote(parts[0])} AND artist:${quote(parts[1])}) OR (recording:${quote(parts[1])} AND artist:${quote(parts[0])})`;
@@ -124,27 +214,117 @@ export function fromRecording(r: Recording): Track | null {
   return { id: r.id, title: r.title, artist, artistId: credits.find(c => c.role === "primary")?.sourceId, credits, country: rows[0]?.artist?.country, releaseId: release?.id, album: release?.title, scene: tags[0] || "MusicBrainz", label: "", tags, year: Number(r["first-release-date"]?.slice(0, 4)) || 0, obscurity: 50, colors: colors[hash(r.id) % colors.length], externalIds: { musicbrainz: r.id } };
 }
 export async function searchLive(query: string, signal: AbortSignal): Promise<Track[]> {
-  let mbTracks: Track[] = [];
+  const structured = structuredSearchParts(query);
+  const mbRecords: Recording[] = [];
+
+  const fetchMusicBrainz = async (searchQuery: string) => {
+    const data = await musicJson<{ recordings?: Recording[] }>(
+      "mb",
+      "recording/",
+      { query: musicBrainzQuery(searchQuery), limit: "25" },
+      signal,
+    );
+    mbRecords.push(
+      ...(data.recordings || []).filter(recording => (recording.score ?? 0) >= 55),
+    );
+  };
+
   try {
-    const data = await musicJson<{ recordings?: Recording[] }>("mb", "recording/", { query: musicBrainzQuery(query), limit: "25" }, signal);
-    const records = (data.recordings || []).filter(r => (r.score ?? 0) >= 55).sort((a, b) => (b.score || 0) - (a.score || 0) || (b.releases?.length || 0) - (a.releases?.length || 0));
-    const seen = new Set<string>();
-    mbTracks = records.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }).map(fromRecording).filter((t): t is Track => t !== null).slice(0, 8);
+    await fetchMusicBrainz(query);
+
+    const initialTracks = deduplicate(
+      mbRecords
+        .sort(
+          (a, b) =>
+            (b.score || 0) - (a.score || 0) ||
+            (b.releases?.length || 0) - (a.releases?.length || 0),
+        )
+        .map(fromRecording)
+        .filter((track): track is Track => track !== null),
+    );
+
+    if (
+      structured &&
+      !findCredibleTrackMatch(
+        structured.title,
+        structured.artist,
+        initialTracks,
+      )
+    ) {
+      const coreTitle = coreTrackTitle(structured.title);
+      const artistParts = artistSearchParts(structured.artist);
+      const variants = [
+        coreTitle && coreTitle !== normalized(structured.title)
+          ? `${coreTitle} — ${structured.artist}`
+          : "",
+        coreTitle && artistParts[0]
+          ? `${coreTitle} — ${artistParts[0]}`
+          : "",
+      ].filter(Boolean);
+
+      for (const variant of [...new Set(variants)].slice(0, 2)) {
+        signal.throwIfAborted();
+        await fetchMusicBrainz(variant);
+      }
+    }
   } catch (error) {
-    if (!(error instanceof MusicServiceError) || ![429, 502, 503, 504].includes(error.status)) throw error;
+    if (
+      !(error instanceof MusicServiceError) ||
+      ![429, 502, 503, 504].includes(error.status)
+    ) {
+      throw error;
+    }
   }
 
-  if (mbTracks.length >= 4 || !process.env.LASTFM_API_KEY) return mbTracks;
-  const parts = query.split(/\s+[—–-]\s+/).map(part => part.trim()).filter(Boolean);
-  const primary = parts[0] || query.trim();
-  const artist = parts.length === 2 ? parts[1] : "";
+  let mbTracks = deduplicate(
+    mbRecords
+      .sort(
+        (a, b) =>
+          (b.score || 0) - (a.score || 0) ||
+          (b.releases?.length || 0) - (a.releases?.length || 0),
+      )
+      .map(fromRecording)
+      .filter((track): track is Track => track !== null),
+  );
+
+  if (structured) {
+    mbTracks = [...mbTracks].sort(
+      (a, b) =>
+        trackSearchMatchScore(structured.title, structured.artist, b) -
+        trackSearchMatchScore(structured.title, structured.artist, a),
+    );
+  }
+  mbTracks = mbTracks.slice(0, 8);
+
+  const credibleMbMatch = structured
+    ? findCredibleTrackMatch(structured.title, structured.artist, mbTracks)
+    : undefined;
+
+  if (
+    (mbTracks.length >= 4 && (!structured || credibleMbMatch)) ||
+    !process.env.LASTFM_API_KEY
+  ) {
+    return mbTracks;
+  }
+
+  const lastFmTitle = structured
+    ? coreTrackTitle(structured.title) || structured.title
+    : query.trim();
+  const lastFmArtist = structured
+    ? artistSearchParts(structured.artist)[0] || structured.artist
+    : "";
+
   let lastFm: LastFmSearchResponse | null = null;
   try {
-    lastFm = await lastFmJson<LastFmSearchResponse>("track.search", {
-      track: primary,
-      ...(artist ? { artist } : {}),
-      limit: "10",
-    }, signal);
+    lastFm = await lastFmJson<LastFmSearchResponse>(
+      "track.search",
+      {
+        track: lastFmTitle,
+        ...(lastFmArtist ? { artist: lastFmArtist } : {}),
+        limit: "10",
+      },
+      signal,
+    );
   } catch {
     return mbTracks;
   }
@@ -153,7 +333,8 @@ export async function searchLive(query: string, signal: AbortSignal): Promise<Tr
     const title = item.name?.trim();
     const artistName = item.artist?.trim();
     if (!title || !artistName) return [];
-    const mbid = item.mbid && mbidPattern.test(item.mbid) ? item.mbid : undefined;
+    const mbid =
+      item.mbid && mbidPattern.test(item.mbid) ? item.mbid : undefined;
     const id = mbid || `lastfm:${hash(`${artistName}:${title}`)}`;
     return [{
       id,
@@ -168,7 +349,16 @@ export async function searchLive(query: string, signal: AbortSignal): Promise<Tr
       externalIds: { musicbrainz: mbid, lastfm: item.url },
     } satisfies Track];
   });
-  return deduplicate([...mbTracks, ...external]).slice(0, 8);
+
+  let combined = deduplicate([...mbTracks, ...external]);
+  if (structured) {
+    combined = combined.sort(
+      (a, b) =>
+        trackSearchMatchScore(structured.title, structured.artist, b) -
+        trackSearchMatchScore(structured.title, structured.artist, a),
+    );
+  }
+  return combined.slice(0, 8);
 }
 export async function recommendLive(input: DigRequest, signal: AbortSignal): Promise<DigResponse> {
   const notes: string[] = [];

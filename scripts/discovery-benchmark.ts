@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { loadEnvFile } from "node:process";
 
 import { normalized } from "../src/lib/discovery/ranking";
-import { recommendLive, searchLive } from "../src/lib/providers/live";
+import { findCredibleTrackMatch, recommendLive, searchLive } from "../src/lib/providers/live";
 import {
   directions,
   type DigRequest,
@@ -446,21 +446,30 @@ async function resolveSeed(benchmarkCase: DiscoveryBenchmarkCase) {
       normalized(track.title) === normalized(benchmarkCase.seed.title) &&
       normalized(track.artist) === normalized(benchmarkCase.seed.artist),
   );
+  const tolerant = exact
+    ? { track: exact, score: 100 }
+    : findCredibleTrackMatch(
+        benchmarkCase.seed.title,
+        benchmarkCase.seed.artist,
+        matches,
+      );
+  const selected = tolerant?.track;
 
-  if (!exact) {
+  if (!selected) {
     const alternatives = matches
       .slice(0, 5)
       .map(track => `${track.artist} — ${track.title}`)
       .join(" | ");
     throw new Error(
-      `Seed exact introuvable pour « ${query} ». Le benchmark refuse désormais de substituer un autre morceau.${alternatives ? ` Alternatives: ${alternatives}` : ""}`,
+      `Seed crédible introuvable pour « ${query} ». Le benchmark refuse de substituer un autre morceau.${alternatives ? ` Alternatives: ${alternatives}` : ""}`,
     );
   }
 
   return {
     query,
-    exact: true,
-    selected: exact,
+    exact: Boolean(exact),
+    matchScore: tolerant?.score ?? 100,
+    selected,
     alternatives: matches.slice(0, 5).map(track => ({
       id: track.id,
       artist: track.artist,
@@ -608,7 +617,7 @@ async function main() {
     try {
       resolution = await resolveSeed(benchmarkCase);
       console.log(
-        `\n[seed] ${benchmarkCase.id}: ${resolution.selected.artist} — ${resolution.selected.title} (${resolution.exact ? "exact" : "fallback"})`,
+        `\n[seed] ${benchmarkCase.id}: ${resolution.selected.artist} — ${resolution.selected.title} (${resolution.exact ? "exact" : `tolérant ${resolution.matchScore}/100`})`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -663,6 +672,7 @@ async function main() {
           seedResolution: {
             query: resolution.query,
             exact: resolution.exact,
+            matchScore: resolution.matchScore,
             selected: {
               id: resolution.selected.id,
               artist: resolution.selected.artist,
