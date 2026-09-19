@@ -178,6 +178,9 @@ function measureTracks(
   const artistAudienceUnknownCount = tracks.filter(
     track => track.lastfmArtistListeners === undefined,
   ).length;
+  const artistAudienceLookupCounts = countBy(
+    tracks.map(track => track.artistAudienceLookup || "unset"),
+  );
   const trackAudienceKnownArtistAudienceUnknownCount = tracks.filter(
     track =>
       track.lastfmListeners !== undefined &&
@@ -221,6 +224,7 @@ function measureTracks(
     negativeScoreRatio:
       tracks.length === 0 ? 0 : negativeScoreCount / tracks.length,
     artistAudienceUnknownCount,
+    artistAudienceLookupCounts,
     trackAudienceKnownArtistAudienceUnknownCount,
     strictArtistAudienceLeakCount,
     artistToTrackAudienceRatio: summarizeNumbers(
@@ -475,6 +479,7 @@ function compactTrack(track: RuntimeRecommendation) {
     popularity: track.popularity,
     lastfmListeners: track.lastfmListeners,
     lastfmArtistListeners: track.lastfmArtistListeners,
+    artistAudienceLookup: track.artistAudienceLookup,
     tags: track.tags,
     genres: track.analysis?.genres,
     subgenres: track.analysis?.subgenres,
@@ -509,6 +514,12 @@ function printRun(
   console.log(
     `tracks=${metrics.trackCount} | artistes=${metrics.uniqueArtistCount} | répétitions=${metrics.repeatedArtistSlots} | branches=${metrics.branchCount} | branche dominante=${(metrics.dominantBranchRatio * 100).toFixed(0)}% | preuve=${(metrics.evidenceCoverageRatio * 100).toFixed(0)}% | scores<0=${metrics.negativeScoreCount} | audience artiste inconnue=${metrics.artistAudienceUnknownCount}`,
   );
+  if (metrics.artistAudienceUnknownCount > 0) {
+    const lookup = metrics.artistAudienceLookupCounts;
+    console.log(
+      `    lookup artiste: mbid=${lookup.mbid || 0} | name=${lookup.name || 0} | fallback=${lookup["name-fallback"] || 0} | partial=${lookup.partial || 0} | failed=${lookup.failed || 0} | non ciblé=${lookup["not-targeted"] || 0} | unset=${lookup.unset || 0}`,
+    );
+  }
 
   tracks.forEach((track, index) => {
     const evidence = track.evidence
@@ -703,10 +714,21 @@ async function main() {
         run.metrics.trackAudienceKnownArtistAudienceUnknownCount,
       0,
     ),
+    artistAudienceLookupCounts: countBy(
+      runs.flatMap(run =>
+        Object.entries(run.metrics.artistAudienceLookupCounts).flatMap(
+          ([status, count]) => Array.from({ length: count }, () => status),
+        ),
+      ),
+    ),
   };
 
   console.log(
     `\n[diagnostic] scores<0=${aggregate.negativeScoreCount} | anciens bad revenus=${aggregate.historicalBadReappearanceCount} | fuites audience artiste strictes=${aggregate.strictArtistAudienceLeakCount} | piste connue mais audience artiste inconnue=${aggregate.trackAudienceKnownArtistAudienceUnknownCount}`,
+  );
+  const lookup = aggregate.artistAudienceLookupCounts;
+  console.log(
+    `[audience-artiste] mbid=${lookup.mbid || 0} | name=${lookup.name || 0} | fallback=${lookup["name-fallback"] || 0} | partial=${lookup.partial || 0} | failed=${lookup.failed || 0} | non ciblé=${lookup["not-targeted"] || 0} | unset=${lookup.unset || 0}`,
   );
 
   const output = {

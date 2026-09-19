@@ -677,34 +677,126 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     }
 
     const targets = [...artistTargets.entries()];
-    const artistInfoRows: (LastFmArtistInfoResponse | null)[] = [];
+    const primaryRows: (LastFmArtistInfoResponse | null)[] = [];
+
     for (let offset = 0; offset < targets.length; offset += 6) {
       signal.throwIfAborted();
-      artistInfoRows.push(...await Promise.all(targets.slice(offset, offset + 6).map(([, target]) => optional(
-        lastFmJson<LastFmArtistInfoResponse>("artist.getInfo", target.artistId
-          ? { mbid: target.artistId, autocorrect: "1" }
-          : { artist: target.artist, autocorrect: "1" }, signal),
-        `Audience artiste Last.fm indisponible pour « ${target.artist} ».`
-      ))));
+      primaryRows.push(...await Promise.all(
+        targets.slice(offset, offset + 6).map(([, target]) =>
+          lastFmJson<LastFmArtistInfoResponse>(
+            "artist.getInfo",
+            target.artistId
+              ? { mbid: target.artistId, autocorrect: "1" }
+              : { artist: target.artist, autocorrect: "1" },
+            signal,
+          ).catch(() => null),
+        ),
+      ));
     }
 
+    const fallbackTargets = targets.flatMap(([key, target], index) => {
+      if (!target.artistId) return [];
+      const listeners = Number(primaryRows[index]?.artist?.stats?.listeners || 0);
+      return Number.isFinite(listeners) && listeners > 0
+        ? []
+        : [{ key, target }];
+    });
+    const fallbackRows: (LastFmArtistInfoResponse | null)[] = [];
+
+    for (let offset = 0; offset < fallbackTargets.length; offset += 6) {
+      signal.throwIfAborted();
+      fallbackRows.push(...await Promise.all(
+        fallbackTargets.slice(offset, offset + 6).map(({ target }) =>
+          lastFmJson<LastFmArtistInfoResponse>(
+            "artist.getInfo",
+            { artist: target.artist, autocorrect: "1" },
+            signal,
+          ).catch(() => null),
+        ),
+      ));
+    }
+
+    const fallbackByKey = new Map<string, LastFmArtistInfoResponse | null>();
+    fallbackTargets.forEach(({ key }, index) => {
+      fallbackByKey.set(key, fallbackRows[index] || null);
+    });
+
     const artistAudience = new Map<string, number>();
-    targets.forEach(([key], index) => {
-      const listeners = Number(artistInfoRows[index]?.artist?.stats?.listeners || 0);
-      if (Number.isFinite(listeners) && listeners > 0) {
-        artistAudience.set(key, listeners);
+    const artistLookupStatus = new Map<
+      string,
+      "mbid" | "name" | "name-fallback" | "failed"
+    >();
+
+    targets.forEach(([key, target], index) => {
+      const primaryListeners = Number(
+        primaryRows[index]?.artist?.stats?.listeners || 0,
+      );
+      if (Number.isFinite(primaryListeners) && primaryListeners > 0) {
+        artistAudience.set(key, primaryListeners);
+        artistLookupStatus.set(key, target.artistId ? "mbid" : "name");
+        return;
       }
+
+      const fallbackListeners = Number(
+        fallbackByKey.get(key)?.artist?.stats?.listeners || 0,
+      );
+      if (Number.isFinite(fallbackListeners) && fallbackListeners > 0) {
+        artistAudience.set(key, fallbackListeners);
+        artistLookupStatus.set(key, "name-fallback");
+        return;
+      }
+
+      artistLookupStatus.set(key, "failed");
     });
 
     for (const track of pool) {
-      const knownAudiences = artistAudienceReferences(track)
+      const references = artistAudienceReferences(track);
+      const targeted = references.filter(reference =>
+        artistTargets.has(reference.key),
+      );
+
+      if (!targeted.length) {
+        track.artistAudienceLookup = "not-targeted";
+        continue;
+      }
+
+      const knownAudiences = targeted
         .map(reference => artistAudience.get(reference.key))
         .filter((listeners): listeners is number => listeners !== undefined);
+
+      const statuses = targeted
+        .map(reference => artistLookupStatus.get(reference.key))
+        .filter((status): status is "mbid" | "name" | "name-fallback" | "failed" =>
+          status !== undefined
+        );
+
       if (knownAudiences.length) {
         // For collaborations, strict digging uses the most established credited
         // participant rather than letting a combined artist string hide them.
         track.lastfmArtistListeners = Math.max(...knownAudiences);
       }
+
+      if (!knownAudiences.length) {
+        track.artistAudienceLookup = "failed";
+      } else if (
+        knownAudiences.length < targeted.length ||
+        new Set(statuses).size > 1
+      ) {
+        track.artistAudienceLookup = "partial";
+      } else {
+        const status = statuses[0];
+        track.artistAudienceLookup =
+          status === "failed" || status === undefined ? "partial" : status;
+      }
+    }
+
+    const unresolvedArtistTargets = [...artistLookupStatus.values()].filter(
+      status => status === "failed",
+    ).length;
+    if (unresolvedArtistTargets > 0) {
+      notes.push(
+        `Audience artiste Last.fm non résolue pour ${unresolvedArtistTargets} artiste(s) ciblé(s), même après fallback par nom.`,
+      );
     }
 
     // Artist popularity participates in scoring, so rerank with the enriched

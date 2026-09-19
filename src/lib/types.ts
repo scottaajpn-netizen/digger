@@ -53,6 +53,7 @@ export interface Track {
   artistId?: string; releaseId?: string; country?: string; album?: string;
   popularity?: number; listenCount?: number; lastfmListeners?: number;
   lastfmArtistListeners?: number;
+  artistAudienceLookup?: "mbid" | "name" | "name-fallback" | "partial" | "failed" | "not-targeted";
   analysis?: MusicalAnalysis;
   discoveryPath?: DiscoveryPath;
   credits?: ArtistCredit[];
