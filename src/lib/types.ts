@@ -110,10 +110,17 @@ export interface RetrievalStageDiagnostics {
   withTrackAudience?: number;
   withoutTrackAudience?: number;
 }
+export interface RetrievalRejectionDiagnostics {
+  total: number;
+  byReason: Record<string, number>;
+  byOrigin: Record<string, number>;
+}
 export interface RetrievalDiagnostics {
   mergedPool: RetrievalStageDiagnostics;
   trackAudienceTargets: RetrievalStageDiagnostics;
   afterTrackAudience: RetrievalStageDiagnostics;
+  preRankRejected: RetrievalRejectionDiagnostics;
+  ranked: RetrievalStageDiagnostics;
   strictGateKept: RetrievalStageDiagnostics;
   strictGateRejected: RetrievalStageDiagnostics;
   selected: RetrievalStageDiagnostics;

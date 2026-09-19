@@ -3,7 +3,7 @@ import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } fro
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
-import { rankDiscoveryCandidates } from "../discovery/scoring";
+import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, listenBrainzPath } from "../discovery/paths";
 export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
 
@@ -795,6 +795,8 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     mergedPool: retrievalStage(pool),
     trackAudienceTargets: retrievalStage([]),
     afterTrackAudience: retrievalStage([]),
+    preRankRejected: { total: 0, byReason: {}, byOrigin: {} },
+    ranked: retrievalStage([]),
     strictGateKept: retrievalStage([]),
     strictGateRejected: retrievalStage([]),
     selected: retrievalStage([]),
@@ -868,6 +870,25 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
 
   retrievalDiagnostics.afterTrackAudience = retrievalStage(pool);
 
+  const preRankRejected = deduplicate(
+    [...pool].sort((a, b) => b.relevance - a.relevance),
+  ).flatMap(track => {
+    const reason = candidateEligibilityFailure(
+      track,
+      seed,
+      input,
+      seedParticipantKeys,
+    );
+    return reason ? [{ track, reason }] : [];
+  });
+  for (const { track, reason } of preRankRejected) {
+    retrievalDiagnostics.preRankRejected.byReason[reason] =
+      (retrievalDiagnostics.preRankRejected.byReason[reason] || 0) + 1;
+    retrievalDiagnostics.preRankRejected.byOrigin[track.origin] =
+      (retrievalDiagnostics.preRankRejected.byOrigin[track.origin] || 0) + 1;
+  }
+  retrievalDiagnostics.preRankRejected.total = preRankRejected.length;
+
   let ranked = rankDiscoveryCandidates({
     pool,
     seed,
@@ -875,6 +896,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     input,
     seedParticipantKeys,
   });
+  retrievalDiagnostics.ranked = retrievalStage(ranked);
 
   if (input.obscurity >= 95 && process.env.LASTFM_API_KEY) {
     // Spend the initial audience budget on candidates likely to survive the

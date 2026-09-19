@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildMusicalProfile } from "../src/lib/music/profile";
 import { assessCandidateEvidence } from "../src/lib/discovery/evidence";
 import { discoveryPathPreferenceKey } from "../src/lib/discovery/paths";
-import { discoveryPathScoreAdjustment, rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
+import { candidateEligibilityFailure, discoveryPathScoreAdjustment, rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
 import { modeSelectionAdjustment, selectModeAwareArtistCandidates, selectModeRecommendations, type Candidate, type RankedCandidate } from "../src/lib/discovery/ranking";
 import type { DigRequest, DiscoveryPath, Track } from "../src/lib/types";
 
@@ -608,4 +608,72 @@ test("all discovery modes keep artists unique while relaxing other caps", () => 
       `repeated artist in ${direction}`,
     );
   }
+});
+
+
+test("candidate eligibility reports explicit pre-ranking rejection reasons", () => {
+  const participantKeys = new Set(["seed artist", "featured seed artist"]);
+  const input = request({
+    feedback: { feedback: "known" },
+    memory: { pathScores: {}, knownTracks: ["known artist\u0000known track"] },
+  });
+
+  assert.equal(
+    candidateEligibilityFailure(
+      candidate("seed", { artist: "Other Artist" }),
+      seed,
+      input,
+      participantKeys,
+    ),
+    "seed-id",
+  );
+  assert.equal(
+    candidate("same-track", { title: seed.title, artist: seed.artist }).id,
+    "same-track",
+  );
+  assert.equal(
+    candidateEligibilityFailure(
+      candidate("same-track", { title: seed.title, artist: seed.artist }),
+      seed,
+      input,
+      participantKeys,
+    ),
+    "seed-track",
+  );
+  assert.equal(
+    candidateEligibilityFailure(
+      candidate("participant", { artist: "Featured Seed Artist" }),
+      seed,
+      input,
+      participantKeys,
+    ),
+    "seed-participant",
+  );
+  assert.equal(
+    candidateEligibilityFailure(
+      candidate("known", { title: "Known Track", artist: "Known Artist" }),
+      seed,
+      input,
+      participantKeys,
+    ),
+    "known-track",
+  );
+  assert.equal(
+    candidateEligibilityFailure(
+      candidate("feedback", { feedbackIds: ["feedback"] }),
+      seed,
+      input,
+      participantKeys,
+    ),
+    "feedback-excluded",
+  );
+  assert.equal(
+    candidateEligibilityFailure(
+      candidate("allowed"),
+      seed,
+      input,
+      participantKeys,
+    ),
+    undefined,
+  );
 });

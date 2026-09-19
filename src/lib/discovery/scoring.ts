@@ -72,6 +72,37 @@ type RankDiscoveryInput = {
   seedParticipantKeys: Set<string>;
 };
 
+export type CandidateEligibilityFailure =
+  | "seed-id"
+  | "seed-track"
+  | "seed-artist"
+  | "seed-participant"
+  | "known-track"
+  | "feedback-excluded";
+
+export function candidateEligibilityFailure(
+  track: Candidate,
+  seed: Track,
+  input: DigRequest,
+  seedParticipantKeys: Set<string>,
+): CandidateEligibilityFailure | undefined {
+  if (track.id === seed.id) return "seed-id";
+  if (trackIdentity(track) === trackIdentity(seed)) return "seed-track";
+  if (normalized(track.artist) === normalized(seed.artist)) return "seed-artist";
+  if (seedParticipantKeys.has(normalized(track.artist))) return "seed-participant";
+  if ((input.memory?.knownTracks || []).includes(trackIdentity(track))) {
+    return "known-track";
+  }
+  if (
+    [track.id, ...(track.feedbackIds || [])].some(id =>
+      ["known", "neutral"].includes(input.feedback[id]),
+    )
+  ) {
+    return "feedback-excluded";
+  }
+  return undefined;
+}
+
 /**
  * Pure discovery scoring/ranking.
  *
@@ -95,14 +126,12 @@ export function rankDiscoveryCandidates({
   return deduplicate([...pool].sort((a, b) => b.relevance - a.relevance))
     .filter(
       track =>
-        track.id !== seed.id &&
-        trackIdentity(track) !== trackIdentity(seed) &&
-        normalized(track.artist) !== normalized(seed.artist) &&
-        !seedParticipantKeys.has(normalized(track.artist)) &&
-        !(input.memory?.knownTracks || []).includes(trackIdentity(track)) &&
-        ![track.id, ...(track.feedbackIds || [])].some(id =>
-          ["known", "neutral"].includes(input.feedback[id]),
-        ),
+        candidateEligibilityFailure(
+          track,
+          seed,
+          input,
+          seedParticipantKeys,
+        ) === undefined,
     )
     .map(track => {
       const candidateProfile = track.discogs

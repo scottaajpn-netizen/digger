@@ -533,11 +533,16 @@ function printRetrievalDiagnostics(
   const pool = diagnostics.mergedPool;
   const targets = diagnostics.trackAudienceTargets;
   const after = diagnostics.afterTrackAudience;
+  const preRankRejected = diagnostics.preRankRejected;
+  const ranked = diagnostics.ranked;
   const kept = diagnostics.strictGateKept;
   const rejected = diagnostics.strictGateRejected;
   const selected = diagnostics.selected;
   console.log(
     `    retrieval: pool=${pool.total} [${formatOriginCounts(pool.byOrigin)}] | audience-targets=${targets.total} [${formatOriginCounts(targets.byOrigin)}]`,
+  );
+  console.log(
+    `    pre-rank: ranked=${ranked.total} | rejected=${preRankRejected.total} [${formatOriginCounts(preRankRejected.byReason)}]`,
   );
   console.log(
     `    gate: audience-known=${after.withTrackAudience || 0}/${after.total} | kept=${kept.total} [${formatOriginCounts(kept.byOrigin)}] | rejected=${rejected.total} [${formatOriginCounts(rejected.byOrigin)}] | selected=${selected.total}`,
