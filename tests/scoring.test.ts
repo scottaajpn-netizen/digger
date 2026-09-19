@@ -677,3 +677,52 @@ test("candidate eligibility reports explicit pre-ranking rejection reasons", () 
     undefined,
   );
 });
+
+
+test("artist-anchored Discogs catalogue paths are weaker than direct editorial paths", () => {
+  const cataloguePath: DiscoveryPath = {
+    source: "discogs",
+    evidence: "catalogue",
+    distance: 3,
+    nodes: [
+      { kind: "track", name: "Seed", source: "discogs" },
+      { kind: "artist", name: "Seed Artist", source: "discogs" },
+      { kind: "release", name: "Related Release", source: "discogs" },
+      { kind: "track", name: "Candidate", source: "discogs" },
+    ],
+  };
+  const editorialPath: DiscoveryPath = {
+    ...cataloguePath,
+    evidence: "editorial",
+  };
+
+  const catalogueEvidence = assessCandidateEvidence(
+    { discoveryPath: cataloguePath },
+    {
+      genre: 0,
+      subgenre: 0,
+      traits: 0,
+      rawTags: 0,
+      labels: 0,
+      country: 0,
+      year: 0,
+    },
+  );
+  const editorialEvidence = assessCandidateEvidence(
+    { discoveryPath: editorialPath },
+    {
+      genre: 0,
+      subgenre: 0,
+      traits: 0,
+      rawTags: 0,
+      labels: 0,
+      country: 0,
+      year: 0,
+    },
+  );
+
+  assert.equal(catalogueEvidence.path, "catalogue");
+  assert.equal(catalogueEvidence.tier, "exploratory");
+  assert.equal(editorialEvidence.path, "structured");
+  assert.equal(editorialEvidence.tier, "credible");
+});

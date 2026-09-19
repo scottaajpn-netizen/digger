@@ -212,7 +212,13 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
   }
   let seedCreditKeys = new Set<string>();
   let matchingArtistIds = new Set<number>();
-  function add(r: Release, origin: DiscogsOrigin, path: DiscogsPathNode[], requiredArtist?: number) {
+  function add(
+    r: Release,
+    origin: DiscogsOrigin,
+    path: DiscogsPathNode[],
+    requiredArtist?: number,
+    pathEvidence: "editorial" | "catalogue" = "editorial",
+  ) {
     const seenArtists = new Set<number>();
     const tracks = ordered(r.tracks, input.session, t => `${r.releaseId}:${t.position}:${t.title}`);
     for (const t of tracks) {
@@ -229,7 +235,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
         scene: "Connexion Discogs", label: r.labels[0]?.name || "", tags: [], year: 0, album: r.title,
         obscurity: 50, obscurityKnown: false, colors: ["#b6b56d", "#34382c"],
         externalIds: { discogs: r.sourceUrl },
-        discoveryPath: discogsPath(seed, "editorial", path, { id: candidateId, title: t.title, artist: name, externalIds: { discogs: r.sourceUrl } }),
+        discoveryPath: discogsPath(seed, pathEvidence, path, { id: candidateId, title: t.title, artist: name, externalIds: { discogs: r.sourceUrl } }),
         credits: t.credits,
         discogs: { ...evidence, position: t.position, trackArtists: t.artists, role: r.compilation ? "compilation-track" : "release-track", path, audience: "unknown" },
         reason: `Discogs : « ${seed.title} » → ${path.map(n => n.name).join(" → ")} → « ${t.title} » par ${name}.${origin === "discogs-scene" ? " Voisinage éditorial, pas une scène certifiée." : ""}`,
@@ -390,7 +396,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
           );
 
           if (r.compilation || releaseArtistIds.size > 1) {
-            add(r, "discogs-compilation", anchorPath);
+            add(r, "discogs-compilation", anchorPath, undefined, "catalogue");
           }
 
           const label = r.labels[0];
@@ -409,6 +415,8 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
                 linked,
                 "discogs-label",
                 [...anchorPath, labelNode(label), releaseNode(linked)],
+                undefined,
+                "catalogue",
               );
               break;
             }
@@ -433,6 +441,7 @@ export async function discoverDiscogs(seed: Track, input: DigRequest, parentSign
                   "discogs-deep",
                   [...anchorPath, artistNode(peer), releaseNode(linked)],
                   peer.id,
+                  "catalogue",
                 );
                 break;
               }

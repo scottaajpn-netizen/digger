@@ -451,6 +451,11 @@ test("Discogs can dig from a MusicBrainz-linked artist when the exact track is a
   assert.ok(result.diagnostics.artistAnchorReleases >= 1);
   assert.ok(result.candidates.some(candidate => candidate.artist === "Label Peer"));
   assert.ok(result.candidates.some(candidate => candidate.origin === "discogs-label"));
+  assert.ok(
+    result.candidates.every(
+      candidate => candidate.discoveryPath?.evidence === "catalogue",
+    ),
+  );
 });
 
 test("Discogs does not use artist-name guessing when no verified artist anchor exists", async () => {

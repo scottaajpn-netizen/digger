@@ -25,11 +25,12 @@ function evidencePathKind(
 
   if (
     path.source === "discogs" &&
-    (path.evidence === "editorial" ||
-      path.evidence === "release" ||
-      path.evidence === "catalogue")
+    (path.evidence === "editorial" || path.evidence === "release")
   ) {
     return "structured";
+  }
+  if (path.source === "discogs" && path.evidence === "catalogue") {
+    return "catalogue";
   }
 
   if (path.evidence === "editorial" || path.evidence === "release") {
