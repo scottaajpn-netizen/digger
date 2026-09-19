@@ -1,16 +1,54 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+
+import type { SoulseekResult } from "../lib/soulseek/results";
 import { directions, feedbackValues, type Direction, type DigResponse, type Feedback, type FeedbackMap, type Recommendation, type Track } from "@/lib/types";
+
+import { SeedSearch } from "./seed-search";
 
 const reactions: { value: Feedback; icon: string; label: string }[] = [{ value: "love", icon: "❤️", label: "J’aime" }, { value: "curious", icon: "👀", label: "À écouter" }, { value: "neutral", icon: "😐", label: "Pas pour moi" }, { value: "known", icon: "✓", label: "Déjà connu" }];
 const directionIcons = ["≈", "◎", "▤", "↳", "✳"];
 const storageKey = "digger.profile.v2";
+const creditRoleLabel = (role: NonNullable<Track["credits"]>[number]["role"]) =>
+  role === "featured" ? "feat." : role === "remixer" ? "remix" : role === "producer" ? "prod." : "";
+const visibleCredits = (track: Track) => (track.credits || []).filter((credit, index, all) =>
+  all.findIndex(other => other.name === credit.name && other.role === credit.role) === index
+);
 
-function TrackCard({ track, index, feedback, onFeedback, onExplore }: { track: Recommendation; index: number; feedback?: Feedback; onFeedback: (id: string, value: Feedback) => void; onExplore: (seed: string, id: string) => void }) {
+
+const pathSourceLabel = (source: NonNullable<Track["discoveryPath"]>["source"]) =>
+  source === "discogs" ? "Discogs" :
+  source === "lastfm" ? "Last.fm" :
+  source === "listenbrainz" ? "ListenBrainz" : "MusicBrainz";
+
+const pathEvidenceLabel = (evidence: NonNullable<Track["discoveryPath"]>["evidence"]) =>
+  evidence === "editorial" ? "lien éditorial vérifié" :
+  evidence === "catalogue" ? "chemin de catalogue" :
+  evidence === "listening" ? "proximité d’écoute" :
+  evidence === "tag" ? "contexte de tag" : "même sortie";
+
+function DiscoveryPathView({ track }: { track: Track }) {
+  const path = track.discoveryPath;
+  if (!path?.nodes?.length) return null;
+  return <div className="discovery-path" aria-label="Chemin de découverte">
+    <div className="discovery-path-head">
+      <span>POURQUOI CE MORCEAU ?</span>
+      <small>{pathSourceLabel(path.source)} · {pathEvidenceLabel(path.evidence)} · {path.distance} {path.distance > 1 ? "étapes" : "étape"}</small>
+    </div>
+    <div className="discovery-path-nodes">
+      {path.nodes.map((node, index) => <span className="discovery-path-step" key={`${node.kind}:${node.id || node.name}:${index}`}>
+        {index > 0 ? <i aria-hidden="true">→</i> : null}
+        {node.url ? <a href={node.url} target="_blank" rel="noreferrer" title={node.name}>{node.name}</a> : <b title={node.name}>{node.name}</b>}
+      </span>)}
+    </div>
+  </div>;
+}
+
+function TrackCard({ track, index, feedback, onFeedback, onExplore, onSoulseek }: { track: Recommendation; index: number; feedback?: Feedback; onFeedback: (id: string, value: Feedback) => void; onExplore: (seed: string, track: Track) => void; onSoulseek: (track: Recommendation) => void }) {
   return <article className="track-card">
-    <div className={`cover cover-${index % 4}`} style={{ "--cover": track.colors[0], "--ink": track.colors[1] } as CSSProperties} aria-hidden="true"><div className="cover-top"><span>D / RECORDS</span><span>{String(index + 1).padStart(2, "0")}</span></div><div className="cover-art"><i /><i /><i /></div><div className="cover-name">{track.artist}</div><span className="cover-caption">EXPLORATIONS SONORES</span></div>
-    <div className="card-body"><div className="track-meta"><span>{track.scene}</span><span>{track.popularity !== undefined ? `Popularité LB : ${Math.round(track.popularity)}%` : "Popularité inconnue"}</span></div><h3>{track.title}</h3><p className="artist">{track.artist}</p><div className="tags">{track.tags.slice(0, 2).map(tag => <span key={tag}>{tag}</span>)}</div><p className="reason">{track.reason}</p>{track.externalIds?.musicbrainz && <a className="source-link" href={`https://musicbrainz.org/recording/${track.externalIds.musicbrainz}`} target="_blank" rel="noreferrer">Fiche MusicBrainz ↗</a>}<div className="track-links"><a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(track.artist + " " + track.title)}`} target="_blank" rel="noreferrer">Chercher sur YouTube ↗</a><button title="Explorer à partir de ce morceau" aria-label={`Explorer depuis ${track.title}`} onClick={() => onExplore(`${track.title} — ${track.artist}`, track.id)}>↳</button></div><div className="feedback" aria-label={`Ton avis sur ${track.title}`}>{reactions.map(r => <button key={r.value} title={r.label} aria-label={`${r.label} : ${track.title}`} aria-pressed={feedback === r.value} onClick={() => onFeedback(track.id, r.value)}>{r.icon}</button>)}</div></div>
+    <div className="record-card-art" style={{ "--cover": track.colors[0], "--ink": track.colors[1] } as CSSProperties} aria-hidden="true"><div className="card-vinyl"><span>{String(index + 1).padStart(2, "0")}</span></div><div className={`cover cover-${index % 4}`}><div className="cover-top"><span>D / RECORDS</span><span>CAT. DIG-{String(index + 1).padStart(3, "0")}</span></div><div className={`track-title-sticker sticker-${index % 4}`}><span className="sticker-kicker">{track.obscurity >= 90 ? "DEEP CUT" : "SELECTED CUT"}</span><strong>{track.title}</strong><small>{track.artist}</small></div><div className="cover-stamp">{track.obscurity >= 90 ? "DEEP CUT" : "DISCOVERY"}</div><div className="cover-name">{track.artist}</div><div className="cover-bottom"><span>SIDE A</span><span>{track.year || "NO DATE"}</span><span>33⅓ RPM</span></div></div></div>
+    <div className="card-body"><div className="track-meta"><span>{track.scene}</span><span>{track.analysis?.similarity !== undefined && track.analysis.similarity > 0 ? `Affinité des métadonnées : ${track.analysis.similarity}%` : track.popularity !== undefined ? `Popularité LB : ${Math.round(track.popularity)}%` : "Affinité non mesurée"}</span></div><h3>{track.title}</h3><p className="artist">{track.artist}</p>{visibleCredits(track).length > 1 || visibleCredits(track).some(c => c.role !== "primary") ? <p className="reason">Crédits vérifiés : {visibleCredits(track).map(c => `${creditRoleLabel(c.role)} ${c.name}`.trim()).join(" · ")}</p> : null}<div className="tags">{[...(track.analysis?.subgenres ?? []), ...(track.analysis?.genres ?? []), ...(track.analysis?.traits ?? []), ...track.tags].filter((tag, index, all) => all.indexOf(tag) === index).slice(0, 4).map(tag => <span key={tag}>{tag}</span>)}</div><DiscoveryPathView track={track} />{track.scoreBreakdown && <details className="score-debug"><summary>Diagnostic score {track.score !== undefined ? `· ${track.score.toFixed(1)}` : ""}</summary><pre>{track.evidence ? `evidence: ${track.evidence.tier} · path=${track.evidence.path} · depth=${track.evidence.retrievalDepth} · musical=${track.evidence.musical ? "yes" : "no"}\n` : ""}{Object.entries(track.scoreBreakdown).map(([key, value]) => `${key}: ${value >= 0 ? "+" : ""}${value.toFixed(1)}`).join("\n")}</pre></details>}<p className="reason">{track.reason}</p>{track.externalIds?.musicbrainz && <a className="source-link" href={`https://musicbrainz.org/recording/${track.externalIds.musicbrainz}`} target="_blank" rel="noreferrer">Fiche MusicBrainz ↗</a>}{track.externalIds?.lastfm && <a className="source-link" href={track.externalIds.lastfm} target="_blank" rel="noreferrer">Fiche Last.fm ↗</a>}{track.discogs && <p className="reason">Sortie : {track.discogs.title}{track.discogs.year ? ` · ${track.discogs.year}` : ""}{track.discogs.country ? ` · ${track.discogs.country} (édition)` : ""}{track.discogs.styles.length ? ` · Styles de la sortie : ${track.discogs.styles.join(" / ")}` : ""}{track.discogs.labels.length ? ` · ${track.discogs.labels.map(l => [l.name, l.catalogNumber].filter(Boolean).join(" — ")).join(" / ")}` : ""}{track.lastfmListeners === undefined && track.popularity === undefined ? " · Audience inconnue" : ""}</p>}{track.externalIds?.discogs && <a className="source-link" href={track.externalIds.discogs} target="_blank" rel="noreferrer">Source : Discogs ↗</a>}<div className="track-links"><a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(track.artist + " " + track.title)}`} target="_blank" rel="noreferrer">YouTube ↗</a><button className="soulseek-link" title="Chercher ce morceau sur Soulseek" aria-label={`Chercher ${track.title} sur Soulseek`} onClick={() => onSoulseek(track)}>Soulseek ↓</button><button title="Explorer à partir de ce morceau" aria-label={`Explorer depuis ${track.title}`} onClick={() => onExplore(`${track.title} — ${track.artist}`, track)}>↳</button></div><div className="feedback" aria-label={`Ton avis sur ${track.title}`}>{reactions.map(r => <button key={r.value} title={r.label} aria-label={`${r.label} : ${track.title}`} aria-pressed={feedback === r.value} onClick={() => onFeedback(track.id, r.value)}>{r.icon}</button>)}</div></div>
   </article>;
 }
 
@@ -20,7 +58,7 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
   const [obscurity, setObscurity] = useState(65);
   const [result, setResult] = useState(initial);
   const [choices, setChoices] = useState<Track[]>([]);
-  const [selectedSeed, setSelectedSeed] = useState<{ text: string; id: string } | null>(null);
+  const [selectedSeed, setSelectedSeed] = useState<{ text: string; track: Track } | null>(null);
   const [feedback, setFeedback] = useState<FeedbackMap>({});
   const [saved, setSaved] = useState<Record<string, Recommendation>>({});
   const [tab, setTab] = useState<"explore" | "collection">("explore");
@@ -31,6 +69,32 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
   const [notice, setNotice] = useState("");
   const [ready, setReady] = useState(false);
   const [resetPending, setResetPending] = useState(false);
+  const [soulseekTrack, setSoulseekTrack] = useState<Recommendation | null>(null);
+  const [soulseekResults, setSoulseekResults] = useState<SoulseekResult[]>([]);
+  const [soulseekBusy, setSoulseekBusy] = useState(false);
+  const [soulseekError, setSoulseekError] = useState("");
+  const [soulseekProgress, setSoulseekProgress] = useState("");
+  const [downloads, setDownloads] = useState<Record<string, string>>({});
+  async function downloadSoulseek(item: SoulseekResult) {
+    const key = JSON.stringify([item.username, item.filename]);
+    if (downloads[key]) return;
+    setDownloads(previous => ({...previous,[key]:"Envoi…"}));
+    try {
+      const r = await fetch("/api/soulseek/download", {method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:soulseekId.current,username:item.username,filename:item.filename}),signal:AbortSignal.timeout(12000)});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Téléchargement non confirmé.");
+      setDownloads(previous => ({...previous,[key]:"Transmis à slskd"}));
+    } catch(e) {
+      setDownloads(previous => ({...previous,[key]:"Non confirmé — vérifier slskd"}));
+      setSoulseekError(e instanceof Error ? e.message : "Téléchargement non confirmé. Vérifie slskd.");
+    }
+  }
+
+  const soulseekController = useRef<AbortController | null>(null);
+  const soulseekId = useRef<string | null>(null);
+  useEffect(() => () => { soulseekController.current?.abort(); }, []);
+  function cancelSoulseek() { soulseekController.current?.abort(); }
 
   useEffect(() => {
     try {
@@ -54,16 +118,65 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
   }, [feedback, saved, ready]);
 
   function react(id: string, value: Feedback) {
-    setFeedback(previous => { const next = { ...previous }; if (next[id] === value) delete next[id]; else next[id] = value; return next; });
+    const nextValue: Feedback | null = feedback[id] === value ? null : value;
+    setFeedback(previous => {
+      const next = { ...previous };
+      if (nextValue === null) delete next[id];
+      else next[id] = nextValue;
+      return next;
+    });
     const track = result?.tracks.find(t => t.id === id) ?? saved[id];
-    if (track) setSaved(previous => ({ ...previous, [id]: track }));
+    if (track) {
+      setSaved(previous => ({ ...previous, [id]: track }));
+      void fetch("/api/memory/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artist: track.artist,
+          title: track.title,
+          discoveryPath: track.discoveryPath,
+          feedback: nextValue,
+          direction,
+        }),
+      }).catch(() => undefined);
+    }
   }
 
-  async function explore(nextSeed = seed, seedId = selectedSeed?.text === nextSeed ? selectedSeed.id : undefined) {
+  async function explore(nextSeed = seed, seedTrack = selectedSeed?.text === nextSeed ? selectedSeed.track : undefined) {
     if (!nextSeed.trim() || busy) return;
+    const seedId = seedTrack?.externalIds?.musicbrainz && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(seedTrack.externalIds.musicbrainz)
+      ? seedTrack.externalIds.musicbrainz
+      : seedTrack && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(seedTrack.id)
+        ? seedTrack.id
+        : undefined;
+    const source = seedTrack
+      ? seedTrack.externalIds?.musicbrainz
+        ? "musicbrainz"
+        : seedTrack.externalIds?.lastfm
+          ? "lastfm"
+          : seedTrack.externalIds?.discogs
+            ? "discogs"
+            : "mixed"
+      : undefined;
+    const seedReference = seedTrack ? {
+      id: seedTrack.id,
+      title: seedTrack.title,
+      artist: seedTrack.artist,
+      scene: seedTrack.scene,
+      label: seedTrack.label,
+      tags: seedTrack.tags,
+      year: seedTrack.year,
+      artistId: seedTrack.artistId,
+      releaseId: seedTrack.releaseId,
+      country: seedTrack.country,
+      album: seedTrack.album,
+      externalIds: seedTrack.externalIds,
+      credits: seedTrack.credits,
+      source,
+    } : undefined;
     setBusy(true); setError(""); setChoices([]); setTab("explore");
     try {
-      const response = await fetch("/api/recommendations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seed: nextSeed, seedId, direction, obscurity, feedback: Object.fromEntries(Object.entries(feedback).slice(-200)), session: session + 1 }), signal: AbortSignal.timeout(55000) });
+      const response = await fetch("/api/recommendations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seed: nextSeed, seedId, seedTrack: seedReference, direction, obscurity, feedback: Object.fromEntries(Object.entries(feedback).slice(-200)), session: session + 1 }), signal: AbortSignal.timeout(55000) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Impossible de lancer l’exploration.");
       if (data.choices) { setChoices(data.choices); setResult(null); }
@@ -71,25 +184,72 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
     } catch (e) { setError(e instanceof Error && e.name === "TimeoutError" ? "L’exploration prend trop de temps. Réessaie." : e instanceof Error ? e.message : "Une erreur est survenue. Réessaie."); }
     finally { setBusy(false); }
   }
+  async function searchSoulseek(track: Recommendation) {
+    if (soulseekBusy) return;
+    const controller = new AbortController();
+    soulseekController.current = controller;
+    soulseekId.current = null;
+    setDownloads({}); setSoulseekTrack(track); setSoulseekResults([]); setSoulseekError(""); setSoulseekProgress("Démarrage de la recherche…"); setSoulseekBusy(true);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]);
+    try {
+      const response = await fetch("/api/soulseek/search", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artist: track.artist, title: track.title }), signal });
+      const created = await response.json();
+      if (!response.ok) throw new Error(created.error ?? "Recherche Soulseek indisponible.");
+      soulseekId.current = created.id;
+      let emptyCompletePolls = 0;
+      while (true) {
+        signal.throwIfAborted();
+        const r = await fetch(`/api/soulseek/search?id=${created.id}`, { signal });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? "Recherche Soulseek indisponible.");
+        setSoulseekResults(data.results || []);
+        setSoulseekProgress(`${data.responseCount} réponses · ${data.fileCount} fichiers repérés${data.complete ? " · finalisation" : " · recherche en cours…"}`);
+        if (data.failed) throw new Error("La recherche a échoué dans slskd.");
+        if (data.cancelled) throw new DOMException("Recherche annulée.", "AbortError");
+        if (data.ready) { setSoulseekProgress(`${data.totalAudio} fichiers audio disponibles · ${data.results.length} affichés`); break; }
+        if (data.complete && ++emptyCompletePolls >= 4) { setSoulseekProgress("Recherche terminée : aucun fichier audio accessible dans les réponses."); break; }
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(signal.reason); };
+          const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, 1000);
+          signal.addEventListener("abort", abort, { once: true });
+          if (signal.aborted) abort();
+        });
+      }
+    } catch (e) {
+      setSoulseekError(e instanceof Error && e.name === "AbortError" ? "Recherche annulée." : e instanceof Error && e.name === "TimeoutError"
+        ? "Délai de 60 secondes atteint. Les résultats déjà reçus restent visibles ; tu peux réessayer." : e instanceof Error ? e.message : "Recherche Soulseek indisponible.");
+      if (soulseekId.current) void fetch(`/api/soulseek/search?id=${soulseekId.current}`, { method: "PUT" }).catch(() => undefined);
+    } finally { setSoulseekBusy(false); soulseekController.current = null; }
+  }
+
   function submit(e: FormEvent) { e.preventDefault(); void explore(); }
   const collection = Object.values(saved).filter(t => ["love", "curious"].includes(feedback[t.id]));
   const visible = tab === "explore" ? result?.tracks ?? [] : collection.filter(t => filter === "all" || feedback[t.id] === filter);
   const rated = Object.keys(feedback).length;
 
   return <div className="app-shell">
-    <header className="topbar"><a className="brand" href="/" aria-label="Digger accueil"><span className="brand-icon">◉</span>digger<span className="brand-dot">.</span></a><nav aria-label="Navigation principale"><button className={tab === "explore" ? "active" : ""} onClick={() => setTab("explore")}>Explorer</button><button className={tab === "collection" ? "active" : ""} onClick={() => setTab("collection")}>Ma collection <span>{collection.length}</span></button></nav><span className="local-status"><i /> Écoute ta curiosité</span></header>
-    <main><section className="hero"><div><p className="eyebrow"><span /> LE BON MORCEAU N’EST QUE LE DÉBUT</p><h1>Suis le son.<br /><em>Creuse plus loin.</em></h1><p className="hero-copy">Pars d’un morceau que tu aimes. Trouve ceux<br className="desktop-break" /> que tu ne savais pas encore chercher.</p></div><div className="record-illustration" aria-hidden="true"><div className="record-sleeve"><span>DIGGING<br />IS A<br />LOVE<br />LANGUAGE.</span><small>VOL. 001 — SANS FRONTIÈRES</small></div><div className="vinyl"><span>dig<br />deeper<small>33⅓ RPM</small></span></div><div className="record-sticker">Moins d’algorithme.<br />Plus d’aventure. ↗</div></div></section>
-    <section className="controls" aria-label="Paramètres d’exploration"><form onSubmit={submit}><div className="search-line"><div className="seed-field"><label htmlFor="seed">01 <span>TON POINT DE DÉPART</span></label><div className="input-wrap"><span aria-hidden="true">⌕</span><input id="seed" value={seed} onChange={e => { setSeed(e.target.value); setSelectedSeed(null); setChoices([]); }} required maxLength={160} placeholder="Titre — artiste" list="seed-suggestions" /><datalist id="seed-suggestions"><option value="Ttabla — Taxi Kebab" /><option value="Kerala — Bonobo" /><option value="Space Song — Beach House" /><option value="Aksak — Altın Gün" /></datalist></div></div><button className="dig-button" type="submit" disabled={busy || !seed.trim()}>{busy ? "On creuse…" : "Lancer l’exploration"}<span>{busy ? "◌" : "↗"}</span></button></div><div className="settings"><fieldset className="direction"><legend>02 <span>CHOISIS UNE DIRECTION</span></legend><div className="direction-buttons">{directions.map((d, i) => <button type="button" key={d} aria-pressed={direction === d} onClick={() => setDirection(d)}><span>{directionIcons[i]}</span>{d}</button>)}</div></fieldset><div className="range-field"><label htmlFor="obscurity">03 <span>TA SOIF DE DÉCOUVERTE</span><output>{obscurity}%</output></label><input id="obscurity" type="range" min="0" max="100" value={obscurity} onChange={e => setObscurity(Number(e.target.value))} style={{ "--progress": `${obscurity}%` } as CSSProperties} /><div className="range-captions"><span>Familier</span><span>Obscur ✧</span></div></div></div></form></section>
-    <div className="demo-note"><span>DONNÉES RÉELLES</span><span>MusicBrainz + ListenBrainz · Recherche en ligne · Visuels illustratifs</span></div><details className="selection-help"><summary>Comment fonctionne la sélection ?</summary><p>Les pistes viennent des habitudes d’écoute ListenBrainz et des artistes, genres, sorties et labels renseignés dans MusicBrainz. Le curseur élargit la radio et filtre la popularité quand elle est disponible. La popularité LB reflète cette communauté, pas la notoriété mondiale. Les liens YouTube ouvrent une recherche ; les visuels sont illustratifs.</p></details>
-    {choices.length > 0 && <section className="seed-choices" aria-label="Choisir le morceau"><h2>Quel morceau souhaites-tu explorer ?</h2><p>Choisis la bonne version dans MusicBrainz.</p>{choices.map(track => <button key={track.id} disabled={busy} onClick={() => { const text = `${track.title} — ${track.artist}`; setSeed(text); setSelectedSeed({ text, id: track.id }); void explore(text, track.id); }}><strong>{track.title}</strong><span>{track.artist} · {track.album || "Édition non renseignée"}{track.year ? ` · ${track.year}` : ""}</span><b>Explorer ↗</b></button>)}</section>}
+    <header className="topbar"><a className="brand" href="/" aria-label="Digger accueil"><span className="brand-icon">◉</span>digger<span className="brand-dot">.</span></a><nav aria-label="Navigation principale"><button className={tab === "explore" ? "active" : ""} onClick={() => setTab("explore")}>Explorer</button><button className={tab === "collection" ? "active" : ""} onClick={() => setTab("collection")}>Ma collection <span>{collection.length}</span></button></nav><span className="local-status"><i /> KEEP DIGGING</span></header>
+    <main><section className="hero"><div className="hero-copy-block"><p className="eyebrow hero-catalog"><span>D / RECORDS</span> VOL. 001 · 33⅓ RPM</p><h1><span>KEEP</span><br /><em>DIGGING</em></h1><p className="hero-copy">Moins de feed.<br />Plus de sillons.</p><span className="poster-note">PLAY LOUD · FILE UNDER : CURIOSITY</span></div><div className="record-illustration" aria-hidden="true"><div className="record-sleeve abstract-sleeve"><div className="sleeve-meta"><b>DIGGER</b><small>VOL. 001</small></div><div className="sleeve-art"><span /><span /><span /><i /></div><div className="sleeve-notes"><span>CAT. DIG-001</span><span>SIDE A</span><span>STEREO</span></div><small>D / RECORDS · KEEP DIGGING</small></div><div className="vinyl"><span>dig<br />deeper<small>33⅓ RPM</small></span></div><div className="hero-sticker hero-sticker-round">DEEP<br />CUT</div><div className="hero-sticker hero-sticker-paper">ARCHIVE COPY<br /><small>NOT FOR PASSIVE LISTENING</small></div><div className="record-sticker">KEEP DIGGING.</div></div></section>
+    <section className="controls" aria-label="Paramètres d’exploration"><form onSubmit={submit}><div className="search-line"><div className="seed-field"><label htmlFor="seed">01 <span>TON POINT DE DÉPART</span></label><SeedSearch value={seed} disabled={busy} onChange={value => { setSeed(value); setSelectedSeed(null); setChoices([]); }} onSelect={track => { const text = `${track.title} — ${track.artist}`; setSeed(text); setSelectedSeed({text,track}); void explore(text,track); }} /></div><button className="dig-button" type="submit" disabled={busy || !seed.trim()}>{busy ? "On creuse…" : "Lancer l’exploration"}<span>{busy ? "◌" : "↗"}</span></button></div><div className="settings"><fieldset className="direction"><legend>02 <span>CHOISIS UNE DIRECTION</span></legend><div className="direction-buttons">{directions.map((d, i) => <button type="button" key={d} aria-pressed={direction === d} onClick={() => setDirection(d)}><span>{directionIcons[i]}</span>{d}</button>)}</div></fieldset><div className="range-field"><label htmlFor="obscurity">03 <span>TA SOIF DE DÉCOUVERTE</span><output>{obscurity}%</output></label><input id="obscurity" type="range" min="0" max="100" value={obscurity} onChange={e => setObscurity(Number(e.target.value))} style={{ "--progress": `${obscurity}%` } as CSSProperties} /><div className="range-captions"><span>Familier</span><span>Obscur ✧</span></div></div></div></form></section>
+    <div className="source-strip"><span>DONNÉES RÉELLES</span><span>MusicBrainz · ListenBrainz · Last.fm · Discogs</span><details><summary>Sources & méthode</summary><p>Les pistes viennent de plusieurs graphes musicaux et sont ensuite filtrées, classées et diversifiées. Les liens de chaque carte permettent de vérifier le chemin utilisé. Les visuels de pochettes sont illustratifs.</p></details></div>
+    {choices.length > 0 && <section className="seed-choices" aria-label="Choisir le morceau"><h2>Quel morceau souhaites-tu explorer ?</h2><p>Choisis la bonne version. Digger peut continuer avec MusicBrainz, Last.fm ou Discogs selon les données disponibles.</p>{choices.map(track => <button key={track.id} disabled={busy} onClick={() => { const text = `${track.title} — ${track.artist}`; setSeed(text); setSelectedSeed({ text, track }); void explore(text, track); }}><strong>{track.title}</strong><span>{track.artist} · {track.album || "Édition non renseignée"}{track.year ? ` · ${track.year}` : ""} · {track.externalIds?.musicbrainz ? "MusicBrainz" : track.externalIds?.lastfm ? "Last.fm" : track.externalIds?.discogs ? "Discogs" : "Source externe"}</span><b>Explorer ↗</b></button>)}</section>}
     {notice && <p role="status" className="notice">{notice}</p>}{error && <p role="alert" className="error">{error} <button onClick={() => void explore()}>Réessayer</button></p>}
     <section className="results" aria-busy={busy}><div className="results-heading"><div><p className="eyebrow">{tab === "explore" ? "TA PROCHAINE OBSESSION EST PEUT-ÊTRE ICI" : "LES MORCEAUX QUE TU GARDES"}</p><h2>{tab === "explore" ? "Dans le même sillon" : "Ma collection"}<span>{visible.length.toString().padStart(2, "0")}</span></h2></div><p>{tab === "explore" ? result ? `${result.direction} · Découverte ${result.obscurity}%` : "Choisis ton point de départ" : `${collection.length} morceau${collection.length > 1 ? "x" : ""} à retrouver`}</p></div>
-    {tab === "explore" && result && <p className="result-context" role="status">À partir de <strong>{result.seed.title} — {result.seed.artist}</strong>{" · Tes avis influencent les prochaines sélections."}</p>}
+    {tab === "explore" && result && <><p className="result-context" role="status">À partir de <strong>{result.seed.title} — {result.seed.artist}</strong>{` · Source : ${result.seed.externalIds?.musicbrainz ? "MusicBrainz" : result.seed.externalIds?.lastfm ? "Last.fm" : result.seed.externalIds?.discogs ? "Discogs" : "multi-source"} · Tes avis influencent les prochaines sélections.`}</p>{result.seed.analysis && <p className="result-context"><strong>Analyse :</strong> {[...result.seed.analysis.subgenres, ...result.seed.analysis.genres, ...result.seed.analysis.traits].filter((tag, index, all) => all.indexOf(tag) === index).slice(0, 6).join(" · ") || "pas assez de métadonnées pour une analyse fine"}</p>}</>}
     {tab === "collection" && <div className="collection-filters">{([['all', 'Tout'], ['love', '❤️ J’aime'], ['curious', '👀 À écouter']] as const).map(([v, label]) => <button key={v} aria-pressed={filter === v} onClick={() => setFilter(v)}>{label}</button>)}</div>}
-    {tab === "explore" && result?.notes?.map(note => <p className="result-context" key={note}>{note}</p>)}
-    {busy && <p className="loading-status" role="status">Recherche dans MusicBrainz et ListenBrainz… Cela peut prendre quelques secondes.</p>}
-    <div className="track-grid">{visible.map((track, i) => <TrackCard key={track.id} track={track} index={i} feedback={feedback[track.id]} onFeedback={react} onExplore={(value, id) => { setSeed(value); setSelectedSeed({ text: value, id }); void explore(value, id); }} />)}</div>
+    {tab === "explore" && result?.notes?.length ? <details className="dig-notes"><summary>Détails du dig <span>{result.notes.length}</span></summary><div>{result.notes.map(note => <p key={note}>{note}</p>)}</div></details> : null}
+    {busy && <p className="loading-status" role="status">Exploration des sources musicales… Cela peut prendre quelques secondes.</p>}
+    {soulseekTrack && <section className="soulseek-panel" aria-live="polite">
+      <div className="soulseek-panel-head"><div><span>SOULSEEK</span><h3>{soulseekTrack.title} — {soulseekTrack.artist}</h3></div><button onClick={() => { cancelSoulseek(); setSoulseekTrack(null); setSoulseekResults([]); setSoulseekError(""); }} aria-label="Fermer les résultats Soulseek">×</button></div>
+      {soulseekBusy && <button onClick={() => void cancelSoulseek()}>Annuler la recherche</button>}<p role="status">{soulseekProgress}</p>{soulseekBusy && <p>Recherche des partages disponibles…</p>}
+      {soulseekError && <p className="error">{soulseekError}</p>}
+      {!soulseekBusy && !soulseekError && soulseekResults.length === 0 && <p>Aucun résultat audio exploitable trouvé pour le moment.</p>}
+      {soulseekResults.length > 0 && <div className="soulseek-results">{soulseekResults.map((item, index) => <div className="soulseek-result" key={item.username + item.filename + index}><div><strong>{item.filename.split(/[\\/]/).pop()}</strong><span>{item.username}{item.freeUploadSlot ? " · slot libre" : ""}{typeof item.queueLength === "number" ? ` · file ${item.queueLength}` : ""}</span></div><div><span>{item.format} · {(item.size / 1024 / 1024).toFixed(1)} Mo</span>{item.uploadSpeed !== undefined ? <span>Vitesse annoncée : {(item.uploadSpeed / 1024).toFixed(0)} Ko/s</span> : null}{item.bitRate ? <span>{Math.round(item.bitRate)} kb/s</span> : null}<button disabled={!!downloads[JSON.stringify([item.username,item.filename])]} onClick={() => void downloadSoulseek(item)}>{downloads[JSON.stringify([item.username,item.filename])] || "Télécharger"}</button></div></div>)}</div>}
+      <p className="soulseek-note">Choisis un fichier puis clique sur Télécharger. Destination : 00_INBOX ; le classement existant vers Navidrome reste automatique. Aucun téléchargement ne démarre pendant la recherche.</p>
+    </section>}
+    <div className="track-grid">{visible.map((track, i) => <TrackCard key={track.id} track={track} index={i} feedback={feedback[track.id]} onFeedback={react} onExplore={(value, track) => { setSeed(value); setSelectedSeed({ text: value, track }); void explore(value, track); }} onSoulseek={searchSoulseek} />)}</div>
     {!visible.length && !busy && !choices.length && <div className="empty"><span>◎</span><h3>{tab === "collection" ? "Ton prochain coup de cœur t’attend." : result ? "Pas encore de piste pour cette exploration." : "Un morceau. Des chemins à découvrir."}</h3><p>{tab === "collection" ? "Un ❤️ ou un 👀 sur une carte, et tu la retrouveras ici." : result ? "Essaie une autre direction, un autre morceau ou retire des exclusions avec le bouton en bas de page." : "Entre un titre et son artiste, puis lance l’exploration pour chercher dans MusicBrainz."}</p>{tab === "collection" ? <button onClick={() => setTab("explore")}>Retour à l’exploration ↗</button> : null}</div>}
-    </section><footer><span className="brand">digger.</span><p>La curiosité n’a pas de fin de piste.</p><span>{rated} avis · Conservés dans ce navigateur</span>{rated > 0 && <div className="reset-actions">{resetPending ? <><button onClick={() => { setFeedback({}); setSaved({}); setResetPending(false); setNotice("Tes avis ont été réinitialisés."); }}>Confirmer la remise à zéro</button><button onClick={() => setResetPending(false)}>Annuler</button></> : <button onClick={() => setResetPending(true)}>Réinitialiser mes avis</button>}</div>}</footer></main>
+    </section><footer><span className="brand">digger.</span><p>KEEP DIGGING.</p><span>{rated} avis · Mémoire locale active</span>{rated > 0 && <div className="reset-actions">{resetPending ? <><button onClick={() => { setFeedback({}); setSaved({}); setResetPending(false); void fetch("/api/memory/feedback", { method: "DELETE" }).catch(() => undefined); setNotice("Tes avis et la mémoire locale ont été réinitialisés."); }}>Confirmer la remise à zéro</button><button onClick={() => setResetPending(false)}>Annuler</button></> : <button onClick={() => setResetPending(true)}>Réinitialiser mes avis</button>}</div>}</footer></main>
   </div>;
 }

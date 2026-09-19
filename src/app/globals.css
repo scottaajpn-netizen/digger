@@ -7,3 +7,444 @@
 .reset-actions{display:flex;gap:8px}.reset-actions button{background:transparent;border:1px solid var(--line);border-radius:4px;padding:7px;color:var(--muted);font-size:10px}
 .seed-choices{border:1px solid var(--line);padding:22px;border-radius:10px;margin:20px 0 30px}.seed-choices h2{margin-top:0;font-size:21px}.seed-choices>p{color:var(--muted)}.seed-choices>button{display:grid;grid-template-columns:1fr auto;text-align:left;width:100%;background:var(--panel);border:1px solid var(--line);padding:15px;margin-top:8px;border-radius:6px;gap:7px}.seed-choices>button:hover{border-color:var(--orange)}.seed-choices>button>span{grid-column:1;font-size:12px;color:var(--muted)}.seed-choices>button>b{grid-column:2;grid-row:1 / 3;align-self:center;color:var(--orange);font-size:12px}.source-link{display:block;font-size:10px;color:var(--orange);margin-bottom:12px}.demo-note>span+span{border:0;padding:0;font-size:10px}
 .selection-help{color:var(--muted);font-size:11px;margin:-20px 0 28px;max-width:850px;line-height:1.7}.selection-help summary{cursor:pointer;color:#c3cbb8}.selection-help p{margin-bottom:0}
+.seed-field{min-width:0}.demo-note>span+span{white-space:normal;min-width:0}.seed-autocomplete{position:relative}.suggestion-panel{position:absolute;z-index:20;top:calc(100% + 6px);left:0;right:0;background:#20251f;border:1px solid #59604f;box-shadow:0 12px 28px #0008;border-radius:8px;overflow:hidden}.suggestion-panel ul{padding:0;margin:0;list-style:none;max-height:360px;overflow-y:auto}.suggestion-panel li{padding:12px 15px;display:flex;flex-direction:column;gap:5px;cursor:pointer;border-bottom:1px solid var(--line)}.suggestion-panel li:hover,.suggestion-panel li[aria-selected=true]{background:#463526;box-shadow:inset 3px 0 var(--orange)}.suggestion-panel strong,.suggestion-panel li>span{overflow-wrap:anywhere}.suggestion-panel li>span{font-size:12px;color:var(--muted)}.suggestion-panel small{font-size:10px;color:var(--orange)}.suggestion-panel>p{font-size:11px;padding:10px 15px;color:var(--muted);margin:0;line-height:1.5}@media(max-width:700px){.suggestion-panel ul{max-height:270px}.suggestion-panel strong{font-size:13px}}
+.search-help{margin:8px 0 0;font-size:11px;line-height:1.5;color:var(--muted)}
+.seed-autocomplete .suggestion-panel{top:55px}
+.search-line{align-items:flex-start}.search-line>.dig-button{margin-top:24px}
+@media(max-width:700px){.search-line{align-items:stretch}.search-line>.dig-button{margin-top:0}}
+
+.soulseek-link{font-size:9px!important;color:var(--orange);padding:4px 7px!important}.soulseek-panel{margin:0 0 24px;padding:18px;border:1px solid #59604f;background:#191d19;border-radius:8px}.soulseek-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.soulseek-panel-head span{font-size:8px;letter-spacing:1.4px;color:var(--orange)}.soulseek-panel-head h3{margin:5px 0 12px;font-size:17px}.soulseek-panel-head>button{background:none;border:1px solid var(--line);color:var(--muted);border-radius:4px;font-size:18px;line-height:1;padding:4px 8px}.soulseek-panel>p{color:var(--muted);font-size:11px}.soulseek-results{display:grid;gap:7px}.soulseek-result{display:flex;justify-content:space-between;gap:15px;padding:10px 12px;border:1px solid var(--line);background:#151815;border-radius:5px}.soulseek-result>div{display:flex;flex-direction:column;gap:4px;min-width:0}.soulseek-result>div:first-child{flex:1}.soulseek-result strong{font-size:11px;overflow-wrap:anywhere}.soulseek-result span{font-size:9px;color:var(--muted)}.soulseek-result>div:last-child{text-align:right;white-space:nowrap}.soulseek-note{margin:12px 0 0!important;font-size:9px!important}@media(max-width:700px){.soulseek-result{flex-direction:column}.soulseek-result>div:last-child{text-align:left;flex-direction:row}.track-links{flex-wrap:wrap}}
+
+.discovery-path{margin:12px 0;padding:10px;border:1px solid #3b4436;border-radius:6px;background:#171a17}
+.discovery-path-head{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.discovery-path-head>span{font-size:8px;letter-spacing:1.1px;color:var(--orange);font-weight:700}
+.discovery-path-head>small{font-size:8px;color:#9fa896;line-height:1.4}
+.discovery-path-nodes{display:flex;align-items:center;flex-wrap:wrap;gap:5px 3px;line-height:1.45}
+.discovery-path-step{display:flex;align-items:center;gap:3px;min-width:0}
+.discovery-path-step i{font-style:normal;color:#6f7868;font-size:9px}
+.discovery-path-step a,.discovery-path-step b{max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #343b31;border-radius:3px;padding:3px 5px;font-size:8px;font-weight:400;color:#c8d0bd;background:#20251f}
+.discovery-path-step a{color:#e2a17c;border-color:#5a493d}
+.discovery-path-step a:hover{border-color:var(--orange);color:#ffc09a}
+@media(max-width:700px){.discovery-path-step a,.discovery-path-step b{max-width:120px}.discovery-path{padding:9px}}
+
+
+/* --- Digger fanzine / vinyl art direction --- */
+:root{--paper:#e7e0cf;--olive:#a8b681;--salmon:#df7651;--ink:#111412}
+body{background:#111412}
+body:before{content:"";position:fixed;inset:0;z-index:9999;pointer-events:none;opacity:.08;background-image:repeating-radial-gradient(circle at 17% 31%,#fff 0 1px,transparent 1px 4px),repeating-linear-gradient(93deg,transparent 0 23px,#fff 24px 25px,transparent 26px 73px);background-size:7px 7px,97px 97px;mix-blend-mode:soft-light}
+.app-shell{position:relative}
+.topbar{height:82px;border-bottom:1px solid #3b3c35}
+.topbar .brand{font-size:30px;text-transform:none}
+.local-status{font-family:"Courier New",monospace;letter-spacing:1.4px;font-size:9px}
+.hero{min-height:365px;padding:50px 0 42px;border-bottom:1px solid #2b2e29;position:relative}
+.hero:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,var(--orange),transparent 34%)}
+.hero-copy-block{max-width:720px}
+.hero-catalog{font-family:"Courier New",monospace;color:#a9b58e;gap:12px}
+.hero-catalog>span{width:auto;height:auto;background:none;border-radius:0;color:#d8dfc9;border:1px solid #4c5547;padding:3px 7px;letter-spacing:1.2px}
+.hero h1{font-family:Impact,"Arial Narrow",Arial,sans-serif;font-size:clamp(68px,8.2vw,128px);line-height:.78;letter-spacing:-3px;margin:26px 0 28px;text-transform:uppercase;font-weight:900}
+.hero h1 span{color:var(--paper)}
+.hero h1 em{font-family:Impact,"Arial Narrow",Arial,sans-serif;color:var(--orange);font-style:italic;font-weight:900;letter-spacing:-4px}
+.hero-copy{font-family:Georgia,serif;font-style:italic;color:#d6d1c2;font-size:18px;line-height:1.45}
+.record-illustration{width:390px;height:280px;margin-right:48px}
+.record-sleeve{width:220px;height:232px;left:12px;top:16px;background:#d7d0bd;color:#171915;transform:rotate(-7deg);border:1px solid #797463;border-radius:2px;padding:16px;box-shadow:7px 9px 0 #0005}
+.abstract-sleeve{background:linear-gradient(135deg,#d9d1bc 0 53%,#a4b181 53% 100%);overflow:hidden}
+.sleeve-meta{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:2}
+.sleeve-meta b{font-size:30px;letter-spacing:-1.8px}.sleeve-meta small{font:700 8px/1 "Courier New",monospace;letter-spacing:.8px}
+.sleeve-art{position:absolute;inset:58px 14px 32px;overflow:hidden;border:1px solid #24251f;background:#171915}
+.sleeve-art span,.sleeve-art i{position:absolute;display:block}
+.sleeve-art span:nth-child(1){width:118px;height:118px;border:1px solid #d9d1bc;border-radius:50%;left:-25px;top:8px;box-shadow:0 0 0 8px #171915,0 0 0 9px #d9d1bc,0 0 0 17px #171915,0 0 0 18px #d9d1bc}
+.sleeve-art span:nth-child(2){width:68px;height:106px;background:var(--salmon);right:0;top:0;border-radius:68px 0 0 0}
+.sleeve-art span:nth-child(3){width:73px;height:37px;background:#9dac7f;right:0;bottom:0}
+.sleeve-art i{width:42px;height:74px;right:8px;bottom:8px;background:repeating-linear-gradient(90deg,#d9d1bc 0 4px,transparent 4px 8px)}
+.abstract-sleeve>small{position:absolute;bottom:12px;left:16px;font:700 7px/1 "Courier New",monospace;letter-spacing:.7px}
+.vinyl{left:155px;top:25px;width:225px;height:225px;box-shadow:8px 10px 0 #0006}
+.vinyl>span{background:var(--salmon)}
+.record-sticker{right:-15px;bottom:8px;font-family:"Courier New",monospace;font-style:normal;font-weight:700;font-size:12px;letter-spacing:1.5px;color:#cfd5c5;transform:rotate(-4deg);border-bottom:1px solid #62695e;padding-bottom:3px}
+.controls{border-radius:2px;background:#191c19;box-shadow:inset 0 0 0 1px #111;padding:24px 26px}
+.input-wrap,.dig-button,.direction-buttons button,.collection-filters button,.track-card,.discovery-path,.seed-choices,.suggestion-panel,.soulseek-panel{border-radius:2px}
+.dig-button{background:var(--orange);text-transform:uppercase;letter-spacing:.5px}
+.source-strip{display:flex;align-items:center;gap:11px;margin:14px 0 30px;color:#9ca394;font:10px/1.5 "Courier New",monospace}
+.source-strip>span:first-child{border:1px solid #4e5549;color:#c9d0bb;padding:4px 6px;font-size:8px;letter-spacing:.7px}
+.source-strip details{margin-left:auto;position:relative}
+.source-strip summary{cursor:pointer;color:#b6beab;list-style:none}.source-strip summary::-webkit-details-marker{display:none}
+.source-strip details[open]{z-index:40}
+.source-strip details p{position:absolute;right:0;top:18px;width:min(480px,80vw);margin:0;padding:12px 14px;background:#171a17;border:1px solid #464d42;box-shadow:0 10px 30px #0008;color:#aeb4a8;line-height:1.6;font-family:Arial,Helvetica,sans-serif}
+.results-heading{border-top:1px solid #2e312d;padding-top:26px}
+.results-heading h2{text-transform:uppercase;font-size:29px;letter-spacing:-1px}
+.track-card{box-shadow:3px 4px 0 #0a0c0a;border-color:#353a33}
+.cover:after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.16;background:repeating-linear-gradient(0deg,transparent 0 7px,#000 8px 9px),radial-gradient(circle at 30% 20%,#fff7 0 1px,transparent 1px 3px)}
+.cover-name{font-family:Impact,"Arial Narrow",Arial,sans-serif;letter-spacing:.1px}
+.dig-notes{margin:0 0 22px;border-top:1px solid #2f342d;border-bottom:1px solid #2f342d;padding:9px 0;color:#8f978b;font-size:10px}
+.dig-notes summary{cursor:pointer;list-style:none;color:#b7bfad;font-family:"Courier New",monospace;letter-spacing:.3px}
+.dig-notes summary::-webkit-details-marker{display:none}
+.dig-notes summary:before{content:"＋";color:var(--orange);margin-right:8px}.dig-notes[open] summary:before{content:"−"}
+.dig-notes summary span{display:inline-block;margin-left:6px;border:1px solid #3d4439;padding:1px 5px;color:#87907f}
+.dig-notes>div{display:grid;gap:4px;margin-top:9px;padding-left:17px}
+.dig-notes p{margin:0;line-height:1.5}
+footer{font-family:"Courier New",monospace;letter-spacing:.4px}
+footer p{color:#c7ceba;font-weight:700}
+@media(max-width:1150px){.record-illustration{margin-right:0;transform:scale(.86);transform-origin:right center}}
+@media(max-width:700px){.hero h1{font-size:64px;line-height:.82}.hero-copy{font-size:16px}.source-strip{align-items:flex-start;flex-wrap:wrap}.source-strip details{margin-left:0;width:100%}.source-strip details p{left:0;right:auto;width:100%}.results-heading{padding-top:20px}}
+
+
+/* --- Digger fanzine pass 2: poster, stickers, archive sleeves --- */
+.hero{gap:48px;overflow:visible}
+.hero-copy-block{position:relative;max-width:650px;background:
+  linear-gradient(95deg,rgba(0,0,0,.045),transparent 28%),
+  radial-gradient(circle at 18% 14%,rgba(0,0,0,.10) 0 1px,transparent 1px 5px),
+  #d9d2bf;color:#171915;padding:28px 38px 30px 34px;transform:rotate(-.65deg);box-shadow:10px 12px 0 #080a0888;clip-path:polygon(.7% 1.2%,99.5% 0,99.1% 97.8%,71% 99%,52% 98.2%,29% 100%,.3% 98.4%)}
+.hero-copy-block:before{content:"";position:absolute;right:42px;top:-11px;width:88px;height:24px;background:rgba(205,190,150,.72);transform:rotate(4deg);box-shadow:0 1px 0 #fff3;mix-blend-mode:multiply}
+.hero-copy-block:after{content:"ARCHIVE COPY";position:absolute;right:24px;bottom:22px;border:1px solid #47463d;padding:7px 8px 5px;border-radius:50%;font:700 7px/1 "Courier New",monospace;letter-spacing:.7px;transform:rotate(-12deg);opacity:.72}
+.hero-copy-block .hero-catalog{color:#55584b;margin:0}
+.hero-copy-block .hero-catalog>span{color:#27291f;border-color:#747765}
+.hero-copy-block h1{margin:28px 0 24px}
+.hero-copy-block h1 span{color:#171915}
+.hero-copy-block .hero-copy{color:#2c3027;font-size:21px;line-height:1.28}
+.poster-note{display:inline-block;margin-top:19px;padding-top:7px;border-top:1px solid #727263;font:700 7px/1.3 "Courier New",monospace;letter-spacing:1px;color:#57594d}
+.record-illustration{width:430px;height:300px;margin-right:24px}
+.abstract-sleeve{width:238px;height:250px;left:20px;top:15px;transform:rotate(-6deg);box-shadow:10px 12px 0 #07090799;
+  background:
+    radial-gradient(circle at 12% 18%,rgba(0,0,0,.12) 0 1px,transparent 1px 4px),
+    linear-gradient(135deg,#d8d0ba 0 51%,#9eab7e 51% 100%)}
+.abstract-sleeve:before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.22;background:
+  repeating-linear-gradient(91deg,transparent 0 31px,rgba(20,20,15,.12) 32px 33px,transparent 34px 61px),
+  radial-gradient(circle at 73% 24%,#fff8 0 1px,transparent 1px 3px)}
+.abstract-sleeve:after{content:"";position:absolute;left:-4px;bottom:14px;width:78px;height:18px;background:rgba(211,194,151,.68);transform:rotate(7deg);mix-blend-mode:multiply}
+.sleeve-meta b{font-size:31px}.sleeve-meta small{background:#171915;color:#d8d0ba;padding:4px 5px}
+.sleeve-art{inset:57px 13px 48px;box-shadow:inset 0 0 0 1px #0006}
+.sleeve-notes{position:absolute;left:15px;right:15px;bottom:26px;display:flex;justify-content:space-between;gap:6px;font:700 6px/1 "Courier New",monospace;letter-spacing:.6px;color:#2c2d26}
+.abstract-sleeve>small{bottom:11px}
+.vinyl{left:185px;top:34px;width:230px;height:230px}
+.vinyl:after{content:"";position:absolute;inset:11px;border-radius:50%;border:1px solid #ffffff12;box-shadow:0 0 0 8px #0000,0 0 0 9px #ffffff0c,0 0 0 18px #0000,0 0 0 19px #ffffff0b}
+.hero-sticker{position:absolute;z-index:5;font-family:"Courier New",monospace;font-weight:800;line-height:1;text-align:center;box-shadow:3px 4px 0 #0006}
+.hero-sticker-round{right:10px;top:12px;width:66px;height:66px;border-radius:50%;display:grid;place-items:center;background:#df7651;color:#1b1d18;font-size:10px;transform:rotate(10deg);border:1px solid #703c2b}
+.hero-sticker-paper{right:-8px;bottom:30px;background:#c98284;color:#251f1d;padding:9px 11px 8px;font-size:8px;text-align:left;transform:rotate(4deg);clip-path:polygon(2% 0,100% 4%,96% 96%,5% 100%,0 61%)}
+.hero-sticker-paper small{font-size:5px;letter-spacing:.4px}
+.record-sticker{right:68px;bottom:2px;background:#d7d0bd;color:#22251f;border:0;padding:6px 8px 5px;transform:rotate(-3deg);font-size:9px;box-shadow:2px 3px 0 #0005}
+
+/* record-bin cards */
+.track-card{position:relative;background:#1a1d1a}
+.track-card:before{content:"";position:absolute;z-index:3;right:8px;top:8px;width:30px;height:9px;background:#cbbd91;opacity:.0;transform:rotate(6deg);pointer-events:none}
+.track-card:nth-child(5n+2):before,.track-card:nth-child(5n+5):before{opacity:.22}
+.cover{box-shadow:inset 0 0 0 1px #0003}
+.cover-top{font-family:"Courier New",monospace;letter-spacing:.8px}
+.cover-stamp{position:absolute;right:10px;bottom:37px;z-index:2;border:1px solid currentColor;border-radius:50%;padding:6px 5px 5px;font:700 6px/1 "Courier New",monospace;letter-spacing:.4px;transform:rotate(-9deg);opacity:.8}
+.cover-bottom{z-index:2;display:flex;gap:7px;align-items:center;margin-top:8px;font:700 6px/1 "Courier New",monospace;letter-spacing:.65px;text-transform:uppercase}
+.cover-bottom span+span:before{content:"·";margin-right:7px}
+.cover-name{max-width:82%;text-shadow:.3px .3px 0 currentColor}
+.cover-art{opacity:.68}
+.cover:before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:
+  linear-gradient(100deg,transparent 0 37%,rgba(255,255,255,.09) 37.3%,transparent 38%),
+  radial-gradient(circle at 85% 18%,rgba(0,0,0,.16) 0 1px,transparent 1px 4px);mix-blend-mode:multiply}
+.card-body{position:relative}
+.card-body:before{content:"D / ARCHIVE";display:block;margin-bottom:8px;color:#6f776a;font:700 6px/1 "Courier New",monospace;letter-spacing:1.1px}
+.discovery-path-head>span{font-family:"Courier New",monospace}
+.results-heading:before{content:"D / ARCHIVE · ISSUE 001";display:block;position:absolute;margin-top:-17px;color:#65705f;font:700 6px/1 "Courier New",monospace;letter-spacing:1px}
+.results-heading{position:relative}
+
+/* keep the collage restrained on smaller screens */
+@media(max-width:1150px){
+  .hero-copy-block{max-width:58%;padding:25px 30px 27px}
+  .record-illustration{width:360px;transform:scale(.82);transform-origin:right center}
+}
+@media(max-width:700px){
+  .hero{display:block;overflow:hidden}
+  .hero-copy-block{max-width:none;width:100%;transform:rotate(-.3deg);padding:24px 24px 26px;clip-path:polygon(0 0,100% 1%,99% 98%,0 100%)}
+  .hero-copy-block h1{font-size:62px}
+  .hero-copy-block .hero-copy{font-size:17px}
+  .hero-copy-block:after{display:none}
+}
+
+
+/* --- track title stickers on record sleeves --- */
+.cover{
+  overflow:visible;
+}
+.track-title-sticker{
+  position:absolute;
+  z-index:6;
+  left:12px;
+  bottom:42px;
+  width:min(78%,210px);
+  padding:9px 10px 8px;
+  color:#191b17;
+  background:#e7dfc9;
+  border:1px solid rgba(38,38,31,.46);
+  box-shadow:4px 5px 0 rgba(0,0,0,.32);
+  font-family:"Courier New",monospace;
+  line-height:1.05;
+  transform-origin:left center;
+  clip-path:polygon(1% 2%,28% 0,53% 2%,76% 0,99% 3%,98% 96%,73% 99%,48% 97%,21% 100%,0 96%);
+}
+.track-title-sticker:before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:.26;
+  background:
+    repeating-linear-gradient(0deg,rgba(0,0,0,.06) 0 1px,transparent 1px 4px),
+    radial-gradient(circle at 18% 22%,rgba(0,0,0,.28) 0 1px,transparent 1px 3px),
+    radial-gradient(circle at 84% 70%,rgba(255,255,255,.75) 0 1px,transparent 1px 4px);
+  mix-blend-mode:multiply;
+}
+.track-title-sticker>*{position:relative;z-index:1}
+.track-title-sticker .sticker-kicker{
+  display:block;
+  margin-bottom:5px;
+  font-size:6px;
+  font-weight:700;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:#8c4d38;
+}
+.track-title-sticker strong{
+  display:block;
+  font-family:Arial,Helvetica,sans-serif;
+  font-size:15px;
+  line-height:1.02;
+  letter-spacing:-.35px;
+  text-transform:none;
+  overflow-wrap:anywhere;
+}
+.track-title-sticker small{
+  display:block;
+  margin-top:5px;
+  font-size:7px;
+  line-height:1.15;
+  letter-spacing:.35px;
+  opacity:.72;
+  overflow-wrap:anywhere;
+}
+.sticker-0{transform:rotate(-2.4deg);background:#e6dfc9}
+.sticker-1{transform:rotate(2.1deg);background:#d9c78e;left:16px}
+.sticker-2{transform:rotate(-1deg);background:#d7a0a0;left:10px}
+.sticker-3{transform:rotate(2.8deg);background:#d8e0cb;left:17px}
+
+.cover-name{
+  position:absolute;
+  left:14px;
+  right:14px;
+  bottom:14px;
+  max-width:72%;
+  font-family:"Courier New",monospace;
+  font-size:8px;
+  line-height:1.1;
+  letter-spacing:.75px;
+  text-transform:uppercase;
+  opacity:.78;
+  text-shadow:none;
+}
+.cover-bottom{
+  position:absolute;
+  right:12px;
+  bottom:14px;
+  margin:0;
+  justify-content:flex-end;
+  max-width:42%;
+  font-size:5px;
+}
+.cover-stamp{
+  top:38px;
+  right:10px;
+  bottom:auto;
+  transform:rotate(-10deg) scale(.92);
+}
+.cover-art{
+  inset:30px 15px 52px;
+  opacity:.52;
+}
+.track-card:hover .track-title-sticker{
+  box-shadow:5px 6px 0 rgba(0,0,0,.38);
+}
+@media(max-width:700px){
+  .track-title-sticker{width:82%;padding:7px 8px 7px;bottom:36px}
+  .track-title-sticker strong{font-size:13px}
+  .track-title-sticker small{font-size:6px}
+  .cover-name{font-size:6px;bottom:10px}
+  .cover-bottom{bottom:10px;font-size:4.5px}
+}
+
+
+/* --- record sleeve cards: real 33rpm object with vinyl peeking out --- */
+.record-card-art{
+  position:relative;
+  width:100%;
+  aspect-ratio:1.08;
+  overflow:visible;
+  isolation:isolate;
+  padding-right:24px;
+  margin-bottom:0;
+}
+.record-card-art .cover{
+  position:absolute;
+  z-index:2;
+  left:0;
+  top:0;
+  width:88%;
+  height:100%;
+  aspect-ratio:auto;
+  padding:14px;
+  overflow:visible;
+  background-color:var(--cover);
+  box-shadow:
+    7px 8px 0 rgba(0,0,0,.28),
+    inset 0 0 0 1px rgba(0,0,0,.22);
+}
+.record-card-art .cover-art{
+  display:none!important;
+}
+.card-vinyl{
+  position:absolute;
+  z-index:1;
+  right:1px;
+  top:8%;
+  width:76%;
+  aspect-ratio:1;
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 50% 50%,#0c0d0c 0 2.3%,transparent 2.4%),
+    radial-gradient(circle at 50% 50%,var(--cover) 0 16%,#131513 16.2% 17.5%,transparent 17.7%),
+    repeating-radial-gradient(circle at 50% 50%,#171917 0 2px,#0c0d0c 2.7px 3.7px,#212421 4.3px 5px);
+  box-shadow:
+    9px 11px 0 rgba(0,0,0,.26),
+    0 0 0 1px rgba(255,255,255,.045),
+    inset -10px -6px 18px rgba(255,255,255,.025);
+  transform:rotate(4deg);
+}
+.card-vinyl:before{
+  content:"";
+  position:absolute;
+  inset:6.5%;
+  border-radius:50%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%,transparent 0 7px,rgba(255,255,255,.035) 8px 9px,transparent 10px 15px);
+  opacity:.9;
+}
+.card-vinyl:after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  background:#0a0b0a;
+  transform:translate(-50%,-50%);
+  box-shadow:0 0 0 1px rgba(255,255,255,.06);
+}
+.card-vinyl>span{
+  position:absolute;
+  z-index:2;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%) rotate(-4deg);
+  width:25%;
+  aspect-ratio:1;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  color:var(--ink);
+  background:var(--cover);
+  border:1px solid rgba(0,0,0,.28);
+  font:700 7px/1 "Courier New",monospace;
+  letter-spacing:.7px;
+}
+.record-card-art .cover{
+  filter:saturate(.88) contrast(1.03);
+  clip-path:polygon(.8% .6%,26% .1%,51% .8%,77% .2%,99.3% .8%,99.7% 25%,99% 51%,99.6% 76%,99.1% 99.1%,76% 99.5%,50% 99.8%,25% 99.2%,.4% 99.6%,.9% 73%,.3% 47%,.8% 23%);
+}
+.record-card-art .cover:before{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:1;
+  pointer-events:none;
+  opacity:.58;
+  background:
+    linear-gradient(102deg,transparent 0 34%,rgba(255,255,255,.11) 34.3%,rgba(0,0,0,.08) 34.9%,transparent 35.6%),
+    linear-gradient(3deg,transparent 0 79%,rgba(0,0,0,.11) 79.4%,transparent 80%),
+    radial-gradient(circle at 12% 20%,rgba(255,255,255,.16) 0 1px,transparent 1px 4px),
+    radial-gradient(circle at 84% 76%,rgba(0,0,0,.22) 0 1px,transparent 1px 5px),
+    repeating-linear-gradient(0deg,transparent 0 9px,rgba(0,0,0,.045) 10px 11px);
+  mix-blend-mode:multiply;
+}
+.record-card-art .cover:after{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:1;
+  pointer-events:none;
+  opacity:.38;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.07),transparent 3%,transparent 96%,rgba(0,0,0,.12)),
+    linear-gradient(0deg,rgba(0,0,0,.12),transparent 4%,transparent 95%,rgba(255,255,255,.08));
+}
+.record-card-art .cover>*{
+  position:relative;
+  z-index:3;
+}
+
+/* old sleeves now read like printed jackets rather than abstract line drawings */
+.record-card-art .cover-0{
+  background-image:
+    radial-gradient(circle at 47% 34%,transparent 0 21%,rgba(20,22,18,.18) 21.5% 22.6%,transparent 23% 29%,rgba(20,22,18,.14) 29.5% 30.5%,transparent 31%),
+    linear-gradient(180deg,rgba(255,255,255,.03),rgba(0,0,0,.025));
+}
+.record-card-art .cover-1{
+  background-image:
+    repeating-linear-gradient(135deg,transparent 0 30px,rgba(20,22,18,.08) 31px 33px,transparent 34px 58px),
+    linear-gradient(180deg,rgba(255,255,255,.025),rgba(0,0,0,.025));
+}
+.record-card-art .cover-2{
+  background-image:
+    linear-gradient(90deg,transparent 0 19%,rgba(20,22,18,.10) 19.5% 22%,transparent 22.5% 44%,rgba(20,22,18,.07) 44.5% 47%,transparent 47.5%),
+    linear-gradient(180deg,rgba(255,255,255,.03),rgba(0,0,0,.03));
+}
+.record-card-art .cover-3{
+  background-image:
+    radial-gradient(ellipse at 60% 32%,rgba(20,22,18,.13) 0 18%,transparent 18.5%),
+    linear-gradient(180deg,rgba(255,255,255,.025),rgba(0,0,0,.035));
+}
+.record-card-art .track-title-sticker{
+  bottom:44px;
+  width:min(80%,210px);
+}
+.record-card-art .cover-name{
+  bottom:14px;
+}
+.record-card-art .cover-bottom{
+  bottom:14px;
+}
+
+/* preserve the object feel on hover without letting the disc jump */
+.track-card:hover .record-card-art .cover{
+  transform:translateY(-1px);
+}
+.track-card:hover .card-vinyl{
+  transform:translateX(2px) rotate(5deg);
+}
+.card-vinyl,.record-card-art .cover{
+  transition:transform .18s ease;
+}
+
+@media(max-width:1150px){
+  .record-card-art{padding-right:20px}
+  .card-vinyl{width:74%}
+}
+@media(max-width:700px){
+  .record-card-art{
+    aspect-ratio:1.02;
+    padding-right:15px;
+  }
+  .record-card-art .cover{
+    width:89%;
+    padding:11px;
+  }
+  .card-vinyl{
+    width:73%;
+    right:0;
+    top:10%;
+  }
+  .record-card-art .track-title-sticker{bottom:37px}
+}
