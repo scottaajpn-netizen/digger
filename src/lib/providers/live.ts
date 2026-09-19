@@ -46,6 +46,52 @@ type LastFmSearchTrack = { name?: string; artist?: string; mbid?: string; url?: 
 type LastFmSearchResponse = { results?: { trackmatches?: { track?: LastFmSearchTrack[] } } };
 const colors: Track["colors"][] = [["#ca673c", "#392824"], ["#b6b56d", "#34382c"], ["#9fafd2", "#303148"], ["#dcab6f", "#803f34"], ["#74968c", "#25383c"], ["#bd7784", "#522f42"]];
 const hash = (s: string) => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7);
+export function artistAudienceReferences(
+  track: Pick<Track, "artist" | "artistId" | "credits">,
+) {
+  const references = (track.credits || [])
+    .filter(credit => credit.role === "primary" || credit.role === "featured")
+    .flatMap(credit => {
+      const artist = credit.name.trim();
+      if (!artist) return [];
+      const artistId =
+        credit.source === "musicbrainz" &&
+        credit.sourceId &&
+        mbidPattern.test(credit.sourceId)
+          ? credit.sourceId
+          : undefined;
+      return [{
+        key: artistId
+          ? `mbid:${artistId}`
+          : `name:${normalized(artist)}`,
+        artistId,
+        artist,
+      }];
+    });
+
+  if (!references.length) {
+    const artist = track.artist.trim();
+    if (!artist) return [];
+    const artistId =
+      track.artistId && mbidPattern.test(track.artistId)
+        ? track.artistId
+        : undefined;
+    references.push({
+      key: artistId
+        ? `mbid:${artistId}`
+        : `name:${normalized(artist)}`,
+      artistId,
+      artist,
+    });
+  }
+
+  const seen = new Set<string>();
+  return references.filter(reference => {
+    if (!reference.key || seen.has(reference.key)) return false;
+    seen.add(reference.key);
+    return true;
+  });
+}
 const quote = (s: string) => `"${s.replace(/[\\"+\-!(){}\[\]^~*?:/|&]/g, " ").trim()}"`;
 export function musicBrainzQuery(query: string) {
   const parts = query.split(/\s+[—–-]\s+/);
@@ -503,7 +549,20 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     const sameArtist = Boolean(m.artist.artists?.[0]?.artist_mbid && seedArtistIds.includes(m.artist.artists[0].artist_mbid));
     const matchedTag = tagSourceById.get(id);
     const reason = related ? sameArtist ? `Un autre morceau de ${seed.artist}, présent dans les écoutes ListenBrainz.` : `ListenBrainz rapproche ${m.artist.name} de ${seed.artist} à partir des habitudes d’écoute.` : `Trouvé via le genre / sous-genre « ${matchedTag || seed.tags[0] || "musique associée"} » dans ListenBrainz.`;
-    pool.push({ id, title: m.recording.name, artist: m.artist.name, artistId: m.artist.artists?.[0]?.artist_mbid, country: m.artist.artists?.[0]?.area, album: m.release?.name, releaseId: m.release?.mbid, scene: tags[0] || m.artist.artists?.[0]?.area || "ListenBrainz", label: "", tags, year: m.release?.year || 0, obscurity: popularity === undefined ? 50 : Math.round(100 - popularity), popularity, listenCount: related?.total_listen_count, colors: colors[hash(id) % colors.length], externalIds: { musicbrainz: id, listenbrainz: id }, discoveryPath: listenBrainzPath(seed, { id, title: m.recording.name, artist: m.artist.name, externalIds: { musicbrainz: id, listenbrainz: id } }, related ? "listening" : "tag", related ? undefined : matchedTag), reason, relevance: related ? sameArtist ? 32 : 72 : 46, origin: related ? "artist-radio" : "tag" });
+    const credits: ArtistCredit[] = (m.artist.artists || []).flatMap(item => {
+      const name = item.name?.trim();
+      if (!name) return [];
+      return [{
+        name,
+        role: "primary" as const,
+        source: "musicbrainz" as const,
+        sourceId:
+          item.artist_mbid && mbidPattern.test(item.artist_mbid)
+            ? item.artist_mbid
+            : undefined,
+      }];
+    });
+    pool.push({ id, title: m.recording.name, artist: m.artist.name, artistId: credits[0]?.sourceId || m.artist.artists?.[0]?.artist_mbid, credits: credits.length ? credits : undefined, country: m.artist.artists?.[0]?.area, album: m.release?.name, releaseId: m.release?.mbid, scene: tags[0] || m.artist.artists?.[0]?.area || "ListenBrainz", label: "", tags, year: m.release?.year || 0, obscurity: popularity === undefined ? 50 : Math.round(100 - popularity), popularity, listenCount: related?.total_listen_count, colors: colors[hash(id) % colors.length], externalIds: { musicbrainz: id, listenbrainz: id }, discoveryPath: listenBrainzPath(seed, { id, title: m.recording.name, artist: m.artist.name, externalIds: { musicbrainz: id, listenbrainz: id } }, related ? "listening" : "tag", related ? undefined : matchedTag), reason, relevance: related ? sameArtist ? 32 : 72 : 46, origin: related ? "artist-radio" : "tag" });
   }
   const discogsResult = await discogsJob;
   pool.push(...discogsResult.candidates);
@@ -605,15 +664,16 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     const artistTargets = new Map<string, { artistId?: string; artist: string }>();
 
     for (const track of artistCandidates) {
-      const key = track.artistId
-        ? `mbid:${track.artistId}`
-        : `name:${normalized(track.artist)}`;
-      if (!artistTargets.has(key)) {
-        artistTargets.set(key, {
-          artistId: track.artistId,
-          artist: track.artist,
-        });
+      for (const reference of artistAudienceReferences(track)) {
+        if (!artistTargets.has(reference.key)) {
+          artistTargets.set(reference.key, {
+            artistId: reference.artistId,
+            artist: reference.artist,
+          });
+        }
+        if (artistTargets.size >= 40) break;
       }
+      if (artistTargets.size >= 40) break;
     }
 
     const targets = [...artistTargets.entries()];
@@ -637,11 +697,14 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     });
 
     for (const track of pool) {
-      const key = track.artistId
-        ? `mbid:${track.artistId}`
-        : `name:${normalized(track.artist)}`;
-      const listeners = artistAudience.get(key);
-      if (listeners !== undefined) track.lastfmArtistListeners = listeners;
+      const knownAudiences = artistAudienceReferences(track)
+        .map(reference => artistAudience.get(reference.key))
+        .filter((listeners): listeners is number => listeners !== undefined);
+      if (knownAudiences.length) {
+        // For collaborations, strict digging uses the most established credited
+        // participant rather than letting a combined artist string hide them.
+        track.lastfmArtistListeners = Math.max(...knownAudiences);
+      }
     }
 
     // Artist popularity participates in scoring, so rerank with the enriched
@@ -666,7 +729,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     10,
   );
   if (selected.length < 10) notes.push(`Seulement ${selected.length} pistes exploitables avec ces données et tes exclusions. Aucun morceau inventé n’a été ajouté.`);
-  if (input.obscurity >= 90) notes.push("Digging strict : les audiences trop élevées ou non vérifiées sont écartées, même si cela réduit la sélection. Les auditeurs Last.fm mesurent le morceau, pas la notoriété globale de l’artiste.");
+  if (input.obscurity >= 90) notes.push("Digging strict : les audiences trop élevées ou non vérifiées sont écartées, même si cela réduit la sélection. Digger croise l’audience du morceau et, quand elle est disponible, celle des artistes crédités.");
   if (!selected.some(t => t.popularity !== undefined || t.lastfmListeners !== undefined)) notes.push("Popularité indisponible pour cette sélection : le curseur agit sur l’ouverture de la radio, sans indice d’obscurité individuel.");
   return { tracks: selected.map(({ relevance: _, feedbackIds: ___, ...track }) => track), seed, source: "live", fallback: false, direction: input.direction, obscurity: input.obscurity, notes: [...new Set(notes)] };
 }

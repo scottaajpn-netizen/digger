@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, searchLive, selectDiverseRecommendations, selectSurpriseRecommendations } from "../src/lib/providers/live";
+import { artistAudienceReferences, passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, searchLive, selectDiverseRecommendations, selectSurpriseRecommendations } from "../src/lib/providers/live";
 
 const emptyScoreBreakdown = () => ({
   relevance: 0,
@@ -612,4 +612,42 @@ test("structured MusicBrainz credits preserve collaborations without splitting a
     ["Guest", "featured"],
   ]);
   assert.equal(collaboration.credits?.[0].sourceId, "bbbbbbbb-4444-4444-8444-444444444444");
+});
+
+
+test("artist audience references split MusicBrainz collaborations", () => {
+  const references = artistAudienceReferences({
+    artist: "Bicep & Midland",
+    artistId: "11111111-1111-4111-8111-111111111111",
+    credits: [
+      {
+        name: "Bicep",
+        role: "primary",
+        source: "musicbrainz",
+        sourceId: "11111111-1111-4111-8111-111111111111",
+      },
+      {
+        name: "Midland",
+        role: "primary",
+        source: "musicbrainz",
+        sourceId: "22222222-2222-4222-8222-222222222222",
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    references.map(reference => reference.artist),
+    ["Bicep", "Midland"],
+  );
+  assert.equal(references.some(reference => reference.artist === "Bicep & Midland"), false);
+});
+
+test("artist audience references fall back to the display artist", () => {
+  const references = artistAudienceReferences({
+    artist: "Solo Artist",
+  });
+
+  assert.equal(references.length, 1);
+  assert.equal(references[0]?.artist, "Solo Artist");
+  assert.equal(references[0]?.key, "name:solo artist");
 });
