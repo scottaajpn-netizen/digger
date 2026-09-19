@@ -4,7 +4,7 @@ import { buildMusicalProfile } from "../src/lib/music/profile";
 import { assessCandidateEvidence } from "../src/lib/discovery/evidence";
 import { discoveryPathPreferenceKey } from "../src/lib/discovery/paths";
 import { discoveryPathScoreAdjustment, rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
-import { modeSelectionAdjustment, selectModeRecommendations, type Candidate, type RankedCandidate } from "../src/lib/discovery/ranking";
+import { modeSelectionAdjustment, selectModeAwareArtistCandidates, selectModeRecommendations, type Candidate, type RankedCandidate } from "../src/lib/discovery/ranking";
 import type { DigRequest, DiscoveryPath, Track } from "../src/lib/types";
 
 const seed: Track = {
@@ -470,4 +470,86 @@ test("Surprends-moi mode policy spreads origins before relaxing", () => {
   assert.ok(
     selected.filter(track => track.origin === "artist-radio").length <= 2,
   );
+});
+
+
+test("Rabbit hole never relaxes into repeated artists", () => {
+  const first = rankedFixture(
+    "artist-a-1",
+    120,
+    "lastfm-deep",
+    2,
+    { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 2 },
+  );
+  const second = {
+    ...rankedFixture(
+      "artist-a-2",
+      118,
+      "lastfm-deep",
+      2,
+      { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 2 },
+    ),
+    artist: first.artist,
+  };
+  const third = rankedFixture(
+    "artist-b",
+    90,
+    "discogs-deep",
+    5,
+    { tier: "strong", musical: true, path: "structured", retrievalDepth: 5 },
+  );
+
+  const selected = selectModeRecommendations(
+    [first, second, third],
+    "Seed Artist",
+    "Rabbit hole",
+    3,
+  );
+
+  assert.equal(
+    new Set(selected.map(track => track.artist)).size,
+    selected.length,
+  );
+});
+
+test("artist audience shortlist follows mode policy and deduplicates artists", () => {
+  const direct = rankedFixture(
+    "audience-direct",
+    100,
+    "artist-radio",
+    1,
+    { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+  );
+  const deep = rankedFixture(
+    "audience-deep",
+    95,
+    "discogs-deep",
+    5,
+    { tier: "strong", musical: true, path: "structured", retrievalDepth: 5 },
+  );
+  const duplicateArtist = {
+    ...rankedFixture(
+      "audience-deep-2",
+      94,
+      "discogs-label",
+      4,
+      { tier: "strong", musical: true, path: "structured", retrievalDepth: 4 },
+    ),
+    artist: deep.artist,
+  };
+
+  const rabbit = selectModeAwareArtistCandidates(
+    [direct, deep, duplicateArtist],
+    "Rabbit hole",
+    2,
+  );
+  const vibe = selectModeAwareArtistCandidates(
+    [direct, deep, duplicateArtist],
+    "Même vibe",
+    2,
+  );
+
+  assert.equal(rabbit[0]?.id, "audience-deep");
+  assert.equal(vibe[0]?.id, "audience-direct");
+  assert.equal(new Set(rabbit.map(track => track.artist)).size, rabbit.length);
 });

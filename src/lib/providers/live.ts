@@ -2,10 +2,10 @@ import { discoverDiscogs } from "./discogs";
 import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } from "../types";
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
-import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
+import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, listenBrainzPath } from "../discovery/paths";
-export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
+export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Credit = { name?: string; joinphrase?: string; artist?: { id?: string; name?: string; country?: string } };
@@ -586,12 +586,34 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     }
   }
 
+  let ranked = rankDiscoveryCandidates({
+    pool,
+    seed,
+    seedProfile: rankingSeedProfile,
+    input,
+    seedParticipantKeys,
+  });
+
   if (input.obscurity >= 95 && process.env.LASTFM_API_KEY) {
+    // Spend the artist-audience budget on candidates that are actually likely
+    // to survive the current mode policy, not on a generic relevance prefix.
+    const artistCandidates = selectModeAwareArtistCandidates(
+      ranked,
+      input.direction,
+      30,
+    );
     const artistTargets = new Map<string, { artistId?: string; artist: string }>();
-    for (const track of [...pool].sort((a, b) => b.relevance - a.relevance)) {
-      const key = track.artistId ? `mbid:${track.artistId}` : `name:${normalized(track.artist)}`;
-      if (!artistTargets.has(key)) artistTargets.set(key, { artistId: track.artistId, artist: track.artist });
-      if (artistTargets.size >= 24) break;
+
+    for (const track of artistCandidates) {
+      const key = track.artistId
+        ? `mbid:${track.artistId}`
+        : `name:${normalized(track.artist)}`;
+      if (!artistTargets.has(key)) {
+        artistTargets.set(key, {
+          artistId: track.artistId,
+          artist: track.artist,
+        });
+      }
     }
 
     const targets = [...artistTargets.entries()];
@@ -609,23 +631,29 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     const artistAudience = new Map<string, number>();
     targets.forEach(([key], index) => {
       const listeners = Number(artistInfoRows[index]?.artist?.stats?.listeners || 0);
-      if (Number.isFinite(listeners) && listeners > 0) artistAudience.set(key, listeners);
+      if (Number.isFinite(listeners) && listeners > 0) {
+        artistAudience.set(key, listeners);
+      }
     });
 
     for (const track of pool) {
-      const key = track.artistId ? `mbid:${track.artistId}` : `name:${normalized(track.artist)}`;
+      const key = track.artistId
+        ? `mbid:${track.artistId}`
+        : `name:${normalized(track.artist)}`;
       const listeners = artistAudience.get(key);
       if (listeners !== undefined) track.lastfmArtistListeners = listeners;
     }
-  }
 
-  const ranked = rankDiscoveryCandidates({
-    pool,
-    seed,
-    seedProfile: rankingSeedProfile,
-    input,
-    seedParticipantKeys,
-  });
+    // Artist popularity participates in scoring, so rerank with the enriched
+    // values before applying the strict audience gate and final selection.
+    ranked = rankDiscoveryCandidates({
+      pool,
+      seed,
+      seedProfile: rankingSeedProfile,
+      input,
+      seedParticipantKeys,
+    });
+  }
 
   const deepRanked = input.obscurity >= 90
     ? ranked.filter(track => track.origin !== "lastfm-tag" && passesDeepAudienceGate(track, input.obscurity))

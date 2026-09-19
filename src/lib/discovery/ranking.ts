@@ -380,6 +380,32 @@ export function selectSurpriseRecommendations(
   return [...primary, ...wildcards];
 }
 
+export function selectModeAwareArtistCandidates(
+  ranked: RankedCandidate[],
+  direction: Direction,
+  limit = 30,
+) {
+  const ordered = [...ranked].sort((a, b) => {
+    const aScore = a.score + modeSelectionAdjustment(a, direction);
+    const bScore = b.score + modeSelectionAdjustment(b, direction);
+    return bScore - aScore || b.score - a.score || a.id.localeCompare(b.id);
+  });
+  const seenArtists = new Set<string>();
+  const selected: RankedCandidate[] = [];
+
+  for (const track of ordered) {
+    const artistKey = track.artistId
+      ? `musicbrainz:${track.artistId}`
+      : normalized(track.artist);
+    if (!artistKey || seenArtists.has(artistKey)) continue;
+    seenArtists.add(artistKey);
+    selected.push(track);
+    if (selected.length >= limit) break;
+  }
+
+  return selected;
+}
+
 export function selectModeRecommendations(
   ranked: RankedCandidate[],
   seedArtist: string,
@@ -404,7 +430,9 @@ export function selectModeRecommendations(
     limit,
     {
       scoreAdjustment,
-      ...(direction === "Rabbit hole" ? { originLimit: 3 } : {}),
+      ...(direction === "Rabbit hole"
+        ? { originLimit: 3, allowArtistRepeats: false }
+        : {}),
     },
   );
 }
