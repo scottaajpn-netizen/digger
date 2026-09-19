@@ -95,20 +95,6 @@ export function lastFmCataloguePath(
   ]);
 }
 
-export function lastFmListenBrainzNeighbourPath(
-  seed: Track,
-  anchorArtist: string,
-  neighbourArtist: string,
-  candidate: Pick<Track, "id" | "title" | "artist" | "externalIds">,
-): DiscoveryPath {
-  return discoveryPath("listenbrainz", "listening", [
-    trackNode(seed, "lastfm"),
-    pathNode("artist", anchorArtist, "lastfm"),
-    pathNode("artist", neighbourArtist, "lastfm"),
-    trackNode(candidate, "listenbrainz"),
-  ]);
-}
-
 export function listenBrainzPath(
   seed: Track,
   candidate: Pick<Track, "id" | "title" | "artist" | "externalIds">,

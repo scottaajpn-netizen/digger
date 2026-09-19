@@ -4,7 +4,7 @@ import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { rankDiscoveryCandidates } from "../discovery/scoring";
-import { lastFmCataloguePath, lastFmDeepPath, lastFmListenBrainzNeighbourPath, lastFmSimilarityPath, listenBrainzPath } from "../discovery/paths";
+import { lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, listenBrainzPath } from "../discovery/paths";
 export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -18,7 +18,7 @@ type LastFmTrack = { name?: string; mbid?: string; url?: string; match?: number 
 type LastFmSimilarResponse = { similartracks?: { track?: LastFmTrack[] } };
 type LastFmTagsResponse = { toptags?: { tag?: { name?: string; count?: number | string }[] } };
 type LastFmTopTracksResponse = { tracks?: { track?: LastFmTrack[] }; toptracks?: { track?: LastFmTrack[] } };
-type LastFmSimilarArtistsResponse = { similarartists?: { artist?: { name?: string; mbid?: string; match?: number | string }[] } };
+type LastFmSimilarArtistsResponse = { similarartists?: { artist?: { name?: string; match?: number | string }[] } };
 type LastFmTrackInfoResponse = {
   track?: {
     name?: string;
@@ -517,183 +517,74 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const directLastFmOffset = input.obscurity >= 90 ? 12 : input.obscurity >= 75 ? 6 : 0;
   const lastFmSimilarTracks = allLastFmSimilarTracks.slice(directLastFmOffset);
 
-  // Sparse-seed fallback: when Last.fm has no track-level neighbours, use
-  // similar artists as graph bridges. Prefer a cross-source hop into
-  // ListenBrainz radio so strict digging gets less obvious cuts; fall back to
-  // Last.fm top tracks only when those neighbour MBIDs are unavailable.
-  const neighbourRadioContextById = new Map<
-    string,
-    { anchor: string; neighbour: string }
-  >();
-  let neighbourRadio: Radio[] = [];
-
+  // Catalogue fallback for deep digging: if track-level similarity is empty,
+  // walk through neighbouring artists, then inspect several cuts from each catalogue.
+  // This keeps the path explainable while avoiding tag charts.
   if (allLastFmSimilarTracks.length === 0 && lastFmSeedArtistVerified) {
-    const artistAnchors = seedParticipantNames.length
-      ? seedParticipantNames.slice(0, 3)
-      : [seed.artist];
-    const similarArtistRows = await Promise.all(
-      artistAnchors.map(anchor =>
-        optional(
-          lastFmJson<LastFmSimilarArtistsResponse>(
-            "artist.getSimilar",
-            {
-              artist: anchor,
-              limit: "12",
-              autocorrect: "1",
-            },
-            signal,
-          ),
-          `Les artistes voisins Last.fm autour de ${anchor} sont indisponibles.`,
-        ),
-      ),
-    );
+    const artistAnchors = seedParticipantNames.length ? seedParticipantNames.slice(0, 3) : [seed.artist];
+    const similarArtistRows = await Promise.all(artistAnchors.map(anchor => optional(
+      lastFmJson<LastFmSimilarArtistsResponse>("artist.getSimilar", {
+        artist: anchor,
+        limit: "12",
+        autocorrect: "1",
+      }, signal),
+      `Les artistes voisins Last.fm autour de ${anchor} sont indisponibles.`
+    )));
     const neighbours = similarArtistRows
-      .flatMap((result, anchorIndex) =>
-        (result?.similarartists?.artist || []).map(row => ({
-          ...row,
-          anchor: artistAnchors[anchorIndex],
-        })),
-      )
-      .filter(
-        row =>
-          typeof row.name === "string" &&
-          row.name.trim() &&
-          !seedParticipantKeys.has(normalized(row.name)) &&
-          normalized(row.name) !== normalized(seed.artist),
-      )
-      .filter(
-        (row, index, all) =>
-          all.findIndex(
-            other =>
-              normalized(other.name || "") === normalized(row.name || ""),
-          ) === index,
-      )
+      .flatMap((result, anchorIndex) => (result?.similarartists?.artist || []).map(row => ({ ...row, anchor: artistAnchors[anchorIndex] })))
+      .filter(row => typeof row.name === "string" && row.name.trim() && !seedParticipantKeys.has(normalized(row.name)) && normalized(row.name) !== normalized(seed.artist))
+      .filter((row, index, all) => all.findIndex(other => normalized(other.name || "") === normalized(row.name || "")) === index)
       .slice(0, 10);
 
-    const lbNeighbours = neighbours
-      .filter(
-        row =>
-          typeof row.mbid === "string" &&
-          mbidPattern.test(row.mbid),
-      )
-      .slice(0, 6);
+    const catalogues = await Promise.all(neighbours.map(row => optional(
+      lastFmJson<LastFmTopTracksResponse>("artist.getTopTracks", {
+        artist: row.name!,
+        limit: "4",
+        autocorrect: "1",
+      }, signal),
+      `Le catalogue Last.fm de ${row.name} est indisponible.`
+    )));
 
-    if (lbNeighbours.length) {
-      const neighbourRadioResults = await Promise.all(
-        lbNeighbours.map(row =>
-          optional(
-            musicJson<Record<string, Radio[]>>(
-              "lb",
-              `lb-radio/artist/${row.mbid}`,
-              {
-                mode: "hard",
-                max_similar_artists: "8",
-                max_recordings_per_artist: "2",
-                pop_begin: String(popBegin),
-                pop_end: String(popEnd),
-              },
-              signal,
-            ),
-            `La radio ListenBrainz de l’artiste voisin ${row.name} est indisponible.`,
+    catalogues.forEach((result, artistIndex) => {
+      const neighbour = neighbours[artistIndex];
+      const neighbourName = neighbour?.name?.trim() || "";
+      for (const [index, item] of (result?.toptracks?.track || []).entries()) {
+        const title = item.name?.trim();
+        const artistName = item.artist?.name?.trim() || neighbourName;
+        if (!title || !artistName || normalized(artistName) === normalized(seed.artist)) continue;
+        const mbid = item.mbid && mbidPattern.test(item.mbid) ? item.mbid : undefined;
+        const id = mbid || `lastfm-crate:${hash(`${artistName}:${title}`)}`;
+        const listeners = Number(item.listeners);
+        pool.push({
+          id,
+          title,
+          artist: artistName,
+          scene: seedProfile.subgenres[0] || seedProfile.genres[0] || "Last.fm catalogue",
+          label: "",
+          tags: [],
+          year: 0,
+          obscurity: Number.isFinite(listeners) && listeners > 0 ? obscurityFromLastFmListeners(listeners) : 50,
+          obscurityKnown: Number.isFinite(listeners) && listeners > 0,
+          lastfmListeners: Number.isFinite(listeners) && listeners > 0 ? listeners : undefined,
+          colors: colors[hash(id) % colors.length],
+          externalIds: { musicbrainz: mbid, lastfm: item.url },
+          discoveryPath: lastFmCataloguePath(
+            seed,
+            neighbour?.anchor || seed.artist,
+            artistName,
+            {
+              id,
+              title,
+              artist: artistName,
+              externalIds: { musicbrainz: mbid, lastfm: item.url },
+            },
           ),
-        ),
-      );
-
-      neighbourRadio = neighbourRadioResults.flatMap((result, index) => {
-        if (!result) return [];
-        const neighbour = lbNeighbours[index];
-        return Object.values(result)
-          .flat()
-          .filter(row => mbidPattern.test(row.recording_mbid))
-          .map(row => {
-            if (!neighbourRadioContextById.has(row.recording_mbid)) {
-              neighbourRadioContextById.set(row.recording_mbid, {
-                anchor: neighbour.anchor,
-                neighbour: neighbour.name || "",
-              });
-            }
-            return row;
-          });
-      });
-    }
-
-    if (!neighbourRadio.length) {
-      const catalogues = await Promise.all(
-        neighbours.map(row =>
-          optional(
-            lastFmJson<LastFmTopTracksResponse>(
-              "artist.getTopTracks",
-              {
-                artist: row.name!,
-                limit: "4",
-                autocorrect: "1",
-              },
-              signal,
-            ),
-            `Le catalogue Last.fm de ${row.name} est indisponible.`,
-          ),
-        ),
-      );
-
-      catalogues.forEach((result, artistIndex) => {
-        const neighbour = neighbours[artistIndex];
-        const neighbourName = neighbour?.name?.trim() || "";
-        for (const [index, item] of (result?.toptracks?.track || []).entries()) {
-          const title = item.name?.trim();
-          const artistName = item.artist?.name?.trim() || neighbourName;
-          if (
-            !title ||
-            !artistName ||
-            normalized(artistName) === normalized(seed.artist)
-          )
-            continue;
-          const mbid =
-            item.mbid && mbidPattern.test(item.mbid) ? item.mbid : undefined;
-          const id = mbid || `lastfm-crate:${hash(`${artistName}:${title}`)}`;
-          const listeners = Number(item.listeners);
-          pool.push({
-            id,
-            title,
-            artist: artistName,
-            scene:
-              seedProfile.subgenres[0] ||
-              seedProfile.genres[0] ||
-              "Last.fm catalogue",
-            label: "",
-            tags: [],
-            year: 0,
-            obscurity:
-              Number.isFinite(listeners) && listeners > 0
-                ? obscurityFromLastFmListeners(listeners)
-                : 50,
-            obscurityKnown: Number.isFinite(listeners) && listeners > 0,
-            lastfmListeners:
-              Number.isFinite(listeners) && listeners > 0
-                ? listeners
-                : undefined,
-            colors: colors[hash(id) % colors.length],
-            externalIds: { musicbrainz: mbid, lastfm: item.url },
-            discoveryPath: lastFmCataloguePath(
-              seed,
-              neighbour?.anchor || seed.artist,
-              artistName,
-              {
-                id,
-                title,
-                artist: artistName,
-                externalIds: { musicbrainz: mbid, lastfm: item.url },
-              },
-            ),
-            reason: `Catalogue : ${neighbour?.anchor || seed.artist} → artiste voisin ${artistName} → « ${title} ».`,
-            relevance:
-              66 +
-              Math.max(0, 14 - index * 0.6) +
-              Math.max(0, 8 - artistIndex),
-            origin: "lastfm-crate",
-          });
-        }
-      });
-    }
+          reason: `Catalogue : ${neighbour?.anchor || seed.artist} → artiste voisin ${artistName} → « ${title} ».`,
+          relevance: 66 + Math.max(0, 14 - index * 0.6) + Math.max(0, 8 - artistIndex),
+          origin: "lastfm-crate",
+        });
+      }
+    });
   }
   for (const [index, item] of lastFmSimilarTracks.entries()) {
     const title = item.name?.trim();
@@ -835,27 +726,19 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   if (input.direction === "Labels" && !seed.label) notes.push("Aucun label renseigné pour cette édition. Sélection élargie aux artistes et aux genres.");
   if (input.direction === "Même scène") notes.push("« Même scène » privilégie ici les artistes associés, les genres et, lorsqu’elle est connue, la zone géographique ; ce n’est pas une scène musicale certifiée.");
 
-  const rows = [...radio, ...byTag, ...neighbourRadio];
+  const rows = [...radio, ...byTag];
   const ids = [...new Set(rows.map(r => r.recording_mbid))].slice(0, 100);
   const metadata = ids.length ? await optional(musicJson<Record<string, Metadata>>("lb", "metadata/recording/", { recording_mbids: ids.join(","), inc: "artist tag release" }, signal), "Certaines fiches ListenBrainz n’ont pas pu être chargées.") : null;
   for (const id of ids) {
     const m = metadata?.[id];
     if (!m?.recording?.name || !m.artist?.name) continue;
     const related = radio.find(r => r.recording_mbid === id);
-    const neighbourRow = neighbourRadio.find(r => r.recording_mbid === id);
-    const neighbourContext = neighbourRadioContextById.get(id);
     const tagRow = byTag.find(r => r.recording_mbid === id);
     const popularity = typeof tagRow?.percent === "number" && Number.isFinite(tagRow.percent) ? Math.max(0, Math.min(100, tagRow.percent)) : undefined;
     const tags = [...new Set(Object.values(m.tag || {}).flat().sort((a, b) => (b.count || 0) - (a.count || 0)).map(t => t.tag).filter((t): t is string => typeof t === "string"))].slice(0, 6);
     const sameArtist = Boolean(m.artist.artists?.[0]?.artist_mbid && seedArtistIds.includes(m.artist.artists[0].artist_mbid));
     const matchedTag = tagSourceById.get(id);
-    const reason = neighbourContext
-      ? `Pont cross-source : Last.fm relie ${neighbourContext.anchor} à ${neighbourContext.neighbour}, puis ListenBrainz mène à ${m.artist.name}.`
-      : related
-        ? sameArtist
-          ? `Un autre morceau de ${seed.artist}, présent dans les écoutes ListenBrainz.`
-          : `ListenBrainz rapproche ${m.artist.name} de ${seed.artist} à partir des habitudes d’écoute.`
-        : `Trouvé via le genre / sous-genre « ${matchedTag || seed.tags[0] || "musique associée"} » dans ListenBrainz.`;
+    const reason = related ? sameArtist ? `Un autre morceau de ${seed.artist}, présent dans les écoutes ListenBrainz.` : `ListenBrainz rapproche ${m.artist.name} de ${seed.artist} à partir des habitudes d’écoute.` : `Trouvé via le genre / sous-genre « ${matchedTag || seed.tags[0] || "musique associée"} » dans ListenBrainz.`;
     const credits: ArtistCredit[] = (m.artist.artists || []).flatMap(item => {
       const name = item.name?.trim();
       if (!name) return [];
@@ -869,42 +752,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
             : undefined,
       }];
     });
-    const candidateRef = { id, title: m.recording.name, artist: m.artist.name, externalIds: { musicbrainz: id, listenbrainz: id } };
-    pool.push({
-      id,
-      title: m.recording.name,
-      artist: m.artist.name,
-      artistId: credits[0]?.sourceId || m.artist.artists?.[0]?.artist_mbid,
-      credits: credits.length ? credits : undefined,
-      country: m.artist.artists?.[0]?.area,
-      album: m.release?.name,
-      releaseId: m.release?.mbid,
-      scene: tags[0] || m.artist.artists?.[0]?.area || "ListenBrainz",
-      label: "",
-      tags,
-      year: m.release?.year || 0,
-      obscurity: popularity === undefined ? 50 : Math.round(100 - popularity),
-      popularity,
-      listenCount: related?.total_listen_count ?? neighbourRow?.total_listen_count,
-      colors: colors[hash(id) % colors.length],
-      externalIds: { musicbrainz: id, listenbrainz: id },
-      discoveryPath: neighbourContext
-        ? lastFmListenBrainzNeighbourPath(
-            seed,
-            neighbourContext.anchor,
-            neighbourContext.neighbour,
-            candidateRef,
-          )
-        : listenBrainzPath(
-            seed,
-            candidateRef,
-            related ? "listening" : "tag",
-            related ? undefined : matchedTag,
-          ),
-      reason,
-      relevance: neighbourContext ? 68 : related ? sameArtist ? 32 : 72 : 46,
-      origin: neighbourContext ? "lastfm-deep" : related ? "artist-radio" : "tag",
-    });
+    pool.push({ id, title: m.recording.name, artist: m.artist.name, artistId: credits[0]?.sourceId || m.artist.artists?.[0]?.artist_mbid, credits: credits.length ? credits : undefined, country: m.artist.artists?.[0]?.area, album: m.release?.name, releaseId: m.release?.mbid, scene: tags[0] || m.artist.artists?.[0]?.area || "ListenBrainz", label: "", tags, year: m.release?.year || 0, obscurity: popularity === undefined ? 50 : Math.round(100 - popularity), popularity, listenCount: related?.total_listen_count, colors: colors[hash(id) % colors.length], externalIds: { musicbrainz: id, listenbrainz: id }, discoveryPath: listenBrainzPath(seed, { id, title: m.recording.name, artist: m.artist.name, externalIds: { musicbrainz: id, listenbrainz: id } }, related ? "listening" : "tag", related ? undefined : matchedTag), reason, relevance: related ? sameArtist ? 32 : 72 : 46, origin: related ? "artist-radio" : "tag" });
   }
   const discogsResult = await discogsJob;
   pool.push(...discogsResult.candidates);

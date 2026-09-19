@@ -5,7 +5,6 @@ import {
   discoveryPath,
   lastFmCataloguePath,
   lastFmDeepPath,
-  lastFmListenBrainzNeighbourPath,
   lastFmSimilarityPath,
   listenBrainzPath,
   pathNode,
@@ -141,30 +140,4 @@ test("candidate merge keeps the verified editorial path", () => {
   const [merged] = mergeDiscoveryCandidates([base, editorial]);
   assert.equal(merged.discoveryPath?.source, "discogs");
   assert.equal(merged.discoveryPath?.nodes[1].name, "Deep Label");
-});
-
-
-test("cross-source sparse-seed paths preserve both Last.fm and ListenBrainz hops", () => {
-  const path = lastFmListenBrainzNeighbourPath(
-    seed,
-    "Seed Artist",
-    "Neighbour Artist",
-    {
-      ...candidate,
-      externalIds: { listenbrainz: "candidate-recording" },
-    },
-  );
-
-  assert.equal(path.source, "listenbrainz");
-  assert.equal(path.evidence, "listening");
-  assert.equal(path.distance, 3);
-  assert.deepEqual(
-    path.nodes.map(node => [node.kind, node.source]),
-    [
-      ["track", "lastfm"],
-      ["artist", "lastfm"],
-      ["artist", "lastfm"],
-      ["track", "listenbrainz"],
-    ],
-  );
 });
