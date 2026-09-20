@@ -730,3 +730,37 @@ test("tolerant seed matching accepts metadata variants but rejects different son
   );
   assert.equal(match?.track.id, "goya-fight");
 });
+
+
+test("automatic seed matching rejects ambiguous short plain artists without a stable identity",()=>{
+  const base={
+    id:"carla-lastfm",
+    title:"DROPPING SEEDS",
+    artist:"Carla",
+    scene:"Last.fm",
+    label:"",
+    tags:[],
+    obscurity:50,
+    year:0,
+    colors:["a","b"] as [string,string],
+    externalIds:{lastfm:"https://www.last.fm/music/Carla/_/DROPPING+SEEDS"},
+  };
+  assert.equal(findCredibleTrackMatch("Dropping Seeds","CARLA",[base]),undefined);
+
+  const stable={
+    ...base,
+    id:"0d7ab8ac-9798-4c1c-bd4a-35c3eb6d9877",
+    artistId:"f8d8f44e-7cbb-4f99-95ae-58cc4dccf166",
+    externalIds:{...base.externalIds,musicbrainz:"0d7ab8ac-9798-4c1c-bd4a-35c3eb6d9877"},
+  };
+  assert.equal(findCredibleTrackMatch("Dropping Seeds","CARLA",[stable])?.track.id,stable.id);
+
+  const distinctive={
+    ...base,
+    id:"duk-lastfm",
+    title:"Your no Groove",
+    artist:"DÜK",
+    externalIds:{lastfm:"https://www.last.fm/music/DUK/_/Your+no+Groove"},
+  };
+  assert.equal(findCredibleTrackMatch("Your no Groove","DÜK",[distinctive])?.track.id,"duk-lastfm");
+});
