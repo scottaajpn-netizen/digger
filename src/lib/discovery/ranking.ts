@@ -163,6 +163,7 @@ type SelectionOptions = {
   scoreAdjustment?: (track: RankedCandidate) => number;
   originLimit?: number;
   strictOriginLimit?: boolean;
+  maxOriginScoreDrop?: number;
 };
 
 export function modeSelectionAdjustment(
@@ -227,6 +228,7 @@ export function selectDiverseRecommendations(
   const artistCounts = new Map<string, number>();
   const labelCounts = new Map<string, number>();
   const originCounts = new Map<CandidateOrigin, number>();
+  const originQualityAnchors = new Map<CandidateOrigin, number>();
   const seedArtistName = normalized(seedArtist);
 
   // Editions of the same performance need not occupy multiple discovery slots.
@@ -318,6 +320,20 @@ export function selectDiverseRecommendations(
               : options.originLimit;
     if (originCount >= maxOriginCount) return false;
 
+    const currentSelectionScore = selectionScore(track);
+    const originQualityAnchor = originQualityAnchors.get(track.origin);
+    if (
+      options.maxOriginScoreDrop !== undefined &&
+      originQualityAnchor !== undefined &&
+      currentSelectionScore <
+        originQualityAnchor - options.maxOriginScoreDrop
+    ) {
+      return false;
+    }
+    if (originQualityAnchor === undefined) {
+      originQualityAnchors.set(track.origin, currentSelectionScore);
+    }
+
     selected.push(track);
     for (const key of artistKeys) {
       artistCounts.set(key, (artistCounts.get(key) || 0) + 1);
@@ -355,7 +371,7 @@ export function selectSurpriseRecommendations(
   limit = 10,
   options: Pick<
     SelectionOptions,
-    "scoreAdjustment" | "originLimit" | "strictOriginLimit"
+    "scoreAdjustment" | "originLimit" | "strictOriginLimit" | "maxOriginScoreDrop"
   > = {},
 ) {
   const supported = ranked.filter(track => track.evidence?.tier !== "exploratory");
@@ -428,7 +444,12 @@ export function selectModeRecommendations(
       ranked,
       seedArtist,
       limit,
-      { scoreAdjustment, originLimit: 2, strictOriginLimit: true },
+      {
+        scoreAdjustment,
+        originLimit: 2,
+        strictOriginLimit: true,
+        maxOriginScoreDrop: 10,
+      },
     );
   }
 

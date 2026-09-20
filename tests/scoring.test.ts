@@ -337,6 +337,43 @@ test("learned path preferences adjust the score for a matching path shape", () =
   assert.equal(learned - baseline, 8);
 });
 
+test("exploration softly penalizes another track by an already-known artist", () => {
+  const sameArtist = candidate("same-artist", {
+    artist: "Known Artist",
+    title: "Another Cut",
+  });
+  const newArtist = candidate("new-artist", {
+    artist: "New Artist",
+    title: "Fresh Cut",
+  });
+
+  const baseline = rank(
+    [sameArtist, newArtist],
+    request({ direction: "Surprends-moi" }),
+  );
+  const remembered = rank(
+    [sameArtist, newArtist],
+    request({
+      direction: "Surprends-moi",
+      memory: {
+        pathScores: {},
+        knownTracks: ["known artist\u0000known cut"],
+      },
+    }),
+  );
+
+  const baselineSame = baseline.find(track => track.id === "same-artist");
+  const rememberedSame = remembered.find(track => track.id === "same-artist");
+  const rememberedNew = remembered.find(track => track.id === "new-artist");
+  assert.ok(baselineSame && rememberedSame && rememberedNew);
+  assert.equal(
+    rememberedSame.score - baselineSame.score,
+    -8,
+  );
+  assert.equal(rememberedSame.scoreBreakdown.memory, -8);
+  assert.equal(rememberedNew.scoreBreakdown.memory, 0);
+});
+
 test("server memory excludes tracks marked as already known", () => {
   const known = candidate("server-known", { artist: "Known Artist", title: "Known Cut" });
   const kept = candidate("server-kept");
@@ -500,6 +537,42 @@ test("Surprends-moi mode policy spreads origins before relaxing", () => {
   );
 });
 
+
+test("Surprends-moi does not fill an origin with a much weaker second candidate", () => {
+  const first = rankedFixture(
+    "quality-1",
+    20,
+    "lastfm-artist-hop",
+    4,
+    { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 4 },
+  );
+  const close = rankedFixture(
+    "quality-2",
+    13,
+    "lastfm-artist-hop",
+    4,
+    { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 4 },
+  );
+  const weak = rankedFixture(
+    "quality-3",
+    5,
+    "lastfm-artist-hop",
+    4,
+    { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 4 },
+  );
+
+  const selected = selectModeRecommendations(
+    [first, close, weak],
+    "Seed Artist",
+    "Surprends-moi",
+    3,
+  );
+
+  assert.deepEqual(
+    selected.map(track => track.id),
+    ["quality-1", "quality-2"],
+  );
+});
 
 test("Rabbit hole never relaxes into repeated artists", () => {
   const first = rankedFixture(

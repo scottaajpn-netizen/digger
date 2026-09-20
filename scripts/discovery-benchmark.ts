@@ -779,7 +779,7 @@ function printRun(
     if (track.scoreBreakdown) {
       const score = track.scoreBreakdown;
       console.log(
-        `    score: rel=${formatNumber(score.relevance)} sim=${formatNumber(score.musicalSimilarity)} tags=${formatNumber(score.sharedTags)} origin=${formatNumber(score.origin)} path=${formatNumber(score.discoveryPath)} dir=${formatNumber(score.direction)} jitter=${formatNumber(score.jitter)}`,
+        `    score: rel=${formatNumber(score.relevance)} sim=${formatNumber(score.musicalSimilarity)} tags=${formatNumber(score.sharedTags)} origin=${formatNumber(score.origin)} path=${formatNumber(score.discoveryPath)} mem=${formatNumber(score.memory)} dir=${formatNumber(score.direction)} jitter=${formatNumber(score.jitter)}`,
       );
     }
 

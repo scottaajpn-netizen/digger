@@ -3,7 +3,7 @@ import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
 import { assessCandidateEvidence } from "./evidence";
 import { discoveryPathPreferenceKey } from "./paths";
-import { containsArtistParticipant } from "./artist-anchors";
+import { artistNameParts, containsArtistParticipant } from "./artist-anchors";
 import {
   deduplicate,
   normalized,
@@ -124,6 +124,11 @@ export function rankDiscoveryCandidates({
     pool
       .filter(track => ["love", "curious"].includes(input.feedback[track.id]))
       .flatMap(track => track.tags),
+  );
+  const knownArtistKeys = new Set(
+    (input.memory?.knownTracks || [])
+      .map(identity => identity.split("\u0000")[0])
+      .filter(Boolean),
   );
 
   return deduplicate([...pool].sort((a, b) => b.relevance - a.relevance))
@@ -296,6 +301,27 @@ export function rankDiscoveryCandidates({
         const memoryAdjustment = input.memory?.pathScores[memoryKey] || 0;
         score += memoryAdjustment;
         scoreBreakdown.memory += memoryAdjustment;
+      }
+
+      if (
+        knownArtistKeys.size > 0 &&
+        (input.direction === "Surprends-moi" ||
+          input.direction === "Rabbit hole")
+      ) {
+        const artistAlreadyKnown = [
+          normalized(track.artist),
+          ...artistNameParts(track.artist).map(normalized),
+        ].some(artist => knownArtistKeys.has(artist));
+
+        if (artistAlreadyKnown) {
+          // A known artist is still allowed: another deep cut can be useful.
+          // But exploration modes should prefer a genuinely new artist when
+          // relevance is otherwise comparable.
+          const knownArtistPenalty =
+            input.direction === "Surprends-moi" ? -8 : -4;
+          score += knownArtistPenalty;
+          scoreBreakdown.memory += knownArtistPenalty;
+        }
       }
 
       if (track.discogs) {
