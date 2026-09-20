@@ -171,6 +171,18 @@ export function trackSearchMatchScore(
   return titleScore + artistScore;
 }
 
+function stableSeedArtistIdentity(track: Track) {
+  return Boolean(
+    track.artistId ||
+    track.externalIds?.musicbrainz ||
+    track.credits?.some(credit => credit.source === "musicbrainz" && credit.sourceId),
+  );
+}
+
+function shortPlainArtistNeedsCorroboration(expectedArtist: string) {
+  return /^[A-Za-z]{2,5}$/.test(expectedArtist.trim());
+}
+
 export function findCredibleTrackMatch(
   expectedTitle: string,
   expectedArtist: string,
@@ -183,7 +195,25 @@ export function findCredibleTrackMatch(
       score: trackSearchMatchScore(expectedTitle, expectedArtist, track),
     }))
     .sort((a, b) => b.score - a.score || a.track.id.localeCompare(b.track.id));
-  return ranked[0] && ranked[0].score >= minimumScore ? ranked[0] : undefined;
+
+  const best = ranked[0];
+  if (!best || best.score < minimumScore) return undefined;
+
+  if (
+    shortPlainArtistNeedsCorroboration(expectedArtist) &&
+    normalized(best.track.artist) === normalized(expectedArtist) &&
+    !stableSeedArtistIdentity(best.track)
+  ) {
+    return undefined;
+  }
+
+  const runner = ranked.find(row =>
+    normalized(row.track.title) !== normalized(best.track.title) ||
+    normalized(row.track.artist) !== normalized(best.track.artist)
+  );
+  if (runner && best.score < 100 && best.score - runner.score < 8) return undefined;
+
+  return best;
 }
 
 function structuredSearchParts(query: string) {
