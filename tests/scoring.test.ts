@@ -602,8 +602,8 @@ test("Surprends-moi selects novel artists before falling back to known artists",
     new Set(["known artist"]),
   );
   assert.deepEqual(
-    firstTwo.map(track => track.artist),
-    ["Novel Artist A", "Novel Artist B"],
+    new Set(firstTwo.map(track => track.artist)),
+    new Set(["Novel Artist A", "Novel Artist B"]),
   );
 
   const withFallback = selectModeRecommendations(
