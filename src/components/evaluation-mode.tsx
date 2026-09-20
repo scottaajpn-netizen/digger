@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { HOLDOUT_SEEDS, type HoldoutSeed } from "@/lib/evaluation/holdout";
-import { normalize, similarity } from "@/lib/search/matching";
+import { resolveSeedSuggestion, type Suggestion } from "@/lib/search/matching";
 import type { DigResponse, Recommendation, SeedReference, Track } from "@/lib/types";
 
 type Vote =
@@ -66,7 +66,7 @@ type EvaluationSession = {
   startedAt: string;
 };
 
-type SearchSuggestion = Track & { matchScore?: number };
+type SearchSuggestion = Suggestion;
 
 const STORAGE_KEY = "digger.holdout.v1";
 
@@ -119,19 +119,7 @@ function toSeedReference(track: Track): SeedReference {
 }
 
 function pickCredibleSeed(seed: HoldoutSeed, suggestions: SearchSuggestion[]) {
-  const exact = suggestions.find(
-    track =>
-      normalize(track.title) === normalize(seed.title) &&
-      normalize(track.artist) === normalize(seed.artist),
-  );
-  if (exact) return exact;
-
-  return suggestions.find(track => {
-    const titleScore = similarity(seed.title, track.title);
-    const artistScore = similarity(seed.artist, track.artist);
-    const searchScore = track.matchScore ?? 0;
-    return titleScore >= 0.9 && artistScore >= 0.82 && searchScore >= 0.82;
-  });
+  return resolveSeedSuggestion(seed.title, seed.artist, suggestions)?.track;
 }
 
 function sourceLabel(track: Recommendation) {
