@@ -1,6 +1,6 @@
 # HOLDOUT-A — baseline figée du 20/09/2026
 
-Le fichier brut `tests/fixtures/holdout-a-2026-09-20.json.gz` est l'export complet de la première session d'évaluation automatisée de Digger.
+Le manifest `tests/fixtures/holdout-a-2026-09-20.manifest.json` référence l'export complet de la première session d'évaluation automatisée de Digger, stocké en fragments base64 d'un gzip. Ce découpage conserve exactement le JSON exporté tout en permettant de le versionner de façon vérifiable.
 
 - Export : `2026-09-20T11:32:19.356Z`
 - Mode : `Surprends-moi`
@@ -60,4 +60,4 @@ Pour écrire également le rapport calculé en JSON :
 npm run report:holdout -- --out=benchmark-output/holdout-a-report.json
 ```
 
-Le test `tests/holdout-report.test.ts` vérifie le SHA-256 du JSON décompressé et les métriques principales, afin d'empêcher toute modification silencieuse de la baseline.
+Le test `tests/holdout-report.test.ts` reconstruit les fragments, vérifie la taille compressée, la taille du JSON, son SHA-256 et les métriques principales, afin d'empêcher toute modification silencieuse de la baseline.
