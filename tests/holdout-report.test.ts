@@ -2,15 +2,35 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { analyzeHoldoutExport, type HoldoutExport } from "../src/lib/evaluation/report";
 
-const fixturePath = "tests/fixtures/holdout-a-2026-09-20.json.gz";
+const fixturePath = "tests/fixtures/holdout-a-2026-09-20.manifest.json";
 const expectedJsonSha256 = "830570284eca7bc94628950b23df1c2b19555cb2ef5028112b1c64170010ddd9";
 
+type BaselineManifest = {
+  format: "gzip-base64-parts-v1";
+  uncompressedSha256: string;
+  uncompressedBytes: number;
+  compressedBytes: number;
+  parts: string[];
+};
+
 function loadBaseline() {
-  const json = gunzipSync(readFileSync(fixturePath));
+  const manifest = JSON.parse(readFileSync(fixturePath, "utf8")) as BaselineManifest;
+  assert.equal(manifest.format, "gzip-base64-parts-v1");
+  assert.equal(manifest.uncompressedSha256, expectedJsonSha256);
+  const folder = dirname(fixturePath);
+  const base64 = manifest.parts
+    .map(part => readFileSync(resolve(folder, part), "utf8"))
+    .join("")
+    .replace(/\s+/g, "");
+  const compressed = Buffer.from(base64, "base64");
+  assert.equal(compressed.length, manifest.compressedBytes, "HOLDOUT-A compressed bytes changed unexpectedly");
+  const json = gunzipSync(compressed);
+  assert.equal(json.length, manifest.uncompressedBytes, "HOLDOUT-A raw byte length changed unexpectedly");
   const digest = createHash("sha256").update(json).digest("hex");
   assert.equal(digest, expectedJsonSha256, "HOLDOUT-A raw export changed unexpectedly");
   return JSON.parse(json.toString("utf8")) as HoldoutExport;
