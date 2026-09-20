@@ -675,6 +675,28 @@ test("Surprends-moi builds several independent Last.fm branches for a sparse see
   assert.ok(selectedOrigins.has("lastfm-tag-crate"));
   assert.ok(selectedOrigins.size >= 3);
   assert.ok(result.tracks.length >= 6);
+
+  const branchAnalysis = result.retrievalDiagnostics?.branchAnalysis;
+  assert.ok(branchAnalysis);
+  assert.equal(branchAnalysis.diversity.providerCount, 1);
+  assert.ok(branchAnalysis.diversity.topologyCount >= 3);
+  assert.ok(
+    branchAnalysis.survival.some(
+      row => row.origin === "lastfm-artist-hop" && row.generated > 0,
+    ),
+  );
+
+  const hopTrack = result.tracks.find(
+    track =>
+      (track as typeof track & { origin?: string }).origin ===
+      "lastfm-artist-hop",
+  );
+  assert.ok(hopTrack?.retrieval?.artistHop);
+  assert.equal(
+    hopTrack.retrieval.artistHop.pathStrength,
+    hopTrack.retrieval.artistHop.firstHopMatch *
+      hopTrack.retrieval.artistHop.secondHopMatch,
+  );
   assert.ok(
     Math.max(
       ...Object.values(

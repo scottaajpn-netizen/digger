@@ -53,11 +53,20 @@ export interface ArtistRelationProvenance {
   similarity?: number;
   tags?: string[];
 }
+export interface ArtistHopProvenance {
+  anchorArtist: string;
+  bridgeArtist: string;
+  neighbourArtist: string;
+  firstHopMatch: number;
+  secondHopMatch: number;
+  pathStrength: number;
+}
 export interface TrackRetrievalProvenance {
   provider: DiscoveryPathSource;
   source: "live" | "local-catalogue";
   storedAt?: string;
   artistRelation?: ArtistRelationProvenance;
+  artistHop?: ArtistHopProvenance;
   contextTags?: string[];
 }
 export interface Track {
@@ -129,6 +138,35 @@ export interface RetrievalRejectionDiagnostics {
   byReason: Record<string, number>;
   byOrigin: Record<string, number>;
 }
+export interface BranchOverlapDiagnostics {
+  left: string;
+  right: string;
+  sharedTracks: number;
+  unionTracks: number;
+  trackJaccard: number;
+  sharedArtists: number;
+  unionArtists: number;
+  artistJaccard: number;
+}
+export interface BranchSurvivalDiagnostics {
+  origin: string;
+  generated: number;
+  kept: number;
+  survivalRate: number;
+}
+export interface BranchDiversityDiagnostics {
+  providerCounts: Record<string, number>;
+  topologyCounts: Record<string, number>;
+  providerCount: number;
+  topologyCount: number;
+}
+export interface BranchDiagnostics {
+  survival: BranchSurvivalDiagnostics[];
+  overlaps: BranchOverlapDiagnostics[];
+  maxTrackJaccard: number;
+  maxArtistJaccard: number;
+  diversity: BranchDiversityDiagnostics;
+}
 export interface DiscogsRetrievalDiagnostics {
   status:
     | "disabled"
@@ -177,6 +215,7 @@ export interface RetrievalDiagnostics {
   strictGateKept: RetrievalStageDiagnostics;
   strictGateRejected: RetrievalStageDiagnostics;
   selected: RetrievalStageDiagnostics;
+  branchAnalysis?: BranchDiagnostics;
 }
 export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics }
 export interface MusicProvider { id: string; search(query: string): Promise<Track[]>; candidates(seed: Track): Promise<Track[]> }

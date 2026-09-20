@@ -527,6 +527,14 @@ function formatOriginCounts(counts: Record<string, number>) {
     .join(", ");
 }
 
+function formatRatio(value: number) {
+  return value.toFixed(2);
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
 function printRetrievalDiagnostics(
   diagnostics: DigResponse["retrievalDiagnostics"],
 ) {
@@ -558,6 +566,52 @@ function printRetrievalDiagnostics(
   console.log(
     `    gate: audience-known=${after.withTrackAudience || 0}/${after.total} | kept=${kept.total} [${formatOriginCounts(kept.byOrigin)}] | rejected=${rejected.total} [${formatOriginCounts(rejected.byOrigin)}] | selected=${selected.total}`,
   );
+
+  const branch = diagnostics.branchAnalysis;
+  if (branch) {
+    console.log(
+      `    branch-analysis: max-track-J=${formatRatio(branch.maxTrackJaccard)} | max-artist-J=${formatRatio(branch.maxArtistJaccard)} | providers=${branch.diversity.providerCount} [${formatOriginCounts(branch.diversity.providerCounts)}] | topologies=${branch.diversity.topologyCount}`,
+    );
+    console.log(
+      `    branch-survival: ${branch.survival
+        .sort((a, b) => b.generated - a.generated || a.origin.localeCompare(b.origin))
+        .map(row => `${row.origin}=${row.kept}/${row.generated} (${formatPercent(row.survivalRate)})`)
+        .join(" | ")}`,
+    );
+
+    const focusOrigins = new Set([
+      "lastfm-crate",
+      "lastfm-artist-hop",
+      "lastfm-tag-crate",
+    ]);
+    const focusPairs = branch.overlaps.filter(
+      row => focusOrigins.has(row.left) && focusOrigins.has(row.right),
+    );
+    const displayedPairs = focusPairs.length
+      ? focusPairs
+      : [...branch.overlaps]
+          .sort(
+            (a, b) =>
+              Math.max(b.trackJaccard, b.artistJaccard) -
+              Math.max(a.trackJaccard, a.artistJaccard),
+          )
+          .slice(0, 5);
+
+    for (const row of displayedPairs) {
+      console.log(
+        `    branch-overlap: ${row.left} <> ${row.right} | tracks J=${formatRatio(row.trackJaccard)} (${row.sharedTracks}/${row.unionTracks}) | artists J=${formatRatio(row.artistJaccard)} (${row.sharedArtists}/${row.unionArtists})`,
+      );
+    }
+
+    const topologies = Object.entries(branch.diversity.topologyCounts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 6)
+      .map(([topology, count]) => `${topology}:${count}`)
+      .join(" | ");
+    if (topologies) {
+      console.log(`    topology: ${topologies}`);
+    }
+  }
 }
 
 function printRun(
@@ -595,6 +649,13 @@ function printRun(
       const score = track.scoreBreakdown;
       console.log(
         `    score: rel=${formatNumber(score.relevance)} sim=${formatNumber(score.musicalSimilarity)} tags=${formatNumber(score.sharedTags)} origin=${formatNumber(score.origin)} path=${formatNumber(score.discoveryPath)} dir=${formatNumber(score.direction)} jitter=${formatNumber(score.jitter)}`,
+      );
+    }
+
+    const artistHop = track.retrieval?.artistHop;
+    if (artistHop) {
+      console.log(
+        `    artist-hop: ${artistHop.anchorArtist} -> ${artistHop.bridgeArtist} [hop1=${formatRatio(artistHop.firstHopMatch)}] -> ${artistHop.neighbourArtist} [hop2=${formatRatio(artistHop.secondHopMatch)}] | strength=${formatRatio(artistHop.pathStrength)}`,
       );
     }
   });

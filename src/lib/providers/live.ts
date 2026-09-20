@@ -8,6 +8,7 @@ import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discove
 import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, lastFmTagArtistPath, listenBrainzPath } from "../discovery/paths";
 import { resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
 import { loadCatalogueEntries, rememberCatalogueEntries, type CatalogueEntryInput } from "../discovery/catalogue";
+import { analyzeBranchDiagnostics } from "../discovery/branch-diagnostics";
 export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -976,6 +977,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
         anchor: string;
         bridge: string;
         name: string;
+        firstHopMatch: number;
         match: number;
       }> = [];
       const secondHopSeen = new Set<string>();
@@ -994,6 +996,10 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
             anchor: bridge.anchor,
             bridge: bridge.name,
             name,
+            firstHopMatch: Math.max(
+              0,
+              Math.min(1, Number(bridge.match || 0)),
+            ),
             match: Math.max(0, Math.min(1, Number(row?.match || 0))),
           });
           if (secondHopArtists.length >= 6) break;
@@ -1073,6 +1079,15 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
                 anchorArtist: relation.bridge,
                 neighbourArtist: relation.name,
                 similarity: relation.match,
+              },
+              artistHop: {
+                anchorArtist: relation.anchor,
+                bridgeArtist: relation.bridge,
+                neighbourArtist: relation.name,
+                firstHopMatch: relation.firstHopMatch,
+                secondHopMatch: relation.match,
+                pathStrength:
+                  relation.firstHopMatch * relation.match,
               },
             },
             reason:
@@ -1410,6 +1425,9 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       ],
     })
     : seedProfile;
+  // Keep the raw generated candidates only for benchmark diagnostics.
+  // This snapshot does not participate in merge, scoring, gating or selection.
+  const generatedPoolForDiagnostics = [...pool];
   const merged = mergeDiscoveryCandidates(pool);
   pool.splice(0, pool.length, ...merged);
   const retrievalStage = (
@@ -1752,6 +1770,10 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const rejectedRanked = ranked.filter(track => !deepRankedIds.has(track.id));
   retrievalDiagnostics.strictGateKept = retrievalStage(deepRanked);
   retrievalDiagnostics.strictGateRejected = retrievalStage(rejectedRanked);
+  retrievalDiagnostics.branchAnalysis = analyzeBranchDiagnostics(
+    generatedPoolForDiagnostics,
+    deepRanked,
+  );
 
   const selected = selectModeRecommendations(
     deepRanked,
