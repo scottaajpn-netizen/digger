@@ -2,6 +2,7 @@ import { discoverDiscogs } from "./discogs";
 import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } from "../types";
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
+import { cleanLastFmArtistTags } from "../music/lastfm-context";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, listenBrainzPath } from "../discovery/paths";
@@ -673,12 +674,15 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       };
     }) => {
       const listeners = Number(entry.track.lastfmListeners || 0);
+      const artistTags = cleanLastFmArtistTags(
+        (entry.artistTags || []).map(name => ({ name })),
+        6,
+      );
       pool.push({
         id: entry.track.id,
         title: entry.track.title,
         artist: entry.track.artist,
         scene:
-          entry.artistTags?.[0] ||
           seedProfile.subgenres[0] ||
           seedProfile.genres[0] ||
           "Last.fm catalogue",
@@ -715,17 +719,17 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
             anchorArtist: entry.anchorArtist,
             neighbourArtist: entry.neighbourArtist,
             similarity: entry.similarity,
-            tags: entry.artistTags,
+            tags: artistTags,
           },
         },
         reason: (() => {
           const similarity =
             entry.similarity !== undefined
-              ? ` · indice artiste Last.fm ${Math.round(entry.similarity * 100)}%`
+              ? ` · score de voisinage Last.fm ${entry.similarity.toFixed(2)}`
               : "";
           const tags =
-            entry.artistTags?.length
-              ? ` · tags artiste : ${entry.artistTags.slice(0, 3).join(" / ")}`
+            artistTags.length
+              ? ` · contexte artiste : ${artistTags.slice(0, 3).join(" / ")}`
               : "";
           return entry.source === "local-catalogue"
             ? `Catalogue local vérifié : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} »${similarity}${tags}.`
@@ -832,15 +836,10 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
             `Les tags artiste Last.fm de ${row.name} sont indisponibles.`,
           ),
         ]);
-        const artistTags = (tags?.toptags?.tag || [])
-          .filter(tag => typeof tag.name === "string")
-          .sort(
-            (left, right) =>
-              Number(right.count || 0) - Number(left.count || 0),
-          )
-          .map(tag => tag.name!.trim())
-          .filter(Boolean)
-          .slice(0, 6);
+        const artistTags = cleanLastFmArtistTags(
+          tags?.toptags?.tag || [],
+          6,
+        );
         return { tracks, artistTags };
       }),
     );

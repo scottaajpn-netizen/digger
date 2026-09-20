@@ -191,6 +191,34 @@ test("evidence separates a credible behavioral path from unsupported catalogue r
   assert.equal(catalogue.path, "catalogue");
 });
 
+test("artist context can support evidence without masquerading as track affinity", () => {
+  const ranked = rank([
+    candidate("artist-context-only", {
+      scene: "",
+      tags: [],
+      year: 0,
+      country: undefined,
+      origin: "lastfm-crate",
+      discoveryPath: path("catalogue", 3),
+      retrieval: {
+        provider: "lastfm",
+        source: "live",
+        artistRelation: {
+          anchorArtist: "Seed Artist",
+          neighbourArtist: "Context Artist",
+          similarity: 0.72,
+          tags: ["uk garage", "2-step"],
+        },
+      },
+    }),
+  ], request({ direction: "Surprends-moi" }));
+
+  assert.equal(ranked.length, 1);
+  assert.equal(ranked[0].analysis?.similarity, 0);
+  assert.equal(ranked[0].evidence?.tier, "credible");
+  assert.equal(ranked[0].evidence?.musical, true);
+});
+
 test("Surprends-moi keeps retrieval rank and jitter subordinate to recommendation evidence", () => {
   const ranked = rank([
     candidate("retrieval-heavy", {

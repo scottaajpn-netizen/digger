@@ -146,15 +146,21 @@ export function rankDiscoveryCandidates({
             ...track.discogs.genres,
           ],
         })
-        : buildMusicalProfile({
-          ...track,
-          tags: [
-            ...track.tags,
-            ...(track.retrieval?.artistRelation?.tags || []),
-          ],
-        });
+        : buildMusicalProfile(track);
+      const contextualProfile =
+        !track.discogs && track.retrieval?.artistRelation?.tags?.length
+          ? buildMusicalProfile({
+              ...track,
+              tags: [
+                ...track.tags,
+                ...track.retrieval.artistRelation.tags,
+              ],
+            })
+          : candidateProfile;
       const comparison = compareMusicalProfiles(seedProfile, candidateProfile);
-      const evidence = assessCandidateEvidence(track, comparison);
+      const evidenceComparison =
+        compareMusicalProfiles(seedProfile, contextualProfile);
+      const evidence = assessCandidateEvidence(track, evidenceComparison);
       const shared = track.tags.filter(tag => seed.tags.includes(tag)).length;
 
       const scoreBreakdown = {

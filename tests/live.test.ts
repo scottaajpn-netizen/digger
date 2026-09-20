@@ -397,7 +397,7 @@ test("catalogue fallback serves sparse non-MBID seeds in every direction and sup
     if (method === "track.getInfo") return Response.json({ track: { name: u.searchParams.get("track"), artist: { name: u.searchParams.get("artist") }, listeners: "600" } });
     if (method === "track.getSimilar") return Response.json({ similartracks: { track: [] } });
     if (method === "artist.getSimilar") return Response.json({ similarartists: { artist: [{ name: u.searchParams.get("artist") === "Niche fixture" ? "Neighbour fixture" : "Next fixture", match: 0.6 }] } });
-    if (method === "artist.getTopTags") return Response.json({ toptags: { tag: [{ name: "electronic", count: 100 }, { name: "broken beat", count: 80 }] } });
+    if (method === "artist.getTopTags") return Response.json({ toptags: { tag: [{ name: "electronic", count: 100 }, { name: "funk_add_to_lidarr_batch_9", count: 95 }, { name: "broken beat", count: 80 }, { name: "Seen Live", count: 70 }] } });
     if (method === "artist.getTopTracks") return Response.json({ toptracks: { track: [{ name: "Catalogue cut", artist: { name: u.searchParams.get("artist") }, listeners: "600", url: "https://www.last.fm/music/fixture" }] } });
     throw Error(`Unexpected catalogue route ${u.pathname}`);
   });
