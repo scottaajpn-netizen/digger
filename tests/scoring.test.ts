@@ -541,15 +541,14 @@ test("Surprends-moi MMR favors a comparable but less redundant path", () => {
     tags: ["house", "club"],
   };
 
-  const selected = selectModeRecommendations(
+  const selected = selectMmrRecommendations(
     [radio1, radio2, deep, discogs, radio3],
     "Seed Artist",
-    "Surprends-moi",
     4,
   );
 
   assert.equal(selected[0]?.id, "radio-1");
-  assert.ok(selected.slice(0, 3).some(track => track.id === "deep-1"));
+  assert.equal(selected[1]?.id, "deep-1");
   assert.ok(selected.some(track => track.id === "discogs-1"));
 });
 
@@ -596,8 +595,21 @@ test("MMR redundancy reflects shared musical and retrieval context", () => {
       recommendationRedundancy(left, far),
   );
 
+  const decoy = {
+    ...rankedFixture(
+      "decoy",
+      0,
+      "lastfm-deep",
+      2,
+      { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 2 },
+    ),
+    scene: "Ambient",
+    label: "Decoy Label",
+    tags: ["ambient"],
+  };
+
   const selected = selectMmrRecommendations(
-    [left, near, far],
+    [left, near, far, decoy],
     "Seed Artist",
     2,
   );

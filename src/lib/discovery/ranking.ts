@@ -400,14 +400,21 @@ const mmrArtistKeys = (track: RankedCandidate) =>
   new Set(
     [
       normalized(track.artist),
+      ...(track.artistId ? [`musicbrainz:${track.artistId}`] : []),
       ...(track.credits || [])
         .filter(
           credit => credit.role === "primary" || credit.role === "featured",
         )
-        .map(credit => normalized(credit.name)),
-      ...(track.discogs?.trackArtists || []).map(item =>
+        .flatMap(credit => [
+          normalized(credit.name),
+          ...(credit.sourceId
+            ? [`${credit.source}:${credit.sourceId}`]
+            : []),
+        ]),
+      ...(track.discogs?.trackArtists || []).flatMap(item => [
         normalized(item.name.replace(/\s*\(\d+\)$/, "")),
-      ),
+        `discogs:${item.id}`,
+      ]),
     ].filter(Boolean),
   );
 

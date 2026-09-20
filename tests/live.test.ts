@@ -746,16 +746,9 @@ test("Surprends-moi builds several independent Last.fm branches for a sparse see
     hopTrack.retrieval.artistHop.firstHopMatch *
       hopTrack.retrieval.artistHop.secondHopMatch,
   );
-  assert.ok(
-    Math.max(
-      ...Object.values(
-        result.tracks.reduce<Record<string, number>>((counts, track) => {
-          const origin = (track as typeof track & { origin?: string }).origin || "unknown";
-          counts[origin] = (counts[origin] || 0) + 1;
-          return counts;
-        }, {}),
-      ),
-    ) <= 2,
+  assert.equal(
+    new Set(result.tracks.map(track => track.artist)).size,
+    result.tracks.length,
   );
 });
 
