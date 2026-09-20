@@ -357,22 +357,42 @@ export async function searchLive(query: string, signal: AbortSignal): Promise<Tr
     ? artistSearchParts(structured.artist)[0] || structured.artist
     : "";
 
-  let lastFm: LastFmSearchResponse | null = null;
+  const lastFmRows: LastFmSearchTrack[] = [];
   try {
-    lastFm = await lastFmJson<LastFmSearchResponse>(
+    const first = await lastFmJson<LastFmSearchResponse>(
       "track.search",
       {
         track: lastFmTitle,
         ...(lastFmArtist ? { artist: lastFmArtist } : {}),
-        limit: "10",
+        limit: structured ? "100" : "10",
       },
       signal,
     );
+    lastFmRows.push(...(first?.results?.trackmatches?.track || []));
+
+    if (
+      structured &&
+      lastFmArtist &&
+      !lastFmRows.some(item =>
+        normalized(item.name || "") === normalized(structured.title) &&
+        normalized(item.artist || "") === normalized(structured.artist)
+      )
+    ) {
+      const second = await lastFmJson<LastFmSearchResponse>(
+        "track.search",
+        {
+          track: `${lastFmTitle} ${lastFmArtist}`,
+          limit: "50",
+        },
+        signal,
+      );
+      lastFmRows.push(...(second?.results?.trackmatches?.track || []));
+    }
   } catch {
     return mbTracks;
   }
 
-  const external = (lastFm?.results?.trackmatches?.track || []).flatMap(item => {
+  const external = lastFmRows.flatMap(item => {
     const title = item.name?.trim();
     const artistName = item.artist?.trim();
     if (!title || !artistName) return [];
