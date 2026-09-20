@@ -61,8 +61,9 @@ test("HOLDOUT-A stays frozen and exposes the expected baseline", () => {
   assert.equal(report.seedsWithRecommendations, 13);
 
   assert.equal(report.bySource.find(row => row.source === "listenbrainz")?.count, 25);
-  assert.equal(report.bySource.find(row => row.source === "lastfm")?.count, 25);
+  assert.equal(report.bySource.find(row => row.source === "lastfm")?.count, 20);
   assert.equal(report.bySource.find(row => row.source === "discogs")?.count, 4);
+  assert.equal(report.bySource.find(row => row.source === "unknown")?.count, 5);
 });
 
 test("HOLDOUT report keeps score and path metrics reproducible", () => {
@@ -81,6 +82,9 @@ test("HOLDOUT report keeps score and path metrics reproducible", () => {
   });
 
   const lastfm = report.bySource.find(row => row.source === "lastfm");
+  assert.equal(lastfm?.voteCounts.love, 9);
+  assert.equal(lastfm?.voteCounts.relevant_not_for_me, 2);
+  assert.equal(lastfm?.voteCounts.ok, 2);
   assert.equal(lastfm?.voteCounts.off_topic, 5);
   assert.equal(lastfm?.voteCounts.too_popular, 2);
 
