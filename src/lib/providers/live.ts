@@ -1452,7 +1452,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       withoutTrackAudience: tracks.length - withTrackAudience,
     };
   };
-  const retrievalDiagnostics = {
+  const retrievalDiagnostics: NonNullable<DigResponse["retrievalDiagnostics"]> = {
     discogs: discogsResult.diagnostics,
     catalogue: catalogueDiagnostics,
     mergedPool: retrievalStage(pool),
