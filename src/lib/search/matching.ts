@@ -1,6 +1,85 @@
 import type { Track } from "../types";
 export type Suggestion = Track & { sources: string[]; matchScore: number };
 export type SearchResult = { suggestions: Suggestion[]; warnings: string[] };
+export type StructuredSearch = { title: string; artist: string };
+export type SeedResolution<T extends Pick<Track, "id" | "title" | "artist">> = {
+  track: T;
+  confidence: number;
+  exact: boolean;
+  runnerUpConfidence?: number;
+};
+
+export function parseStructuredSearch(query: string): StructuredSearch | undefined {
+  const parts = query
+    .split(/\\s+[—–]\\s+|\\s+-\\s+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  return parts.length === 2 ? { title: parts[0], artist: parts[1] } : undefined;
+}
+
+function hasStableArtistIdentity(track: Pick<Track, "artistId" | "externalIds" | "credits">) {
+  return Boolean(
+    track.artistId ||
+    track.externalIds?.musicbrainz ||
+    track.credits?.some(credit => credit.source === "musicbrainz" && credit.sourceId),
+  );
+}
+
+function lowDistinctivenessArtist(artist: string) {
+  const parts = normalize(artist).split(" ").filter(Boolean);
+  return parts.length === 1 && parts[0].length <= 5 && !/\\d/.test(parts[0]);
+}
+
+export function seedPairConfidence(
+  expectedTitle: string,
+  expectedArtist: string,
+  track: Pick<Track, "title" | "artist">,
+) {
+  const title = similarity(expectedTitle, track.title);
+  const artist = similarity(expectedArtist, track.artist);
+  const exact = normalize(expectedTitle) === normalize(track.title) && normalize(expectedArtist) === normalize(track.artist);
+  if (exact) return 1;
+  if (title < 0.86 || artist < 0.76) return 0;
+  return title * 0.64 + artist * 0.36;
+}
+
+export function resolveSeedSuggestion<T extends Suggestion>(
+  expectedTitle: string,
+  expectedArtist: string,
+  suggestions: T[],
+  minimumConfidence = 0.86,
+): SeedResolution<T> | undefined {
+  const ranked = suggestions
+    .map(track => ({ track, confidence: seedPairConfidence(expectedTitle, expectedArtist, track) }))
+    .filter(row => row.confidence >= minimumConfidence)
+    .sort((a, b) => b.confidence - a.confidence || b.track.matchScore - a.track.matchScore || a.track.id.localeCompare(b.track.id));
+
+  const best = ranked[0];
+  if (!best) return undefined;
+
+  const exact = normalize(expectedTitle) === normalize(best.track.title) && normalize(expectedArtist) === normalize(best.track.artist);
+  const sources = best.track.sources || [];
+  if (
+    lowDistinctivenessArtist(expectedArtist) &&
+    !hasStableArtistIdentity(best.track) &&
+    sources.length < 2
+  ) {
+    return undefined;
+  }
+
+  const runner = ranked.find(row =>
+    normalize(row.track.title) !== normalize(best.track.title) ||
+    normalize(row.track.artist) !== normalize(best.track.artist),
+  );
+  if (runner && !exact && best.confidence - runner.confidence < 0.045) return undefined;
+
+  return {
+    track: best.track,
+    confidence: best.confidence,
+    exact,
+    runnerUpConfidence: runner?.confidence,
+  };
+}
 export const normalize = (s: string) => s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 export function similarity(a: string, b: string): number {
   a = normalize(a).replace(/ /g, ""); b = normalize(b).replace(/ /g, "");
