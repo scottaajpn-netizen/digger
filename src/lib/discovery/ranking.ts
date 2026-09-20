@@ -162,6 +162,7 @@ type SelectionOptions = {
   allowArtistRepeats?: boolean;
   scoreAdjustment?: (track: RankedCandidate) => number;
   originLimit?: number;
+  strictOriginLimit?: boolean;
 };
 
 export function modeSelectionAdjustment(
@@ -308,11 +309,13 @@ export function selectDiverseRecommendations(
         ? relaxed || newArtists
           ? 6
           : 4
-        : relaxed
-          ? options.originLimit + 2
-          : newArtists
-            ? options.originLimit + 1
-            : options.originLimit;
+        : options.strictOriginLimit
+          ? options.originLimit
+          : relaxed
+            ? options.originLimit + 2
+            : newArtists
+              ? options.originLimit + 1
+              : options.originLimit;
     if (originCount >= maxOriginCount) return false;
 
     selected.push(track);
@@ -350,7 +353,10 @@ export function selectSurpriseRecommendations(
   ranked: RankedCandidate[],
   seedArtist: string,
   limit = 10,
-  options: Pick<SelectionOptions, "scoreAdjustment" | "originLimit"> = {},
+  options: Pick<
+    SelectionOptions,
+    "scoreAdjustment" | "originLimit" | "strictOriginLimit"
+  > = {},
 ) {
   const supported = ranked.filter(track => track.evidence?.tier !== "exploratory");
   const primary = selectDiverseRecommendations(
@@ -422,7 +428,7 @@ export function selectModeRecommendations(
       ranked,
       seedArtist,
       limit,
-      { scoreAdjustment, originLimit: 2 },
+      { scoreAdjustment, originLimit: 2, strictOriginLimit: true },
     );
   }
 
