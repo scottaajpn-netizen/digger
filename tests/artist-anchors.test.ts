@@ -23,6 +23,26 @@ test("Last.fm may verify one constituent artist without inventing the rest of a 
   );
 });
 
+test("a Last.fm-confirmed collaboration string opens constituent artist anchors", () => {
+  const ampersand = resolveVerifiedArtistAnchors({
+    seedArtist: "Léon Phal & Jungle Jack",
+    lastFmTrackArtist: "Léon Phal & Jungle Jack",
+  });
+  assert.deepEqual(
+    ampersand.map(anchor => anchor.name),
+    ["Léon Phal", "Jungle Jack"],
+  );
+
+  const punctuationVariant = resolveVerifiedArtistAnchors({
+    seedArtist: "Léon Phal & Jungle Jack",
+    lastFmTrackArtist: "Léon Phal, Jungle Jack",
+  });
+  assert.deepEqual(
+    punctuationVariant.map(anchor => anchor.name),
+    ["Léon Phal", "Jungle Jack"],
+  );
+});
+
 test("an unrelated Last.fm artist cannot become an anchor", () => {
   const anchors = resolveVerifiedArtistAnchors({
     seedArtist: "Mia",

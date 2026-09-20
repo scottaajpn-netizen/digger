@@ -63,11 +63,25 @@ export function resolveVerifiedArtistAnchors({
     anchor => normalized(anchor.name) === reportedKey,
   );
 
-  if (
-    reportedKey === seedKey ||
-    seedPartKeys.has(reportedKey) ||
-    matchesStructuredAnchor
-  ) {
+  if (reportedKey === seedKey) {
+    const parts = artistParts(seedArtist);
+    if (parts.length > 1) {
+      for (const part of parts) {
+        add({
+          name: part,
+          source: "lastfm-track",
+        });
+      }
+    } else {
+      add({
+        name: reportedArtist,
+        source: "lastfm-track",
+      });
+    }
+    return anchors;
+  }
+
+  if (seedPartKeys.has(reportedKey) || matchesStructuredAnchor) {
     add({
       name: reportedArtist,
       source: "lastfm-track",
