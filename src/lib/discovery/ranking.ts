@@ -377,6 +377,219 @@ export function selectDiverseRecommendations(
   return selected;
 }
 
+const setJaccard = (
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+) => {
+  if (!left.size || !right.size) return 0;
+  let shared = 0;
+  for (const value of left) {
+    if (right.has(value)) shared += 1;
+  }
+  const union = left.size + right.size - shared;
+  return union === 0 ? 0 : shared / union;
+};
+
+const meaningfulValue = (value: string | undefined) => {
+  const key = normalized(value || "");
+  if (!key || ["lastfm", "musicbrainz", "unknown"].includes(key)) return "";
+  return key;
+};
+
+const mmrArtistKeys = (track: RankedCandidate) =>
+  new Set(
+    [
+      normalized(track.artist),
+      ...(track.credits || [])
+        .filter(
+          credit => credit.role === "primary" || credit.role === "featured",
+        )
+        .map(credit => normalized(credit.name)),
+      ...(track.discogs?.trackArtists || []).map(item =>
+        normalized(item.name.replace(/\s*\(\d+\)$/, "")),
+      ),
+    ].filter(Boolean),
+  );
+
+const mmrLabelKeys = (track: RankedCandidate) =>
+  new Set(
+    [
+      meaningfulValue(track.label),
+      ...(track.discogs?.labels || []).flatMap(label => [
+        normalized(label.name),
+        `discogs:${label.id}`,
+      ]),
+    ].filter(Boolean),
+  );
+
+const mmrContextKeys = (track: RankedCandidate) =>
+  new Set(
+    [
+      ...track.tags.map(normalized),
+      ...(track.retrieval?.artistRelation?.tags || []).map(normalized),
+      ...(track.retrieval?.contextTags || []).map(normalized),
+      ...(track.discogs?.styles || []).map(normalized),
+      ...(track.discogs?.genres || []).map(normalized),
+    ].filter(Boolean),
+  );
+
+const mmrProvider = (track: RankedCandidate) =>
+  track.retrieval?.provider || track.discoveryPath?.source || "";
+
+const mmrTopology = (track: RankedCandidate) =>
+  track.discoveryPath
+    ? `${track.discoveryPath.source}:${track.discoveryPath.evidence}:${track.discoveryPath.nodes
+        .map(node => node.kind)
+        .join(">")}`
+    : "";
+
+export function recommendationRedundancy(
+  left: RankedCandidate,
+  right: RankedCandidate,
+) {
+  let similarity = 0;
+
+  if (setJaccard(mmrArtistKeys(left), mmrArtistKeys(right)) > 0) {
+    similarity += 0.65;
+  }
+
+  similarity +=
+    setJaccard(mmrContextKeys(left), mmrContextKeys(right)) * 0.25;
+  similarity += setJaccard(mmrLabelKeys(left), mmrLabelKeys(right)) * 0.18;
+
+  const leftScene = meaningfulValue(left.scene);
+  const rightScene = meaningfulValue(right.scene);
+  if (leftScene && leftScene === rightScene) similarity += 0.08;
+  if (left.origin === right.origin) similarity += 0.12;
+
+  const leftProvider = mmrProvider(left);
+  const rightProvider = mmrProvider(right);
+  if (leftProvider && leftProvider === rightProvider) similarity += 0.04;
+
+  const leftTopology = mmrTopology(left);
+  const rightTopology = mmrTopology(right);
+  if (leftTopology && leftTopology === rightTopology) similarity += 0.08;
+
+  const leftHop = left.retrieval?.artistHop;
+  const rightHop = right.retrieval?.artistHop;
+  if (
+    leftHop &&
+    rightHop &&
+    normalized(leftHop.bridgeArtist) === normalized(rightHop.bridgeArtist)
+  ) {
+    similarity += 0.15;
+  }
+
+  return Math.min(1, similarity);
+}
+
+type MmrSelectionOptions = Pick<
+  SelectionOptions,
+  "scoreAdjustment" | "knownArtistKeys" | "preferNovelArtists"
+> & {
+  lambda?: number;
+};
+
+export function selectMmrRecommendations(
+  ranked: RankedCandidate[],
+  seedArtist: string,
+  limit = 10,
+  options: MmrSelectionOptions = {},
+) {
+  if (!ranked.length || limit <= 0) return [];
+
+  const selectionScore = (track: RankedCandidate) =>
+    track.score + (options.scoreAdjustment?.(track) || 0);
+  const ordered = [...ranked].sort(
+    (a, b) =>
+      selectionScore(b) - selectionScore(a) ||
+      b.score - a.score ||
+      a.id.localeCompare(b.id),
+  );
+  const quality = new Map<string, number>();
+  ordered.forEach((track, index) => {
+    quality.set(
+      track.id,
+      ordered.length === 1 ? 1 : 1 - index / (ordered.length - 1),
+    );
+  });
+
+  const seedArtistKey = normalized(seedArtist);
+  const knownArtistKeys = options.knownArtistKeys;
+  const isKnownArtist = (track: RankedCandidate) => {
+    if (!knownArtistKeys?.size) return false;
+    for (const key of mmrArtistKeys(track)) {
+      if (knownArtistKeys.has(key)) return true;
+    }
+    return false;
+  };
+
+  const editionKey = (track: Track) =>
+    trackIdentity({
+      ...track,
+      title: track.title.replace(
+        /\s*(?:[-–—]|\()\s*(?:radio edit|extended mix|original mix|mixed|(?:[a-z]+\s+)?instrumental)\)?\s*$/i,
+        "",
+      ),
+    });
+
+  const selected: RankedCandidate[] = [];
+  const lambda = Math.max(0, Math.min(1, options.lambda ?? 0.68));
+
+  while (selected.length < limit) {
+    let available = ordered.filter(track => {
+      if (normalized(track.artist) === seedArtistKey) return false;
+      if (
+        selected.some(
+          chosen =>
+            chosen.id === track.id ||
+            editionKey(chosen) === editionKey(track) ||
+            setJaccard(mmrArtistKeys(chosen), mmrArtistKeys(track)) > 0,
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    if (!available.length) break;
+
+    if (options.preferNovelArtists && knownArtistKeys?.size) {
+      const novel = available.filter(track => !isKnownArtist(track));
+      if (novel.length) available = novel;
+    }
+
+    const next = [...available].sort((a, b) => {
+      const redundancyA = selected.length
+        ? Math.max(
+            ...selected.map(chosen => recommendationRedundancy(a, chosen)),
+          )
+        : 0;
+      const redundancyB = selected.length
+        ? Math.max(
+            ...selected.map(chosen => recommendationRedundancy(b, chosen)),
+          )
+        : 0;
+      const mmrA =
+        lambda * (quality.get(a.id) ?? 0) - (1 - lambda) * redundancyA;
+      const mmrB =
+        lambda * (quality.get(b.id) ?? 0) - (1 - lambda) * redundancyB;
+
+      return (
+        mmrB - mmrA ||
+        selectionScore(b) - selectionScore(a) ||
+        b.score - a.score ||
+        a.id.localeCompare(b.id)
+      );
+    })[0];
+
+    if (!next) break;
+    selected.push(next);
+  }
+
+  return selected;
+}
+
 /**
  * Surprise mode is intentionally conservative about evidence quality.
  * Credible/strong candidates get the main list; unsupported retrievals may
@@ -388,34 +601,39 @@ export function selectSurpriseRecommendations(
   limit = 10,
   options: Pick<
     SelectionOptions,
-    "scoreAdjustment" | "originLimit" | "strictOriginLimit" | "knownArtistKeys" | "preferNovelArtists"
+    "scoreAdjustment" | "knownArtistKeys" | "preferNovelArtists"
   > = {},
 ) {
-  const supported = ranked.filter(track => track.evidence?.tier !== "exploratory");
-  const primary = selectDiverseRecommendations(
+  const supported = ranked.filter(
+    track => track.evidence?.tier !== "exploratory",
+  );
+  const primary = selectMmrRecommendations(
     supported,
     seedArtist,
     limit,
-    { allowArtistRepeats: false, ...options },
+    options,
   );
 
   if (primary.length >= limit) return primary;
 
-  const usedArtists = new Set(primary.map(track => normalized(track.artist)));
   const usedIds = new Set(primary.map(track => track.id));
+  const usedArtistKeys = new Set(
+    primary.flatMap(track => [...mmrArtistKeys(track)]),
+  );
   const wildcardLimit = Math.min(2, limit - primary.length);
 
-  const exploratory = ranked.filter(track =>
-    track.evidence?.tier === "exploratory" &&
-    !usedIds.has(track.id) &&
-    !usedArtists.has(normalized(track.artist))
+  const exploratory = ranked.filter(
+    track =>
+      track.evidence?.tier === "exploratory" &&
+      !usedIds.has(track.id) &&
+      ![...mmrArtistKeys(track)].some(key => usedArtistKeys.has(key)),
   );
 
-  const wildcards = selectDiverseRecommendations(
+  const wildcards = selectMmrRecommendations(
     exploratory,
     seedArtist,
     wildcardLimit,
-    { allowArtistRepeats: false, ...options },
+    options,
   );
 
   return [...primary, ...wildcards];
@@ -464,8 +682,6 @@ export function selectModeRecommendations(
       limit,
       {
         scoreAdjustment,
-        originLimit: 2,
-        strictOriginLimit: true,
         knownArtistKeys,
         preferNovelArtists: Boolean(knownArtistKeys?.size),
       },

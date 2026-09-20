@@ -4,7 +4,7 @@ import { buildMusicalProfile } from "../src/lib/music/profile";
 import { assessCandidateEvidence } from "../src/lib/discovery/evidence";
 import { discoveryPathPreferenceKey } from "../src/lib/discovery/paths";
 import { candidateEligibilityFailure, discoveryPathScoreAdjustment, rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
-import { modeSelectionAdjustment, selectModeAwareArtistCandidates, selectModeRecommendations, type Candidate, type RankedCandidate } from "../src/lib/discovery/ranking";
+import { modeSelectionAdjustment, recommendationRedundancy, selectMmrRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, type Candidate, type RankedCandidate } from "../src/lib/discovery/ranking";
 import type { DigRequest, DiscoveryPath, Track } from "../src/lib/types";
 
 const seed: Track = {
@@ -479,56 +479,131 @@ test("mode policy separates direct vibe from deep rabbit-hole selection", () => 
   assert.equal(rabbit[0]?.id, "deep-structured");
 });
 
-test("Surprends-moi mode policy spreads origins before relaxing", () => {
-  const rows: RankedCandidate[] = [
-    rankedFixture(
+test("Surprends-moi MMR favors a comparable but less redundant path", () => {
+  const radio1 = {
+    ...rankedFixture(
       "radio-1",
       100,
       "artist-radio",
       1,
       { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
     ),
-    rankedFixture(
+    scene: "House",
+    label: "Shared Label",
+    tags: ["house", "club"],
+  };
+  const radio2 = {
+    ...rankedFixture(
       "radio-2",
       99,
       "artist-radio",
       1,
       { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
     ),
-    rankedFixture(
-      "radio-3",
-      98,
-      "artist-radio",
-      1,
-      { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
-    ),
-    rankedFixture(
-      "discogs-1",
-      88,
-      "discogs-label",
-      4,
-      { tier: "strong", musical: true, path: "structured", retrievalDepth: 4 },
-    ),
-    rankedFixture(
+    scene: "House",
+    label: "Shared Label",
+    tags: ["house", "club"],
+  };
+  const deep = {
+    ...rankedFixture(
       "deep-1",
-      86,
+      98.5,
       "lastfm-deep",
       2,
       { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 2 },
     ),
-  ];
+    scene: "Soul",
+    label: "Deep Label",
+    tags: ["soul", "broken beat"],
+  };
+  const discogs = {
+    ...rankedFixture(
+      "discogs-1",
+      98,
+      "discogs-label",
+      4,
+      { tier: "strong", musical: true, path: "structured", retrievalDepth: 4 },
+    ),
+    scene: "Jazz",
+    label: "Other Label",
+    tags: ["jazz", "fusion"],
+  };
+  const radio3 = {
+    ...rankedFixture(
+      "radio-3",
+      97,
+      "artist-radio",
+      1,
+      { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+    ),
+    scene: "House",
+    label: "Shared Label",
+    tags: ["house", "club"],
+  };
 
   const selected = selectModeRecommendations(
-    rows,
+    [radio1, radio2, deep, discogs, radio3],
     "Seed Artist",
     "Surprends-moi",
     4,
   );
 
-  assert.ok(selected.some(track => track.origin === "discogs-label"));
-  assert.ok(selected.some(track => track.origin === "lastfm-deep"));
+  assert.equal(selected[0]?.id, "radio-1");
+  assert.ok(selected.slice(0, 3).some(track => track.id === "deep-1"));
+  assert.ok(selected.some(track => track.id === "discogs-1"));
+});
+
+test("MMR redundancy reflects shared musical and retrieval context", () => {
+  const left = {
+    ...rankedFixture(
+      "left",
+      100,
+      "artist-radio",
+      1,
+      { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+    ),
+    scene: "House",
+    label: "Shared Label",
+    tags: ["house", "club"],
+  };
+  const near = {
+    ...rankedFixture(
+      "near",
+      99,
+      "artist-radio",
+      1,
+      { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+    ),
+    scene: "House",
+    label: "Shared Label",
+    tags: ["house", "club"],
+  };
+  const far = {
+    ...rankedFixture(
+      "far",
+      98,
+      "discogs-label",
+      4,
+      { tier: "strong", musical: true, path: "structured", retrievalDepth: 4 },
+    ),
+    scene: "Jazz",
+    label: "Other Label",
+    tags: ["jazz", "fusion"],
+  };
+
   assert.ok(
-    selected.filter(track => track.origin === "artist-radio").length <= 2,
+    recommendationRedundancy(left, near) >
+      recommendationRedundancy(left, far),
+  );
+
+  const selected = selectMmrRecommendations(
+    [left, near, far],
+    "Seed Artist",
+    2,
+  );
+  assert.deepEqual(
+    selected.map(track => track.id),
+    ["left", "far"],
   );
 });
 
