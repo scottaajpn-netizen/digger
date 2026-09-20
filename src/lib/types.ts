@@ -47,6 +47,11 @@ export interface ArtistCredit {
   sourceId?: string;
   joinPhrase?: string;
 }
+export interface TrackRetrievalProvenance {
+  provider: DiscoveryPathSource;
+  source: "live" | "local-catalogue";
+  storedAt?: string;
+}
 export interface Track {
   id: string; title: string; artist: string; scene: string; label: string;
   tags: string[]; obscurity: number; year: number; colors: [string, string];
@@ -56,6 +61,7 @@ export interface Track {
   artistAudienceLookup?: "mbid" | "name" | "name-fallback" | "partial" | "failed" | "not-targeted";
   analysis?: MusicalAnalysis;
   discoveryPath?: DiscoveryPath;
+  retrieval?: TrackRetrievalProvenance;
   credits?: ArtistCredit[];
   obscurityKnown?: boolean;
   discogs?: DiscogsEvidence;
@@ -140,8 +146,17 @@ export interface DiscogsRetrievalDiagnostics {
   candidateCount: number;
   byOrigin: Record<string, number>;
 }
+export interface CatalogueRetrievalDiagnostics {
+  expansionTriggered: boolean;
+  anchors: string[];
+  cacheCandidates: number;
+  neighbours: number;
+  liveCandidates: number;
+  storedCandidates: number;
+}
 export interface RetrievalDiagnostics {
   discogs: DiscogsRetrievalDiagnostics;
+  catalogue?: CatalogueRetrievalDiagnostics;
   mergedPool: RetrievalStageDiagnostics;
   trackAudienceTargets: RetrievalStageDiagnostics;
   afterTrackAudience: RetrievalStageDiagnostics;

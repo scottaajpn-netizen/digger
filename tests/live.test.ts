@@ -410,6 +410,111 @@ test("catalogue fallback serves sparse non-MBID seeds in every direction and sup
   assert.equal(second.seed.artist, "Neighbour fixture");
   assert.equal(second.tracks[0]?.artist, "Next fixture");
 });
+test("Pleine Forêt regression expands a poor direct list through the verified Léon Phal anchor", async t => {
+  const oldKey = process.env.LASTFM_API_KEY;
+  const oldCataloguePath = process.env.DIGGER_CATALOGUE_PATH;
+  process.env.LASTFM_API_KEY = "pleine-foret-fixture";
+  process.env.DIGGER_CATALOGUE_PATH = `${process.cwd()}/.digger/pleine-foret-test.json`;
+
+  t.after(() => {
+    if (oldKey === undefined) delete process.env.LASTFM_API_KEY;
+    else process.env.LASTFM_API_KEY = oldKey;
+    if (oldCataloguePath === undefined) delete process.env.DIGGER_CATALOGUE_PATH;
+    else process.env.DIGGER_CATALOGUE_PATH = oldCataloguePath;
+  });
+
+  let similarArtistCalls = 0;
+  let topTrackCalls = 0;
+
+  t.mock.method(globalThis, "fetch", async (input: URL) => {
+    const u = new URL(String(input));
+    const method = u.searchParams.get("method");
+
+    if (u.hostname === "api.listenbrainz.org" && u.pathname.includes("/lb-radio/tags")) {
+      return Response.json([]);
+    }
+    if (method === "track.getTopTags") {
+      return Response.json({ toptags: { tag: [] } });
+    }
+    if (method === "track.getInfo") {
+      return Response.json({
+        track: {
+          name: "Pleine Forêt",
+          artist: { name: "Léon Phal" },
+          listeners: "600",
+          url: "https://www.last.fm/music/fixture/pleine-foret",
+        },
+      });
+    }
+    if (method === "track.getSimilar") {
+      return Response.json({
+        similartracks: {
+          track: Array.from({ length: 3 }, (_, index) => ({
+            name: `Direct ${index}`,
+            artist: { name: `Direct artist ${index}` },
+            match: 0.3,
+          })),
+        },
+      });
+    }
+    if (method === "artist.getSimilar") {
+      similarArtistCalls += 1;
+      assert.equal(u.searchParams.get("artist"), "Léon Phal");
+      return Response.json({
+        similarartists: {
+          artist: Array.from({ length: 10 }, (_, index) => ({
+            name: `Neighbour ${index}`,
+            match: 0.8 - index / 100,
+          })),
+        },
+      });
+    }
+    if (method === "artist.getTopTracks") {
+      topTrackCalls += 1;
+      assert.equal(u.searchParams.get("limit"), "24");
+      const artist = u.searchParams.get("artist") || "Neighbour";
+      return Response.json({
+        toptracks: {
+          track: Array.from({ length: 24 }, (_, index) => ({
+            name: `${artist} cut ${index}`,
+            artist: { name: artist },
+            listeners: String(500 + index),
+            url: `https://www.last.fm/music/${encodeURIComponent(artist)}/cut-${index}`,
+          })),
+        },
+      });
+    }
+
+    throw Error(`Unexpected Pleine Forêt route ${u}`);
+  });
+
+  const result = await recommendLive({
+    seed: "Pleine Forêt — Léon Phal & Jungle Jack",
+    seedTrack: {
+      id: "lastfm:pleine-foret",
+      title: "Pleine Forêt",
+      artist: "Léon Phal & Jungle Jack",
+      source: "lastfm" as const,
+    },
+    direction: "Même vibe",
+    obscurity: 65,
+    feedback: {},
+    session: 0,
+  }, AbortSignal.timeout(15000));
+
+  assert.equal(similarArtistCalls, 1);
+  assert.equal(topTrackCalls, 10);
+  assert.equal(result.retrievalDiagnostics?.catalogue?.expansionTriggered, true);
+  assert.deepEqual(result.retrievalDiagnostics?.catalogue?.anchors, ["Léon Phal"]);
+  assert.equal(result.retrievalDiagnostics?.catalogue?.liveCandidates, 240);
+  assert.ok(result.tracks.length > 0);
+  assert.ok(result.tracks.some(track => track.retrieval?.source === "live"));
+  assert.equal(
+    result.retrievalDiagnostics?.catalogue?.anchors.includes("Jungle Jack"),
+    false,
+  );
+});
+
 test("catalogue fallback rejects an artist identity contradicted by Last.fm track info", async t => {
   const oldKey = process.env.LASTFM_API_KEY;
   process.env.LASTFM_API_KEY = "ambiguous-artist-fixture";

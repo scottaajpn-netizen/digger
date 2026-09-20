@@ -491,6 +491,7 @@ function compactTrack(track: RuntimeRecommendation) {
     origin: track.origin,
     evidence: track.evidence,
     discoveryPath: track.discoveryPath,
+    retrieval: track.retrieval,
     obscurity: track.obscurity,
     obscurityKnown: track.obscurityKnown,
     popularity: track.popularity,
@@ -531,6 +532,7 @@ function printRetrievalDiagnostics(
 ) {
   if (!diagnostics) return;
   const discogs = diagnostics.discogs;
+  const catalogue = diagnostics.catalogue;
   const pool = diagnostics.mergedPool;
   const targets = diagnostics.trackAudienceTargets;
   const after = diagnostics.afterTrackAudience;
@@ -542,6 +544,11 @@ function printRetrievalDiagnostics(
   console.log(
     `    discogs: status=${discogs.status} | calls=${discogs.calls} | search=${discogs.primarySearchRows}+${discogs.fallbackSearchRows}${discogs.fallbackSearchUsed ? "(fallback)" : ""} | inspected=${discogs.inspectedReleases} | best-match=${discogs.bestMatchScore}/100 | matched=${discogs.matchedReleases} release(s)/${discogs.matchedTracks} track(s) | candidates=${discogs.candidateCount} [${formatOriginCounts(discogs.byOrigin)}]`,
   );
+  if (catalogue) {
+    console.log(
+      `    catalogue: expand=${catalogue.expansionTriggered ? "yes" : "no"} | anchors=${catalogue.anchors.join(" + ") || "none"} | cache=${catalogue.cacheCandidates} | neighbours=${catalogue.neighbours} | live=${catalogue.liveCandidates} | stored=${catalogue.storedCandidates}`,
+    );
+  }
   console.log(
     `    retrieval: pool=${pool.total} [${formatOriginCounts(pool.byOrigin)}] | audience-targets=${targets.total} [${formatOriginCounts(targets.byOrigin)}]`,
   );

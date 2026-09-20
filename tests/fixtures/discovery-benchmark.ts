@@ -41,7 +41,7 @@ export type DiscoveryBenchmarkCase = {
     };
     direction: "surprise";
     obscurity: 100;
-    overall: "excellent" | "good" | "mixed" | "bad";
+    overall: "excellent" | "good" | "mixed" | "bad" | "regression";
     examples: BenchmarkExample[];
     observations: string[];
     poolObservation?: BenchmarkPoolObservation;
@@ -645,6 +645,23 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
                     "Jason Joshua reste excellent malgré une faible affinité métadonnées, confirmant qu'un chemin structuré crédible peut compenser un faible overlap de tags.",
                 ],
             },
+        ],
+    },
+
+    {
+        id: "leon-phal-jungle-jack-pleine-foret",
+        seed: {
+            artist: "Léon Phal & Jungle Jack",
+            title: "Pleine Forêt",
+        },
+        direction: "surprise",
+        obscurity: 100,
+        overall: "regression",
+        examples: [],
+        observations: [
+            "Cas de régression : une seed valide avec similarité directe pauvre doit pouvoir ouvrir un chemin catalogue vérifié.",
+            "Une fiche Last.fm qui confirme Léon Phal peut servir d’ancre sans inventer un crédit Jungle Jack.",
+            "L’invariant porte sur l’existence et la provenance des candidats, pas sur une liste de recommandations figée.",
         ],
     },
 ];

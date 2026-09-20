@@ -5,6 +5,8 @@ import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, listenBrainzPath } from "../discovery/paths";
+import { resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
+import { loadCatalogueEntries, rememberCatalogueEntries, type CatalogueEntryInput } from "../discovery/catalogue";
 export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -561,9 +563,14 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const [lastFmSeedTags, lastFmSeedInfo] = await lastFmSeedJob;
   const lastFmSeedArtist = lastFmSeedInfo?.track?.artist?.name?.trim();
 
-  const lastFmSeedArtistVerified =
-    Boolean(lastFmSeedArtist) &&
-    normalized(lastFmSeedArtist!) === normalized(seed.artist);
+  const lastFmArtistAnchors = resolveVerifiedArtistAnchors({
+    seedArtist: seed.artist,
+    credits: seed.credits,
+    lastFmTrackArtist: lastFmSeedArtist,
+  });
+  const lastFmSeedArtistVerified = lastFmArtistAnchors.some(
+    anchor => anchor.source === "lastfm-track",
+  );
   if (lastFmSeedInfo?.track?.url) seed.externalIds = { ...(seed.externalIds || {}), lastfm: lastFmSeedInfo.track.url };
   const seedListeners = Number(lastFmSeedInfo?.track?.listeners || 0);
   if (Number.isFinite(seedListeners) && seedListeners > 0) seed.lastfmListeners = seedListeners;
@@ -623,74 +630,249 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const directLastFmOffset = input.obscurity >= 90 ? 12 : input.obscurity >= 75 ? 6 : 0;
   const lastFmSimilarTracks = allLastFmSimilarTracks.slice(directLastFmOffset);
 
-  // Catalogue fallback for deep digging: if track-level similarity is empty,
-  // walk through neighbouring artists, then inspect several cuts from each catalogue.
-  // This keeps the path explainable while avoiding tag charts.
-  if (allLastFmSimilarTracks.length === 0 && lastFmSeedArtistVerified) {
-    const artistAnchors = seedParticipantNames.length ? seedParticipantNames.slice(0, 3) : [seed.artist];
-    const similarArtistRows = await Promise.all(artistAnchors.map(anchor => optional(
-      lastFmJson<LastFmSimilarArtistsResponse>("artist.getSimilar", {
-        artist: anchor,
-        limit: "12",
-        autocorrect: "1",
-      }, signal),
-      `Les artistes voisins Last.fm autour de ${anchor} sont indisponibles.`
-    )));
-    const neighbours = similarArtistRows
-      .flatMap((result, anchorIndex) => (result?.similarartists?.artist || []).map(row => ({ ...row, anchor: artistAnchors[anchorIndex] })))
-      .filter(row => typeof row.name === "string" && row.name.trim() && !seedParticipantKeys.has(normalized(row.name)) && normalized(row.name) !== normalized(seed.artist))
-      .filter((row, index, all) => all.findIndex(other => normalized(other.name || "") === normalized(row.name || "")) === index)
-      .slice(0, 10);
+  const catalogueDiagnostics = {
+    expansionTriggered: false,
+    anchors: [] as string[],
+    cacheCandidates: 0,
+    neighbours: 0,
+    liveCandidates: 0,
+    storedCandidates: 0,
+  };
 
-    const catalogues = await Promise.all(neighbours.map(row => optional(
-      lastFmJson<LastFmTopTracksResponse>("artist.getTopTracks", {
-        artist: row.name!,
-        limit: "4",
-        autocorrect: "1",
-      }, signal),
-      `Le catalogue Last.fm de ${row.name} est indisponible.`
-    )));
+  // Sparse discovery fallback: a non-empty direct list can still be too small
+  // or too homogeneous to be useful. Expand only from artist identities that
+  // are verified by the seed metadata and/or the Last.fm track response.
+  if (
+    lastFmSeedArtistVerified &&
+    shouldExpandArtistCatalogue(lastFmSimilarTracks)
+  ) {
+    const artistAnchors = lastFmArtistAnchors
+      .map(anchor => anchor.name)
+      .slice(0, 3);
+    catalogueDiagnostics.expansionTriggered = true;
+    catalogueDiagnostics.anchors = artistAnchors;
 
+    const pushCatalogueCandidate = (entry: {
+      anchorArtist: string;
+      neighbourArtist: string;
+      neighbourRank: number;
+      trackRank: number;
+      storedAt?: string;
+      source: "live" | "local-catalogue";
+      track: {
+        id: string;
+        title: string;
+        artist: string;
+        lastfmListeners?: number;
+        externalIds?: Track["externalIds"];
+      };
+    }) => {
+      const listeners = Number(entry.track.lastfmListeners || 0);
+      pool.push({
+        id: entry.track.id,
+        title: entry.track.title,
+        artist: entry.track.artist,
+        scene:
+          seedProfile.subgenres[0] ||
+          seedProfile.genres[0] ||
+          "Last.fm catalogue",
+        label: "",
+        tags: [],
+        year: 0,
+        obscurity:
+          Number.isFinite(listeners) && listeners > 0
+            ? obscurityFromLastFmListeners(listeners)
+            : 50,
+        obscurityKnown: Number.isFinite(listeners) && listeners > 0,
+        lastfmListeners:
+          Number.isFinite(listeners) && listeners > 0
+            ? listeners
+            : undefined,
+        colors: colors[hash(entry.track.id) % colors.length],
+        externalIds: entry.track.externalIds,
+        discoveryPath: lastFmCataloguePath(
+          seed,
+          entry.anchorArtist,
+          entry.neighbourArtist,
+          {
+            id: entry.track.id,
+            title: entry.track.title,
+            artist: entry.track.artist,
+            externalIds: entry.track.externalIds,
+          },
+        ),
+        retrieval: {
+          provider: "lastfm",
+          source: entry.source,
+          storedAt: entry.storedAt,
+        },
+        reason:
+          entry.source === "local-catalogue"
+            ? `Catalogue local vérifié : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} ».`
+            : `Catalogue : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} ».`,
+        relevance:
+          entry.source === "live"
+            ? 66 +
+              Math.max(0, 14 - entry.trackRank * 0.6) +
+              Math.max(0, 8 - entry.neighbourRank)
+            : 58 +
+              Math.max(0, 12 - entry.trackRank * 0.45) +
+              Math.max(0, 6 - entry.neighbourRank),
+        origin: "lastfm-crate",
+      });
+    };
+
+    const cachedCatalogue = await optional(
+      loadCatalogueEntries(artistAnchors),
+      "Le catalogue local Digger est momentanément indisponible.",
+    );
+    for (const entry of cachedCatalogue || []) {
+      pushCatalogueCandidate({
+        anchorArtist: entry.anchorArtist,
+        neighbourArtist: entry.neighbourArtist,
+        neighbourRank: entry.neighbourRank,
+        trackRank: entry.trackRank,
+        storedAt: entry.savedAt,
+        source: "local-catalogue",
+        track: entry.track,
+      });
+    }
+    catalogueDiagnostics.cacheCandidates = cachedCatalogue?.length || 0;
+    if (cachedCatalogue?.length) {
+      notes.push(
+        `Catalogue local Digger : ${cachedCatalogue.length} chemin(s) Last.fm vérifié(s) réutilisé(s).`,
+      );
+    }
+
+    const similarArtistRows = await Promise.all(
+      artistAnchors.map(anchor =>
+        optional(
+          lastFmJson<LastFmSimilarArtistsResponse>(
+            "artist.getSimilar",
+            {
+              artist: anchor,
+              limit: "12",
+              autocorrect: "1",
+            },
+            signal,
+          ),
+          `Les artistes voisins Last.fm autour de ${anchor} sont indisponibles.`,
+        ),
+      ),
+    );
+
+    const neighbourRows = similarArtistRows.flatMap((result, anchorIndex) =>
+      (result?.similarartists?.artist || []).flatMap(row => {
+        const name = row.name?.trim();
+        return name
+          ? [{
+              anchor: artistAnchors[anchorIndex],
+              name,
+              match: row.match,
+            }]
+          : [];
+      }),
+    );
+
+    const neighbours = selectBalancedArtistNeighbours(
+      neighbourRows,
+      [...seedParticipantNames, seed.artist, ...artistAnchors],
+      10,
+    );
+    catalogueDiagnostics.neighbours = neighbours.length;
+
+    const catalogues = await Promise.all(
+      neighbours.map(row =>
+        optional(
+          lastFmJson<LastFmTopTracksResponse>(
+            "artist.getTopTracks",
+            {
+              artist: row.name,
+              limit: "24",
+              autocorrect: "1",
+            },
+            signal,
+          ),
+          `Le catalogue Last.fm de ${row.name} est indisponible.`,
+        ),
+      ),
+    );
+
+    const catalogueEntries: CatalogueEntryInput[] = [];
     catalogues.forEach((result, artistIndex) => {
       const neighbour = neighbours[artistIndex];
       const neighbourName = neighbour?.name?.trim() || "";
       for (const [index, item] of (result?.toptracks?.track || []).entries()) {
         const title = item.name?.trim();
         const artistName = item.artist?.name?.trim() || neighbourName;
-        if (!title || !artistName || normalized(artistName) === normalized(seed.artist)) continue;
-        const mbid = item.mbid && mbidPattern.test(item.mbid) ? item.mbid : undefined;
-        const id = mbid || `lastfm-crate:${hash(`${artistName}:${title}`)}`;
+        if (
+          !title ||
+          !artistName ||
+          normalized(artistName) === normalized(seed.artist)
+        ) {
+          continue;
+        }
+
+        const mbid =
+          item.mbid && mbidPattern.test(item.mbid)
+            ? item.mbid
+            : undefined;
+        const id =
+          mbid || `lastfm-crate:${hash(`${artistName}:${title}`)}`;
         const listeners = Number(item.listeners);
-        pool.push({
-          id,
-          title,
-          artist: artistName,
-          scene: seedProfile.subgenres[0] || seedProfile.genres[0] || "Last.fm catalogue",
-          label: "",
-          tags: [],
-          year: 0,
-          obscurity: Number.isFinite(listeners) && listeners > 0 ? obscurityFromLastFmListeners(listeners) : 50,
-          obscurityKnown: Number.isFinite(listeners) && listeners > 0,
-          lastfmListeners: Number.isFinite(listeners) && listeners > 0 ? listeners : undefined,
-          colors: colors[hash(id) % colors.length],
-          externalIds: { musicbrainz: mbid, lastfm: item.url },
-          discoveryPath: lastFmCataloguePath(
-            seed,
-            neighbour?.anchor || seed.artist,
-            artistName,
-            {
-              id,
-              title,
-              artist: artistName,
-              externalIds: { musicbrainz: mbid, lastfm: item.url },
-            },
-          ),
-          reason: `Catalogue : ${neighbour?.anchor || seed.artist} → artiste voisin ${artistName} → « ${title} ».`,
-          relevance: 66 + Math.max(0, 14 - index * 0.6) + Math.max(0, 8 - artistIndex),
-          origin: "lastfm-crate",
+        const externalIds = {
+          musicbrainz: mbid,
+          lastfm: item.url,
+        };
+
+        pushCatalogueCandidate({
+          anchorArtist: neighbour?.anchor || seed.artist,
+          neighbourArtist: artistName,
+          neighbourRank: artistIndex,
+          trackRank: index,
+          source: "live",
+          track: {
+            id,
+            title,
+            artist: artistName,
+            lastfmListeners:
+              Number.isFinite(listeners) && listeners > 0
+                ? listeners
+                : undefined,
+            externalIds,
+          },
+        });
+
+        catalogueEntries.push({
+          anchorArtist: neighbour?.anchor || seed.artist,
+          neighbourArtist: artistName,
+          neighbourRank: artistIndex,
+          trackRank: index,
+          similarity: Number.isFinite(Number(neighbour?.match))
+            ? Number(neighbour?.match)
+            : undefined,
+          track: {
+            id,
+            title,
+            artist: artistName,
+            lastfmListeners:
+              Number.isFinite(listeners) && listeners > 0
+                ? listeners
+                : undefined,
+            externalIds,
+          },
         });
       }
     });
+
+    catalogueDiagnostics.liveCandidates = catalogueEntries.length;
+    if (catalogueEntries.length) {
+      const stored = await optional(
+        rememberCatalogueEntries(catalogueEntries),
+        "Le catalogue local Digger n’a pas pu être mis à jour.",
+      );
+      catalogueDiagnostics.storedCandidates = stored || 0;
+    }
   }
   for (const [index, item] of lastFmSimilarTracks.entries()) {
     const title = item.name?.trim();
@@ -899,6 +1081,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   };
   const retrievalDiagnostics = {
     discogs: discogsResult.diagnostics,
+    catalogue: catalogueDiagnostics,
     mergedPool: retrievalStage(pool),
     trackAudienceTargets: retrievalStage([]),
     afterTrackAudience: retrievalStage([]),

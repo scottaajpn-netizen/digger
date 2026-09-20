@@ -142,7 +142,7 @@ function summarizeBenchmark() {
 test("benchmark baseline summarizes human verdicts", () => {
     const baseline = summarizeBenchmark();
 
-    assert.equal(baseline.cases, 10);
+    assert.equal(baseline.cases, 11);
     assert.equal(baseline.recommendations, 66);
 
     console.log("[BENCHMARK BASELINE]", baseline);
