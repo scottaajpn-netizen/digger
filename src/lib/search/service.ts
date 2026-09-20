@@ -44,7 +44,7 @@ export const providers={
   async discogs(q:string,signal:AbortSignal):Promise<Suggestion[]> {
     if(!process.env.DISCOGS_TOKEN)return [];
     const structured=parseStructuredSearch(q);
-    const params=structured
+    const params:Record<string,string>=structured
       ? {artist:structured.artist,track:structured.title,type:"release",per_page:"4"}
       : {q,type:"release",per_page:"2"};
     const result=await discogsJson<{results?:{id:number}[]}>("database/search",params,signal);
