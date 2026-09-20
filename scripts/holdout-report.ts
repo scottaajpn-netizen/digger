@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { analyzeHoldoutExport, type HoldoutExport } from "../src/lib/evaluation/report";
@@ -15,7 +15,31 @@ function optionValue(flag: string) {
   return undefined;
 }
 
+type BaselineManifest = {
+  format: "gzip-base64-parts-v1";
+  uncompressedSha256: string;
+  uncompressedBytes: number;
+  compressedBytes: number;
+  parts: string[];
+};
+
 async function loadExport(path: string): Promise<HoldoutExport> {
+  if (path.endsWith(".manifest.json")) {
+    const manifest = JSON.parse(await readFile(path, "utf8")) as BaselineManifest;
+    if (manifest.format !== "gzip-base64-parts-v1" || !Array.isArray(manifest.parts) || !manifest.parts.length) {
+      throw new Error(`Manifest HOLDOUT invalide: ${path}`);
+    }
+    const folder = dirname(path);
+    const chunks = await Promise.all(
+      manifest.parts.map(part => readFile(resolve(folder, part), "utf8")),
+    );
+    const compressed = Buffer.from(chunks.join("").replace(/\s+/g, ""), "base64");
+    if (compressed.length !== manifest.compressedBytes) {
+      throw new Error(`Baseline HOLDOUT incomplète: ${compressed.length} octets compressés au lieu de ${manifest.compressedBytes}`);
+    }
+    return JSON.parse(gunzipSync(compressed).toString("utf8")) as HoldoutExport;
+  }
+
   const bytes = await readFile(path);
   const json = extname(path) === ".gz" ? gunzipSync(bytes).toString("utf8") : bytes.toString("utf8");
   return JSON.parse(json) as HoldoutExport;
@@ -75,7 +99,7 @@ function printReport(report: ReturnType<typeof analyzeHoldoutExport>) {
 }
 
 async function main() {
-  const defaultInput = join("tests", "fixtures", "holdout-a-2026-09-20.json.gz");
+  const defaultInput = join("tests", "fixtures", "holdout-a-2026-09-20.manifest.json");
   const input = optionValue("--input") || defaultInput;
   if (!existsSync(input)) {
     throw new Error(`Fichier HOLDOUT introuvable: ${input}`);
