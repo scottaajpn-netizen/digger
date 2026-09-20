@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {matchScore,mergeSuggestions,typoQueries,type Suggestion} from "../src/lib/search/matching";
+import {matchScore,mergeSuggestions,resolveSeedSuggestion,typoQueries,type Suggestion} from "../src/lib/search/matching";
 import {suggest,providers} from "../src/lib/search/service";
 import {SearchController,moveSelection,type SearchState} from "../src/lib/search/controller";
 const track=(title="Mes jambes",artist="JeanJass",source="MusicBrainz"):Suggestion=>({id:"test",title,artist,scene:"",label:"",tags:[],year:0,obscurity:50,colors:["a","b"],sources:[source],matchScore:0});
@@ -52,4 +52,63 @@ test("partial words can be omitted and entered in any order without accepting un
     assert.ok(matchScore(q,t)>.85,q);
   assert.ok(matchScore("fall love metallica",t)<.66);
   assert.ok(matchScore("bon ker",track("Kerala","Bonobo"))>.85);
+});
+
+
+test("structured seed resolution requires title and artist identity, not title alone",async()=>{
+  let discogs=0;
+  const wrong=track("Stimulation (Original Mix)","Maceo Plex","MusicBrainz");
+  const right=track("Stimulation (Original Mix)","Adam Chini","Last.fm");
+  const result=await suggest(
+    "Stimulation (Original Mix) — Adam Chini",
+    new AbortController().signal,
+    {
+      mb:async()=>[wrong],
+      lastfm:async()=>[right],
+      discogs:async()=>{discogs++;return [];},
+    },
+  );
+  assert.equal(result.suggestions[0]?.artist,"Adam Chini");
+  assert.equal(discogs,0);
+  assert.equal(resolveSeedSuggestion("Stimulation (Original Mix)","Adam Chini",result.suggestions)?.track.artist,"Adam Chini");
+});
+
+test("short plain artist names need corroboration before automatic seed selection",async()=>{
+  const lastfmOnly=track("DROPPING SEEDS","Carla","Last.fm");
+  assert.equal(resolveSeedSuggestion("Dropping Seeds","CARLA",[lastfmOnly]),undefined);
+
+  let discogs=0;
+  const corroborated=track("DROPPING SEEDS","Carla","Discogs");
+  const result=await suggest(
+    "Dropping Seeds — CARLA",
+    new AbortController().signal,
+    {
+      mb:async()=>[],
+      lastfm:async()=>[lastfmOnly],
+      discogs:async()=>{discogs++;return [corroborated];},
+    },
+  );
+  assert.equal(discogs,1);
+  assert.deepEqual(new Set(result.suggestions[0]?.sources),new Set(["Last.fm","Discogs"]));
+  assert.equal(resolveSeedSuggestion("Dropping Seeds","CARLA",result.suggestions)?.track.artist,"Carla");
+});
+
+test("Last.fm structured lookup searches the title itself before broad variants",async t=>{
+  const oldKey=process.env.LASTFM_API_KEY;
+  process.env.LASTFM_API_KEY="structured-search-fixture";
+  t.after(()=>{if(oldKey===undefined)delete process.env.LASTFM_API_KEY;else process.env.LASTFM_API_KEY=oldKey;});
+
+  const queries:string[]=[];
+  t.mock.method(globalThis,"fetch",async(url:URL)=>{
+    const u=new URL(String(url));
+    if(u.searchParams.get("method")!=="track.search")throw new Error(`Unexpected request ${u}`);
+    queries.push(u.searchParams.get("track")||"");
+    return Response.json({results:{trackmatches:{track:[
+      {name:"Stimulation (Original Mix)",artist:"Adam Chini",url:"https://www.last.fm/music/Adam+Chini/_/Stimulation"}
+    ]}}});
+  });
+
+  const result=await providers.lastfm("Stimulation (Original Mix) — Adam Chini",new AbortController().signal);
+  assert.equal(queries[0],"Stimulation (Original Mix)");
+  assert.equal(result[0]?.artist,"Adam Chini");
 });
