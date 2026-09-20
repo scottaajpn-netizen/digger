@@ -10,13 +10,15 @@ export type SeedResolution<T extends Pick<Track, "id" | "title" | "artist">> = {
 };
 
 export function parseStructuredSearch(query: string): StructuredSearch | undefined {
-  const parts = query
-    .split(/\\s+[—–]\\s+|\\s+-\\s+/)
-    .map(part => part.trim())
-    .filter(Boolean);
-  return parts.length === 2 ? { title: parts[0], artist: parts[1] } : undefined;
-}
+  const split = (pattern: RegExp) =>
+    query.split(pattern).map(part => part.trim()).filter(Boolean);
 
+  const typographic = split(/\s+[—–]\s+/);
+  if (typographic.length === 2) return { title: typographic[0], artist: typographic[1] };
+
+  const hyphen = split(/\s+-\s+/);
+  return hyphen.length === 2 ? { title: hyphen[0], artist: hyphen[1] } : undefined;
+}
 function hasStableArtistIdentity(track: Pick<Track, "artistId" | "externalIds" | "credits">) {
   return Boolean(
     track.artistId ||
@@ -28,9 +30,8 @@ function hasStableArtistIdentity(track: Pick<Track, "artistId" | "externalIds" |
 function lowDistinctivenessArtist(artist: string) {
   const trimmed = artist.trim();
   const parts = normalize(trimmed).split(" ").filter(Boolean);
-  return /^[A-Za-z]{2,5}$/.test(trimmed) && parts.length === 1 && !/\\d/.test(parts[0]);
+  return /^[A-Za-z]{2,5}$/.test(trimmed) && parts.length === 1 && !/\d/.test(parts[0]);
 }
-
 export function seedPairConfidence(
   expectedTitle: string,
   expectedArtist: string,
