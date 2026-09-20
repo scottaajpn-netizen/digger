@@ -38,6 +38,55 @@ test("search separates artist/title in either order and escapes query operators"
   assert.ok(!musicBrainzQuery('Test:* — Artist').includes('*'));
   assert.ok(musicBrainzQuery('أغنية — فنان').includes('أغنية'));
 });
+test("credible search matching accepts producer qualifiers and equivalent collaboration variants", () => {
+  const rows = [
+    {
+      id: "qendresa-solo",
+      title: "Good Love",
+      artist: "Qendresa",
+      scene: "",
+      label: "",
+      tags: [],
+      obscurity: 50,
+      year: 0,
+      colors: ["a", "b"] as [string, string],
+    },
+    {
+      id: "qendresa-collab",
+      title: "Good Love",
+      artist: "Qendresa x Hugo Mari",
+      scene: "",
+      label: "",
+      tags: [],
+      obscurity: 50,
+      year: 0,
+      colors: ["a", "b"] as [string, string],
+    },
+    {
+      id: "other-good-love",
+      title: "Good Love",
+      artist: "Hannah Laing",
+      scene: "",
+      label: "",
+      tags: [],
+      obscurity: 50,
+      year: 0,
+      colors: ["a", "b"] as [string, string],
+    },
+  ];
+
+  const match = findCredibleTrackMatch(
+    "Good Love (Prod. by Hugo Mari)",
+    "Qendresa",
+    rows,
+  );
+
+  assert.ok(match);
+  assert.equal(coreTrackTitle(match.track.title), "good love");
+  assert.ok(artistSearchParts(match.track.artist).includes("qendresa"));
+  assert.ok(match.score >= 95);
+});
+
 test("live requests cannot silently fall back to demo without a selected recording", async () => {
   await assert.rejects(recommendLive({ seed: "unknown", direction: "Même vibe", obscurity: 65, feedback: {}, session: 0 }, AbortSignal.timeout(1000)), /Choisis/);
 });

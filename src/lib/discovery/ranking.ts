@@ -163,7 +163,8 @@ type SelectionOptions = {
   scoreAdjustment?: (track: RankedCandidate) => number;
   originLimit?: number;
   strictOriginLimit?: boolean;
-  maxOriginScoreDrop?: number;
+  knownArtistKeys?: ReadonlySet<string>;
+  preferNovelArtists?: boolean;
 };
 
 export function modeSelectionAdjustment(
@@ -228,7 +229,6 @@ export function selectDiverseRecommendations(
   const artistCounts = new Map<string, number>();
   const labelCounts = new Map<string, number>();
   const originCounts = new Map<CandidateOrigin, number>();
-  const originQualityAnchors = new Map<CandidateOrigin, number>();
   const seedArtistName = normalized(seedArtist);
 
   // Editions of the same performance need not occupy multiple discovery slots.
@@ -320,20 +320,6 @@ export function selectDiverseRecommendations(
               : options.originLimit;
     if (originCount >= maxOriginCount) return false;
 
-    const currentSelectionScore = selectionScore(track);
-    const originQualityAnchor = originQualityAnchors.get(track.origin);
-    if (
-      options.maxOriginScoreDrop !== undefined &&
-      originQualityAnchor !== undefined &&
-      currentSelectionScore <
-        originQualityAnchor - options.maxOriginScoreDrop
-    ) {
-      return false;
-    }
-    if (originQualityAnchor === undefined) {
-      originQualityAnchors.set(track.origin, currentSelectionScore);
-    }
-
     selected.push(track);
     for (const key of artistKeys) {
       artistCounts.set(key, (artistCounts.get(key) || 0) + 1);
@@ -345,18 +331,49 @@ export function selectDiverseRecommendations(
     return true;
   };
 
-  for (const track of ranked) {
-    tryAdd(track, false);
-    if (selected.length >= limit) return selected;
+  const isKnownArtist = (track: RankedCandidate) => {
+    const knownArtistKeys = options.knownArtistKeys;
+    if (!knownArtistKeys?.size) return false;
+
+    const direct = normalized(track.artist);
+    if (knownArtistKeys.has(direct)) return true;
+
+    return (track.credits || [])
+      .filter(
+        credit => credit.role === "primary" || credit.role === "featured",
+      )
+      .some(credit => knownArtistKeys.has(normalized(credit.name)));
+  };
+
+  const passes = options.preferNovelArtists
+    ? [
+        { known: false, relaxed: false, newArtists: false },
+        { known: false, relaxed: false, newArtists: true },
+        { known: false, relaxed: true, newArtists: false },
+        { known: true, relaxed: false, newArtists: false },
+        { known: true, relaxed: false, newArtists: true },
+        { known: true, relaxed: true, newArtists: false },
+      ]
+    : [
+        { known: undefined, relaxed: false, newArtists: false },
+        { known: undefined, relaxed: false, newArtists: true },
+        { known: undefined, relaxed: true, newArtists: false },
+      ];
+
+  for (const pass of passes) {
+    for (const track of ranked) {
+      if (
+        pass.known !== undefined &&
+        isKnownArtist(track) !== pass.known
+      ) {
+        continue;
+      }
+
+      tryAdd(track, pass.relaxed, pass.newArtists);
+      if (selected.length >= limit) return selected;
+    }
   }
-  for (const track of ranked) {
-    tryAdd(track, false, true);
-    if (selected.length >= limit) return selected;
-  }
-  for (const track of ranked) {
-    tryAdd(track, true);
-    if (selected.length >= limit) break;
-  }
+
   return selected;
 }
 
@@ -371,7 +388,7 @@ export function selectSurpriseRecommendations(
   limit = 10,
   options: Pick<
     SelectionOptions,
-    "scoreAdjustment" | "originLimit" | "strictOriginLimit" | "maxOriginScoreDrop"
+    "scoreAdjustment" | "originLimit" | "strictOriginLimit" | "knownArtistKeys" | "preferNovelArtists"
   > = {},
 ) {
   const supported = ranked.filter(track => track.evidence?.tier !== "exploratory");
@@ -435,6 +452,7 @@ export function selectModeRecommendations(
   seedArtist: string,
   direction: Direction,
   limit = 10,
+  knownArtistKeys?: ReadonlySet<string>,
 ) {
   const scoreAdjustment = (track: RankedCandidate) =>
     modeSelectionAdjustment(track, direction);
@@ -448,7 +466,8 @@ export function selectModeRecommendations(
         scoreAdjustment,
         originLimit: 2,
         strictOriginLimit: true,
-        maxOriginScoreDrop: 10,
+        knownArtistKeys,
+        preferNovelArtists: Boolean(knownArtistKeys?.size),
       },
     );
   }
@@ -460,7 +479,13 @@ export function selectModeRecommendations(
     {
       scoreAdjustment,
       allowArtistRepeats: false,
-      ...(direction === "Rabbit hole" ? { originLimit: 3 } : {}),
+      ...(direction === "Rabbit hole"
+        ? {
+            originLimit: 3,
+            knownArtistKeys,
+            preferNovelArtists: Boolean(knownArtistKeys?.size),
+          }
+        : {}),
     },
   );
 }

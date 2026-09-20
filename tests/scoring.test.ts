@@ -337,7 +337,7 @@ test("learned path preferences adjust the score for a matching path shape", () =
   assert.equal(learned - baseline, 8);
 });
 
-test("exploration softly penalizes another track by an already-known artist", () => {
+test("knowing another track by an artist does not distort candidate scoring", () => {
   const sameArtist = candidate("same-artist", {
     artist: "Known Artist",
     title: "Another Cut",
@@ -364,14 +364,9 @@ test("exploration softly penalizes another track by an already-known artist", ()
 
   const baselineSame = baseline.find(track => track.id === "same-artist");
   const rememberedSame = remembered.find(track => track.id === "same-artist");
-  const rememberedNew = remembered.find(track => track.id === "new-artist");
-  assert.ok(baselineSame && rememberedSame && rememberedNew);
-  assert.equal(
-    rememberedSame.score - baselineSame.score,
-    -8,
-  );
-  assert.equal(rememberedSame.scoreBreakdown.memory, -8);
-  assert.equal(rememberedNew.scoreBreakdown.memory, 0);
+  assert.ok(baselineSame && rememberedSame);
+  assert.equal(rememberedSame.score, baselineSame.score);
+  assert.equal(rememberedSame.scoreBreakdown.memory, 0);
 });
 
 test("server memory excludes tracks marked as already known", () => {
@@ -538,7 +533,7 @@ test("Surprends-moi mode policy spreads origins before relaxing", () => {
 });
 
 
-test("Surprends-moi does not fill an origin with a much weaker second candidate", () => {
+test("Surprends-moi does not treat an absolute score gap as a quality cutoff", () => {
   const first = rankedFixture(
     "quality-1",
     20,
@@ -546,32 +541,79 @@ test("Surprends-moi does not fill an origin with a much weaker second candidate"
     4,
     { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 4 },
   );
-  const close = rankedFixture(
+  const lower = rankedFixture(
     "quality-2",
-    13,
-    "lastfm-artist-hop",
-    4,
-    { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 4 },
-  );
-  const weak = rankedFixture(
-    "quality-3",
-    5,
+    -15,
     "lastfm-artist-hop",
     4,
     { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 4 },
   );
 
   const selected = selectModeRecommendations(
-    [first, close, weak],
+    [first, lower],
     "Seed Artist",
     "Surprends-moi",
-    3,
+    2,
   );
 
   assert.deepEqual(
     selected.map(track => track.id),
     ["quality-1", "quality-2"],
   );
+});
+
+test("Surprends-moi selects novel artists before falling back to known artists", () => {
+  const known = {
+    ...rankedFixture(
+      "known-high",
+      120,
+      "artist-radio",
+      1,
+      { tier: "strong", musical: true, path: "behavioral", retrievalDepth: 1 },
+    ),
+    artist: "Known Artist",
+  };
+  const novelA = {
+    ...rankedFixture(
+      "novel-a",
+      90,
+      "lastfm-deep",
+      2,
+      { tier: "credible", musical: false, path: "behavioral", retrievalDepth: 2 },
+    ),
+    artist: "Novel Artist A",
+  };
+  const novelB = {
+    ...rankedFixture(
+      "novel-b",
+      80,
+      "discogs-label",
+      4,
+      { tier: "strong", musical: true, path: "structured", retrievalDepth: 4 },
+    ),
+    artist: "Novel Artist B",
+  };
+
+  const firstTwo = selectModeRecommendations(
+    [known, novelA, novelB],
+    "Seed Artist",
+    "Surprends-moi",
+    2,
+    new Set(["known artist"]),
+  );
+  assert.deepEqual(
+    firstTwo.map(track => track.artist),
+    ["Novel Artist A", "Novel Artist B"],
+  );
+
+  const withFallback = selectModeRecommendations(
+    [known, novelA, novelB],
+    "Seed Artist",
+    "Surprends-moi",
+    3,
+    new Set(["known artist"]),
+  );
+  assert.ok(withFallback.some(track => track.artist === "Known Artist"));
 });
 
 test("Rabbit hole never relaxes into repeated artists", () => {

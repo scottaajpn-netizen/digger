@@ -90,6 +90,7 @@ type BenchmarkRun = {
   metrics: ReturnType<typeof measureTracks>;
   humanComparison: ReturnType<typeof measureHumanComparison>;
   knownReplay?: KnownReplaySummary;
+  knownProbe?: KnownReplaySummary;
   tracks: BenchmarkRunTrack[];
 };
 
@@ -797,6 +798,7 @@ async function main() {
 
   const full = process.argv.includes("--full");
   const knownReplayEnabled = process.argv.includes("--known-replay");
+  const knownProbeEnabled = process.argv.includes("--known-probe");
   const requestedCaseIds = optionValues("--case");
   const requestedDirections = optionValues("--direction");
 
@@ -905,48 +907,78 @@ async function main() {
           );
         }
 
+        const runKnownSimulation = async (
+          label: "known-replay" | "known-probe",
+          knownInputs: Array<{ artist: string; title: string; source: string }>,
+        ) => {
+          if (!knownInputs.length) return undefined;
+
+          const replayResponse = await recommendLive(
+            {
+              ...input,
+              memory: {
+                pathScores: {},
+                knownTracks: knownInputs.map(identityKey),
+              },
+            },
+            AbortSignal.timeout(50_000),
+          );
+          const replayTracks =
+            replayResponse.tracks as RuntimeRecommendation[];
+          const summary = measureKnownReplay(
+            tracks,
+            replayTracks,
+            knownInputs,
+          );
+
+          console.log(
+            `    ${label}: inputs=${summary.inputKnownTracks.length} | visibles-base=${summary.baselineKnownVisible} | replay=${summary.replayTrackCount} | fuite-known=${summary.leakedKnownCount} | conservés=${summary.retainedTrackCount} | remplacements=${summary.replacementCount}`,
+          );
+          console.log(
+            `    ${label} découverte: remplacements-nouvel-artiste=${summary.replacementDifferentArtistCount} | même-artiste-connu=${summary.replacementKnownArtistCount} | plus-profonds=${summary.deeperReplacementCount} | profondeur moyenne ${formatNumber(summary.baselinePathDepth.average)} -> ${formatNumber(summary.replayPathDepth.average)}`,
+          );
+          if (summary.replacements.length) {
+            console.log(
+              `    ${label} remplacements: ${summary.replacements
+                .map(
+                  item =>
+                    `${item.artist} — ${item.title} [${item.origin || "unknown"}/d${item.pathDepth ?? "?"}/score=${formatNumber(item.score)}]`,
+                )
+                .join(" | ")}`,
+            );
+          }
+
+          return summary;
+        };
+
         let knownReplay: KnownReplaySummary | undefined;
         if (knownReplayEnabled) {
           const knownInputs = knownHistoricalTracks(benchmarkCase);
           if (knownInputs.length) {
-            const replayResponse = await recommendLive(
-              {
-                ...input,
-                memory: {
-                  pathScores: {},
-                  knownTracks: knownInputs.map(identityKey),
-                },
-              },
-              AbortSignal.timeout(50_000),
-            );
-            const replayTracks =
-              replayResponse.tracks as RuntimeRecommendation[];
-            knownReplay = measureKnownReplay(
-              tracks,
-              replayTracks,
+            knownReplay = await runKnownSimulation(
+              "known-replay",
               knownInputs,
             );
-            console.log(
-              `    known-replay: inputs=${knownReplay.inputKnownTracks.length} | visibles-base=${knownReplay.baselineKnownVisible} | replay=${knownReplay.replayTrackCount} | fuite-known=${knownReplay.leakedKnownCount} | conservés=${knownReplay.retainedTrackCount} | remplacements=${knownReplay.replacementCount}`,
-            );
-            console.log(
-              `    known-replay découverte: remplacements-nouvel-artiste=${knownReplay.replacementDifferentArtistCount} | même-artiste-connu=${knownReplay.replacementKnownArtistCount} | plus-profonds=${knownReplay.deeperReplacementCount} | profondeur moyenne ${formatNumber(knownReplay.baselinePathDepth.average)} -> ${formatNumber(knownReplay.replayPathDepth.average)}`,
-            );
-            if (knownReplay.replacements.length) {
-              console.log(
-                `    known-replay remplacements: ${knownReplay.replacements
-                  .map(
-                    item =>
-                      `${item.artist} — ${item.title} [${item.origin || "unknown"}/d${item.pathDepth ?? "?"}/score=${formatNumber(item.score)}]`,
-                  )
-                  .join(" | ")}`,
-              );
-            }
           } else {
             console.log(
               "    known-replay: aucun morceau explicitement étiqueté connu dans le corpus pour cette seed.",
             );
           }
+        }
+
+        let knownProbe: KnownReplaySummary | undefined;
+        if (knownProbeEnabled && tracks.length) {
+          const probeInputs = tracks
+            .slice(0, Math.min(2, tracks.length))
+            .map(track => ({
+              artist: track.artist,
+              title: track.title,
+              source: "current-selection-probe",
+            }));
+          knownProbe = await runKnownSimulation(
+            "known-probe",
+            probeInputs,
+          );
         }
 
         runs.push({
@@ -973,6 +1005,7 @@ async function main() {
           metrics,
           humanComparison,
           knownReplay,
+          knownProbe,
           tracks: tracks.map(track => ({
             ...compactTrack(track),
             humanVerdict: matchHistoricalVerdict(benchmarkCase, track),
@@ -1034,7 +1067,7 @@ async function main() {
   );
 
   const output = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     generatedAt,
     profile: full ? "full" : "focused",
     sourceAvailability: {

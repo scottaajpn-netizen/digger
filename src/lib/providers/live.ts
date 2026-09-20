@@ -212,9 +212,29 @@ export function findCredibleTrackMatch(
     return undefined;
   }
 
+  const expectedTitleCore = coreTrackTitle(expectedTitle);
+  const expectedArtistParts = artistSearchParts(expectedArtist);
+  const sameSeedFamily = (track: Track) => {
+    if (
+      !expectedTitleCore ||
+      coreTrackTitle(track.title) !== expectedTitleCore
+    ) {
+      return false;
+    }
+
+    const candidateParts = new Set(candidateArtistParts(track));
+    return (
+      expectedArtistParts.length > 0 &&
+      expectedArtistParts.every(part => candidateParts.has(part))
+    );
+  };
+
   const runner = ranked.find(row =>
-    normalized(row.track.title) !== normalized(best.track.title) ||
-    normalized(row.track.artist) !== normalized(best.track.artist)
+    (
+      normalized(row.track.title) !== normalized(best.track.title) ||
+      normalized(row.track.artist) !== normalized(best.track.artist)
+    ) &&
+    !sameSeedFamily(row.track)
   );
   if (runner && best.score < 100 && best.score - runner.score < 8) return undefined;
 
@@ -1741,6 +1761,11 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
         seed.artist,
         input.direction,
         10,
+        new Set(
+          (input.memory?.knownTracks || [])
+            .map(identity => identity.split("\u0000")[0])
+            .filter(Boolean),
+        ),
       );
       const missing = provisional.filter(
         track => track.lastfmArtistListeners === undefined,
@@ -1780,6 +1805,11 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     seed.artist,
     input.direction,
     10,
+    new Set(
+      (input.memory?.knownTracks || [])
+        .map(identity => identity.split("\u0000")[0])
+        .filter(Boolean),
+    ),
   );
   retrievalDiagnostics.selected = retrievalStage(selected);
   if (selected.length < 10) notes.push(`Seulement ${selected.length} pistes exploitables avec ces données et tes exclusions. Aucun morceau inventé n’a été ajouté.`);
