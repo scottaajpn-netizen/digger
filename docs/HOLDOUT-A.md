@@ -31,8 +31,9 @@ Résolution :
 Sources des 54 recommandations évaluées :
 
 - ListenBrainz : 25
-- Last.fm : 25
+- Last.fm : 20
 - Discogs : 4
+- Sans discoveryPath explicite : 5 (toutes issues d'un chemin `release`; elles restent visibles comme `unknown` dans la vue par source)
 
 ## Statut méthodologique
 
