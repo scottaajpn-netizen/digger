@@ -26,8 +26,9 @@ function hasStableArtistIdentity(track: Pick<Track, "artistId" | "externalIds" |
 }
 
 function lowDistinctivenessArtist(artist: string) {
-  const parts = normalize(artist).split(" ").filter(Boolean);
-  return parts.length === 1 && parts[0].length <= 5 && !/\\d/.test(parts[0]);
+  const trimmed = artist.trim();
+  const parts = normalize(trimmed).split(" ").filter(Boolean);
+  return /^[A-Za-z]{2,5}$/.test(trimmed) && parts.length === 1 && !/\\d/.test(parts[0]);
 }
 
 export function seedPairConfidence(
