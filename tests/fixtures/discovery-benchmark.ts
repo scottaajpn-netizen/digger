@@ -663,5 +663,30 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
             "Une fiche Last.fm qui confirme Léon Phal peut servir d’ancre sans inventer un crédit Jungle Jack.",
             "L’invariant porte sur l’existence et la provenance des candidats, pas sur une liste de recommandations figée.",
         ],
+        followUpRuns: [
+            {
+                label: "multi-branch-human-review-2026-09-20",
+                examples: [
+                    {
+                        artist: "Veust",
+                        title: "4 Chemins",
+                        verdict: "good",
+                        known: true,
+                        note: "Pertinent par rapport à Pleine Forêt, mais déjà connu.",
+                    },
+                    {
+                        artist: "Huntrill",
+                        title: "Gucci EN 2010",
+                        verdict: "good",
+                        known: true,
+                        note: "Pertinent par rapport à Pleine Forêt, mais déjà connu.",
+                    },
+                ],
+                observations: [
+                    "Les chemins artist-hop via Jungle Jack → Infinit' ont été jugés pertinents humainement.",
+                    "Le problème observé n'est pas ici la dérive sémantique mais la faible valeur de découverte, les deux titres étant déjà connus.",
+                ],
+            },
+        ],
     },
 ];

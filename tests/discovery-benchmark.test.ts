@@ -147,3 +147,23 @@ test("benchmark baseline summarizes human verdicts", () => {
 
     console.log("[BENCHMARK BASELINE]", baseline);
 });
+
+
+test("Pleine Forêt separates relevance from novelty for known artist-hop results", () => {
+    const benchmarkCase = discoveryBenchmark.find(
+        item => item.id === "leon-phal-jungle-jack-pleine-foret",
+    );
+    assert.ok(benchmarkCase);
+
+    const reviewed = benchmarkCase.followUpRuns
+        ?.flatMap(run => run.examples)
+        .filter(example =>
+            ["Veust", "Huntrill"].includes(example.artist),
+        ) ?? [];
+
+    assert.equal(reviewed.length, 2);
+    for (const example of reviewed) {
+        assert.equal(example.verdict, "good");
+        assert.equal(example.known, true);
+    }
+});

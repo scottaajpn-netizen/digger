@@ -43,6 +43,29 @@ type BenchmarkRunTrack = ReturnType<typeof compactTrack> & {
   humanVerdict?: HumanVerdictMatch;
 };
 
+type KnownReplaySummary = {
+  inputKnownTracks: Array<{ artist: string; title: string; source: string }>;
+  baselineKnownVisible: number;
+  replayTrackCount: number;
+  leakedKnownCount: number;
+  retainedTrackCount: number;
+  replacementCount: number;
+  replacementDifferentArtistCount: number;
+  replacementKnownArtistCount: number;
+  deeperReplacementCount: number;
+  baselinePathDepth: NumericSummary;
+  replayPathDepth: NumericSummary;
+  baselineBranchCounts: Record<string, number>;
+  replayBranchCounts: Record<string, number>;
+  replacements: Array<{
+    artist: string;
+    title: string;
+    origin?: string;
+    score?: number;
+    pathDepth?: number;
+  }>;
+};
+
 type BenchmarkRun = {
   caseId: string;
   historicalOverall: DiscoveryBenchmarkCase["overall"];
@@ -66,6 +89,7 @@ type BenchmarkRun = {
   retrievalDiagnostics?: DigResponse["retrievalDiagnostics"];
   metrics: ReturnType<typeof measureTracks>;
   humanComparison: ReturnType<typeof measureHumanComparison>;
+  knownReplay?: KnownReplaySummary;
   tracks: BenchmarkRunTrack[];
 };
 
@@ -329,15 +353,48 @@ function measureHumanComparison(
     }));
   const positiveCount =
     (verdictCounts.excellent ?? 0) + (verdictCounts.good ?? 0);
+  const relevantCount = matches.filter(
+    match => match.human.verdict !== "bad",
+  ).length;
+  const noveltyLabeled = matches.filter(
+    match => match.human.known !== undefined,
+  );
+  const knownCount = noveltyLabeled.filter(
+    match => match.human.known === true,
+  ).length;
+  const newCount = noveltyLabeled.filter(
+    match => match.human.known === false,
+  ).length;
+  const knownRelevantCount = matches.filter(
+    match =>
+      match.human.known === true &&
+      match.human.verdict !== "bad",
+  ).length;
+  const newPositiveCount = matches.filter(
+    match =>
+      match.human.known === false &&
+      (match.human.verdict === "excellent" ||
+        match.human.verdict === "good"),
+  ).length;
 
   return {
     matchedCount: matches.length,
     coverageRatio: tracks.length === 0 ? 0 : matches.length / tracks.length,
     verdictCounts,
+    relevantCount,
+    relevanceRatioAmongMatched:
+      matches.length === 0 ? 0 : relevantCount / matches.length,
     positiveCount,
-    badCount: verdictCounts.bad ?? 0,
     positiveRatioAmongMatched:
       matches.length === 0 ? 0 : positiveCount / matches.length,
+    noveltyLabeledCount: noveltyLabeled.length,
+    knownCount,
+    newCount,
+    knownRelevantCount,
+    newPositiveCount,
+    noveltyRatioAmongLabeled:
+      noveltyLabeled.length === 0 ? 0 : newCount / noveltyLabeled.length,
+    badCount: verdictCounts.bad ?? 0,
     badReappearances,
     knownReappearances,
   };
@@ -345,6 +402,80 @@ function measureHumanComparison(
 
 function identityKey(track: Pick<Track, "artist" | "title">) {
   return `${normalized(track.artist)}\u0000${normalized(track.title)}`;
+}
+
+function knownHistoricalTracks(
+  benchmarkCase: DiscoveryBenchmarkCase,
+) {
+  const unique = new Map<
+    string,
+    { artist: string; title: string; source: string }
+  >();
+
+  for (const example of historicalExamples(benchmarkCase)) {
+    if (example.known !== true || !example.title) continue;
+    const row = {
+      artist: example.artist,
+      title: example.title,
+      source: example.source,
+    };
+    unique.set(identityKey(row), row);
+  }
+
+  return [...unique.values()];
+}
+
+function measureKnownReplay(
+  baseline: RuntimeRecommendation[],
+  replay: RuntimeRecommendation[],
+  knownInputs: Array<{ artist: string; title: string; source: string }>,
+): KnownReplaySummary {
+  const knownIds = new Set(knownInputs.map(identityKey));
+  const knownArtists = new Set(knownInputs.map(artistKey));
+  const baselineIds = new Set(baseline.map(identityKey));
+  const replayIds = new Set(replay.map(identityKey));
+  const baselineKnown = baseline.filter(track => knownIds.has(identityKey(track)));
+  const replacements = replay.filter(track => !baselineIds.has(identityKey(track)));
+  const removedKnownMaxDepth = Math.max(
+    -1,
+    ...baselineKnown.map(track => track.discoveryPath?.distance ?? -1),
+  );
+
+  return {
+    inputKnownTracks: knownInputs,
+    baselineKnownVisible: baselineKnown.length,
+    replayTrackCount: replay.length,
+    leakedKnownCount: replay.filter(track => knownIds.has(identityKey(track))).length,
+    retainedTrackCount: baseline.filter(track => replayIds.has(identityKey(track))).length,
+    replacementCount: replacements.length,
+    replacementDifferentArtistCount: replacements.filter(
+      track => !knownArtists.has(artistKey(track)),
+    ).length,
+    replacementKnownArtistCount: replacements.filter(
+      track => knownArtists.has(artistKey(track)),
+    ).length,
+    deeperReplacementCount:
+      removedKnownMaxDepth < 0
+        ? 0
+        : replacements.filter(
+            track => (track.discoveryPath?.distance ?? -1) > removedKnownMaxDepth,
+          ).length,
+    baselinePathDepth: summarizeNumbers(
+      baseline.map(track => track.discoveryPath?.distance),
+    ),
+    replayPathDepth: summarizeNumbers(
+      replay.map(track => track.discoveryPath?.distance),
+    ),
+    baselineBranchCounts: countBy(baseline.map(branchKey)),
+    replayBranchCounts: countBy(replay.map(branchKey)),
+    replacements: replacements.map(track => ({
+      artist: track.artist,
+      title: track.title,
+      origin: track.origin,
+      score: track.score,
+      pathDepth: track.discoveryPath?.distance,
+    })),
+  };
 }
 
 function artistKey(track: Pick<Track, "artist">) {
@@ -665,6 +796,7 @@ async function main() {
   loadLocalEnvironment();
 
   const full = process.argv.includes("--full");
+  const knownReplayEnabled = process.argv.includes("--known-replay");
   const requestedCaseIds = optionValues("--case");
   const requestedDirections = optionValues("--direction");
 
@@ -762,12 +894,59 @@ async function main() {
         printRun(benchmarkCase, direction, tracks, metrics);
         printRetrievalDiagnostics(response.retrievalDiagnostics);
         console.log(
-          `    humain: match=${humanComparison.matchedCount}/${tracks.length} | positifs=${humanComparison.positiveCount} | bad=${humanComparison.badCount}`,
+          `    humain: match=${humanComparison.matchedCount}/${tracks.length} | pertinents=${humanComparison.relevantCount} | positifs=${humanComparison.positiveCount} | bad=${humanComparison.badCount}`,
+        );
+        console.log(
+          `    nouveauté: étiquetés=${humanComparison.noveltyLabeledCount}/${humanComparison.matchedCount} | connus=${humanComparison.knownCount} | nouveaux=${humanComparison.newCount} | pertinents-connus=${humanComparison.knownRelevantCount} | découvertes-positives=${humanComparison.newPositiveCount}`,
         );
         if (humanComparison.badReappearances.length) {
           console.log(
             `    ⚠ anciens bad revenus: ${humanComparison.badReappearances.map(item => `${item.artist} — ${item.title}`).join(" | ")}`,
           );
+        }
+
+        let knownReplay: KnownReplaySummary | undefined;
+        if (knownReplayEnabled) {
+          const knownInputs = knownHistoricalTracks(benchmarkCase);
+          if (knownInputs.length) {
+            const replayResponse = await recommendLive(
+              {
+                ...input,
+                memory: {
+                  pathScores: {},
+                  knownTracks: knownInputs.map(identityKey),
+                },
+              },
+              AbortSignal.timeout(50_000),
+            );
+            const replayTracks =
+              replayResponse.tracks as RuntimeRecommendation[];
+            knownReplay = measureKnownReplay(
+              tracks,
+              replayTracks,
+              knownInputs,
+            );
+            console.log(
+              `    known-replay: inputs=${knownReplay.inputKnownTracks.length} | visibles-base=${knownReplay.baselineKnownVisible} | replay=${knownReplay.replayTrackCount} | fuite-known=${knownReplay.leakedKnownCount} | conservés=${knownReplay.retainedTrackCount} | remplacements=${knownReplay.replacementCount}`,
+            );
+            console.log(
+              `    known-replay découverte: remplacements-nouvel-artiste=${knownReplay.replacementDifferentArtistCount} | même-artiste-connu=${knownReplay.replacementKnownArtistCount} | plus-profonds=${knownReplay.deeperReplacementCount} | profondeur moyenne ${formatNumber(knownReplay.baselinePathDepth.average)} -> ${formatNumber(knownReplay.replayPathDepth.average)}`,
+            );
+            if (knownReplay.replacements.length) {
+              console.log(
+                `    known-replay remplacements: ${knownReplay.replacements
+                  .map(
+                    item =>
+                      `${item.artist} — ${item.title} [${item.origin || "unknown"}/d${item.pathDepth ?? "?"}/score=${formatNumber(item.score)}]`,
+                  )
+                  .join(" | ")}`,
+              );
+            }
+          } else {
+            console.log(
+              "    known-replay: aucun morceau explicitement étiqueté connu dans le corpus pour cette seed.",
+            );
+          }
         }
 
         runs.push({
@@ -793,6 +972,7 @@ async function main() {
           retrievalDiagnostics: response.retrievalDiagnostics,
           metrics,
           humanComparison,
+          knownReplay,
           tracks: tracks.map(track => ({
             ...compactTrack(track),
             humanVerdict: matchHistoricalVerdict(benchmarkCase, track),
@@ -854,7 +1034,7 @@ async function main() {
   );
 
   const output = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt,
     profile: full ? "full" : "focused",
     sourceAvailability: {
