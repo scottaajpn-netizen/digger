@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  containsArtistParticipant,
   resolveVerifiedArtistAnchors,
   selectBalancedArtistNeighbours,
   shouldExpandArtistCatalogue,
@@ -40,6 +41,25 @@ test("a Last.fm-confirmed collaboration string opens constituent artist anchors"
   assert.deepEqual(
     punctuationVariant.map(anchor => anchor.name),
     ["Léon Phal", "Jungle Jack"],
+  );
+});
+
+test("candidate collaborations expose seed participants before ranking", () => {
+  assert.equal(
+    containsArtistParticipant(
+      "Jungle Jack, JeanJass",
+      undefined,
+      new Set(["jungle jack"]),
+    ),
+    true,
+  );
+  assert.equal(
+    containsArtistParticipant(
+      "JeanJass",
+      undefined,
+      new Set(["jungle jack"]),
+    ),
+    false,
   );
 });
 

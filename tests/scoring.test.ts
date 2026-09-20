@@ -651,6 +651,17 @@ test("candidate eligibility reports explicit pre-ranking rejection reasons", () 
   );
   assert.equal(
     candidateEligibilityFailure(
+      candidate("participant-collab", {
+        artist: "Featured Seed Artist, Other Artist",
+      }),
+      seed,
+      input,
+      participantKeys,
+    ),
+    "seed-participant",
+  );
+  assert.equal(
+    candidateEligibilityFailure(
       candidate("known", { title: "Known Track", artist: "Known Artist" }),
       seed,
       input,

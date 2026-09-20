@@ -25,6 +25,7 @@ test("catalogue survives a fresh read and expires after seven days", async t => 
       neighbourRank: 0,
       trackRank: 0,
       similarity: 0.7,
+      artistTags: ["jazz", "broken beat"],
       track: {
         id: "lastfm:cached",
         title: "Cached cut",
@@ -42,6 +43,8 @@ test("catalogue survives a fresh read and expires after seven days", async t => 
   });
   assert.equal(fresh.length, 1);
   assert.equal(fresh[0].track.title, "Cached cut");
+  assert.equal(fresh[0].similarity, 0.7);
+  assert.deepEqual(fresh[0].artistTags, ["jazz", "broken beat"]);
 
   const expired = await loadCatalogueEntries(["Léon Phal"], {
     filePath,

@@ -3,6 +3,7 @@ import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
 import { assessCandidateEvidence } from "./evidence";
 import { discoveryPathPreferenceKey } from "./paths";
+import { containsArtistParticipant } from "./artist-anchors";
 import {
   deduplicate,
   normalized,
@@ -89,7 +90,9 @@ export function candidateEligibilityFailure(
   if (track.id === seed.id) return "seed-id";
   if (trackIdentity(track) === trackIdentity(seed)) return "seed-track";
   if (normalized(track.artist) === normalized(seed.artist)) return "seed-artist";
-  if (seedParticipantKeys.has(normalized(track.artist))) return "seed-participant";
+  if (containsArtistParticipant(track.artist, track.credits, seedParticipantKeys)) {
+    return "seed-participant";
+  }
   if ((input.memory?.knownTracks || []).includes(trackIdentity(track))) {
     return "known-track";
   }
@@ -143,7 +146,13 @@ export function rankDiscoveryCandidates({
             ...track.discogs.genres,
           ],
         })
-        : buildMusicalProfile(track);
+        : buildMusicalProfile({
+          ...track,
+          tags: [
+            ...track.tags,
+            ...(track.retrieval?.artistRelation?.tags || []),
+          ],
+        });
       const comparison = compareMusicalProfiles(seedProfile, candidateProfile);
       const evidence = assessCandidateEvidence(track, comparison);
       const shared = track.tags.filter(tag => seed.tags.includes(tag)).length;
@@ -258,9 +267,18 @@ export function rankDiscoveryCandidates({
 
       const discoveryPathAdjustment =
         discoveryPathScoreAdjustment(track.discoveryPath, input.direction);
+      const artistRelationAdjustment =
+        track.retrieval?.provider === "lastfm" &&
+        track.retrieval.artistRelation?.similarity !== undefined
+          ? Math.max(
+              0,
+              Math.min(1, track.retrieval.artistRelation.similarity),
+            ) * 6
+          : 0;
 
-      score += discoveryPathAdjustment;
-      scoreBreakdown.discoveryPath += discoveryPathAdjustment;
+      score += discoveryPathAdjustment + artistRelationAdjustment;
+      scoreBreakdown.discoveryPath +=
+        discoveryPathAdjustment + artistRelationAdjustment;
 
       const memoryKey = discoveryPathPreferenceKey(
         track.discoveryPath,

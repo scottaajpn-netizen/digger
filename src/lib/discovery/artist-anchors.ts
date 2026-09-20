@@ -19,11 +19,24 @@ type NeighbourRow = {
   match?: number | string;
 };
 
-function artistParts(value: string) {
+export function artistNameParts(value: string) {
   return value
     .split(/\s+(?:feat(?:uring)?|ft)\.?\s+|\s*(?:&|,|\/|\bx\b|\bvs\.?\b)\s*/giu)
     .map(part => part.trim())
     .filter(Boolean);
+}
+
+export function containsArtistParticipant(
+  artist: string,
+  credits: ArtistCredit[] | undefined,
+  participantKeys: Set<string>,
+) {
+  const credited = (credits || [])
+    .filter(credit => credit.role === "primary" || credit.role === "featured")
+    .map(credit => credit.name.trim())
+    .filter(Boolean);
+  const names = [...new Set([...credited, ...artistNameParts(artist)])];
+  return names.some(name => participantKeys.has(normalized(name)));
 }
 
 export function resolveVerifiedArtistAnchors({
@@ -58,13 +71,13 @@ export function resolveVerifiedArtistAnchors({
 
   const reportedKey = normalized(reportedArtist);
   const seedKey = normalized(seedArtist);
-  const seedPartKeys = new Set(artistParts(seedArtist).map(normalized));
+  const seedPartKeys = new Set(artistNameParts(seedArtist).map(normalized));
   const matchesStructuredAnchor = anchors.some(
     anchor => normalized(anchor.name) === reportedKey,
   );
 
   if (reportedKey === seedKey) {
-    const parts = artistParts(seedArtist);
+    const parts = artistNameParts(seedArtist);
     if (parts.length > 1) {
       for (const part of parts) {
         add({

@@ -47,10 +47,17 @@ export interface ArtistCredit {
   sourceId?: string;
   joinPhrase?: string;
 }
+export interface ArtistRelationProvenance {
+  anchorArtist: string;
+  neighbourArtist: string;
+  similarity?: number;
+  tags?: string[];
+}
 export interface TrackRetrievalProvenance {
   provider: DiscoveryPathSource;
   source: "live" | "local-catalogue";
   storedAt?: string;
+  artistRelation?: ArtistRelationProvenance;
 }
 export interface Track {
   id: string; title: string; artist: string; scene: string; label: string;

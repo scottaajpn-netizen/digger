@@ -571,6 +571,9 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const lastFmSeedArtistVerified = lastFmArtistAnchors.some(
     anchor => anchor.source === "lastfm-track",
   );
+  for (const anchor of lastFmArtistAnchors) {
+    seedParticipantKeys.add(normalized(anchor.name));
+  }
   if (lastFmSeedInfo?.track?.url) seed.externalIds = { ...(seed.externalIds || {}), lastfm: lastFmSeedInfo.track.url };
   const seedListeners = Number(lastFmSeedInfo?.track?.listeners || 0);
   if (Number.isFinite(seedListeners) && seedListeners > 0) seed.lastfmListeners = seedListeners;
@@ -659,6 +662,8 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
       trackRank: number;
       storedAt?: string;
       source: "live" | "local-catalogue";
+      similarity?: number;
+      artistTags?: string[];
       track: {
         id: string;
         title: string;
@@ -673,6 +678,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
         title: entry.track.title,
         artist: entry.track.artist,
         scene:
+          entry.artistTags?.[0] ||
           seedProfile.subgenres[0] ||
           seedProfile.genres[0] ||
           "Last.fm catalogue",
@@ -705,19 +711,35 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
           provider: "lastfm",
           source: entry.source,
           storedAt: entry.storedAt,
+          artistRelation: {
+            anchorArtist: entry.anchorArtist,
+            neighbourArtist: entry.neighbourArtist,
+            similarity: entry.similarity,
+            tags: entry.artistTags,
+          },
         },
-        reason:
-          entry.source === "local-catalogue"
-            ? `Catalogue local vérifié : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} ».`
-            : `Catalogue : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} ».`,
+        reason: (() => {
+          const similarity =
+            entry.similarity !== undefined
+              ? ` · indice artiste Last.fm ${Math.round(entry.similarity * 100)}%`
+              : "";
+          const tags =
+            entry.artistTags?.length
+              ? ` · tags artiste : ${entry.artistTags.slice(0, 3).join(" / ")}`
+              : "";
+          return entry.source === "local-catalogue"
+            ? `Catalogue local vérifié : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} »${similarity}${tags}.`
+            : `Catalogue : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} »${similarity}${tags}.`;
+        })(),
         relevance:
-          entry.source === "live"
+          (entry.source === "live"
             ? 66 +
               Math.max(0, 14 - entry.trackRank * 0.6) +
               Math.max(0, 8 - entry.neighbourRank)
             : 58 +
               Math.max(0, 12 - entry.trackRank * 0.45) +
-              Math.max(0, 6 - entry.neighbourRank),
+              Math.max(0, 6 - entry.neighbourRank)) +
+          Math.max(0, Math.min(1, entry.similarity || 0)) * 6,
         origin: "lastfm-crate",
       });
     };
@@ -734,6 +756,8 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
         trackRank: entry.trackRank,
         storedAt: entry.savedAt,
         source: "local-catalogue",
+        similarity: entry.similarity,
+        artistTags: entry.artistTags,
         track: entry.track,
       });
     }
@@ -781,28 +805,55 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     );
     catalogueDiagnostics.neighbours = neighbours.length;
 
-    const catalogues = await Promise.all(
-      neighbours.map(row =>
-        optional(
-          lastFmJson<LastFmTopTracksResponse>(
-            "artist.getTopTracks",
-            {
-              artist: row.name,
-              limit: "24",
-              autocorrect: "1",
-            },
-            signal,
+    const catalogueBundles = await Promise.all(
+      neighbours.map(async row => {
+        const [tracks, tags] = await Promise.all([
+          optional(
+            lastFmJson<LastFmTopTracksResponse>(
+              "artist.getTopTracks",
+              {
+                artist: row.name,
+                limit: "24",
+                autocorrect: "1",
+              },
+              signal,
+            ),
+            `Le catalogue Last.fm de ${row.name} est indisponible.`,
           ),
-          `Le catalogue Last.fm de ${row.name} est indisponible.`,
-        ),
-      ),
+          optional(
+            lastFmJson<LastFmTagsResponse>(
+              "artist.getTopTags",
+              {
+                artist: row.name,
+                autocorrect: "1",
+              },
+              signal,
+            ),
+            `Les tags artiste Last.fm de ${row.name} sont indisponibles.`,
+          ),
+        ]);
+        const artistTags = (tags?.toptags?.tag || [])
+          .filter(tag => typeof tag.name === "string")
+          .sort(
+            (left, right) =>
+              Number(right.count || 0) - Number(left.count || 0),
+          )
+          .map(tag => tag.name!.trim())
+          .filter(Boolean)
+          .slice(0, 6);
+        return { tracks, artistTags };
+      }),
     );
 
     const catalogueEntries: CatalogueEntryInput[] = [];
-    catalogues.forEach((result, artistIndex) => {
+    catalogueBundles.forEach((bundle, artistIndex) => {
       const neighbour = neighbours[artistIndex];
       const neighbourName = neighbour?.name?.trim() || "";
-      for (const [index, item] of (result?.toptracks?.track || []).entries()) {
+      const similarity = Math.max(
+        0,
+        Math.min(1, Number(neighbour?.match || 0)),
+      );
+      for (const [index, item] of (bundle.tracks?.toptracks?.track || []).entries()) {
         const title = item.name?.trim();
         const artistName = item.artist?.name?.trim() || neighbourName;
         if (
@@ -831,6 +882,8 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
           neighbourRank: artistIndex,
           trackRank: index,
           source: "live",
+          similarity,
+          artistTags: bundle.artistTags,
           track: {
             id,
             title,
@@ -848,9 +901,8 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
           neighbourArtist: artistName,
           neighbourRank: artistIndex,
           trackRank: index,
-          similarity: Number.isFinite(Number(neighbour?.match))
-            ? Number(neighbour?.match)
-            : undefined,
+          similarity: Number.isFinite(similarity) ? similarity : undefined,
+          artistTags: bundle.artistTags,
           track: {
             id,
             title,

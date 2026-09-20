@@ -397,6 +397,7 @@ test("catalogue fallback serves sparse non-MBID seeds in every direction and sup
     if (method === "track.getInfo") return Response.json({ track: { name: u.searchParams.get("track"), artist: { name: u.searchParams.get("artist") }, listeners: "600" } });
     if (method === "track.getSimilar") return Response.json({ similartracks: { track: [] } });
     if (method === "artist.getSimilar") return Response.json({ similarartists: { artist: [{ name: u.searchParams.get("artist") === "Niche fixture" ? "Neighbour fixture" : "Next fixture", match: 0.6 }] } });
+    if (method === "artist.getTopTags") return Response.json({ toptags: { tag: [{ name: "electronic", count: 100 }, { name: "broken beat", count: 80 }] } });
     if (method === "artist.getTopTracks") return Response.json({ toptracks: { track: [{ name: "Catalogue cut", artist: { name: u.searchParams.get("artist") }, listeners: "600", url: "https://www.last.fm/music/fixture" }] } });
     throw Error(`Unexpected catalogue route ${u.pathname}`);
   });
@@ -406,6 +407,11 @@ test("catalogue fallback serves sparse non-MBID seeds in every direction and sup
   assert.equal(first.tracks[0]?.externalIds?.musicbrainz, undefined);
   assert.equal(first.tracks[0]?.discoveryPath?.evidence, "catalogue");
   assert.equal(first.tracks[0]?.evidence?.path, "catalogue");
+  assert.equal(first.tracks[0]?.retrieval?.artistRelation?.similarity, 0.6);
+  assert.deepEqual(
+    first.tracks[0]?.retrieval?.artistRelation?.tags,
+    ["electronic", "broken beat"],
+  );
   const second = await recommendLive({ ...request, seedTrack: first.tracks[0] }, AbortSignal.timeout(10000));
   assert.equal(second.seed.artist, "Neighbour fixture");
   assert.equal(second.tracks[0]?.artist, "Next fixture");
@@ -425,6 +431,7 @@ test("Pleine Forêt regression expands a poor direct list through the verified L
 
   let similarArtistCalls = 0;
   let topTrackCalls = 0;
+  let artistTagCalls = 0;
 
   t.mock.method(globalThis, "fetch", async (input: URL) => {
     const u = new URL(String(input));
@@ -434,7 +441,7 @@ test("Pleine Forêt regression expands a poor direct list through the verified L
       return Response.json([]);
     }
     if (method === "track.getTopTags") {
-      return Response.json({ toptags: { tag: [] } });
+      return Response.json({ toptags: { tag: [{ name: "jazz", count: 100 }] } });
     }
     if (method === "track.getInfo") {
       return Response.json({
@@ -466,6 +473,17 @@ test("Pleine Forêt regression expands a poor direct list through the verified L
             name: `Neighbour ${index}`,
             match: 0.8 - index / 100,
           })),
+        },
+      });
+    }
+    if (method === "artist.getTopTags") {
+      artistTagCalls += 1;
+      return Response.json({
+        toptags: {
+          tag: [
+            { name: "jazz", count: 100 },
+            { name: "broken beat", count: 60 },
+          ],
         },
       });
     }
@@ -504,11 +522,18 @@ test("Pleine Forêt regression expands a poor direct list through the verified L
 
   assert.equal(similarArtistCalls, 1);
   assert.equal(topTrackCalls, 10);
+  assert.equal(artistTagCalls, 10);
   assert.equal(result.retrievalDiagnostics?.catalogue?.expansionTriggered, true);
   assert.deepEqual(result.retrievalDiagnostics?.catalogue?.anchors, ["Léon Phal"]);
   assert.equal(result.retrievalDiagnostics?.catalogue?.liveCandidates, 240);
   assert.ok(result.tracks.length > 0);
   assert.ok(result.tracks.some(track => track.retrieval?.source === "live"));
+  assert.ok(
+    result.tracks.some(
+      track => track.retrieval?.artistRelation?.similarity !== undefined,
+    ),
+  );
+  assert.ok(result.tracks.some(track => track.evidence?.tier === "credible"));
   assert.equal(
     result.retrievalDiagnostics?.catalogue?.anchors.includes("Jungle Jack"),
     false,

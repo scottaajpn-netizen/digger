@@ -14,6 +14,7 @@ export type CatalogueEntry = {
   neighbourRank: number;
   trackRank: number;
   similarity?: number;
+  artistTags?: string[];
   track: Pick<
     Track,
     "id" | "title" | "artist" | "lastfmListeners" | "externalIds"
@@ -59,6 +60,9 @@ function validEntry(value: unknown): value is CatalogueEntry {
       typeof entry.savedAt === "string" &&
       Number.isFinite(entry.neighbourRank) &&
       Number.isFinite(entry.trackRank) &&
+      (entry.artistTags === undefined ||
+        (Array.isArray(entry.artistTags) &&
+          entry.artistTags.every(tag => typeof tag === "string"))) &&
       entry.track &&
       typeof entry.track.id === "string" &&
       typeof entry.track.title === "string" &&

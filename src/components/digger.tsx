@@ -31,6 +31,7 @@ const pathEvidenceLabel = (evidence: NonNullable<Track["discoveryPath"]>["eviden
 function DiscoveryPathView({ track }: { track: Track }) {
   const path = track.discoveryPath;
   if (!path?.nodes?.length) return null;
+  const relation = track.retrieval?.artistRelation;
   return <div className="discovery-path" aria-label="Chemin de découverte">
     <div className="discovery-path-head">
       <span>POURQUOI CE MORCEAU ?</span>
@@ -42,6 +43,11 @@ function DiscoveryPathView({ track }: { track: Track }) {
         {node.url ? <a href={node.url} target="_blank" rel="noreferrer" title={node.name}>{node.name}</a> : <b title={node.name}>{node.name}</b>}
       </span>)}
     </div>
+    {relation ? <p className="reason">
+      Relation Last.fm : <strong>{relation.neighbourArtist}</strong> est un artiste voisin de <strong>{relation.anchorArtist}</strong>
+      {relation.similarity !== undefined ? <> · indice de proximité artiste : {Math.round(relation.similarity * 100)}%</> : null}
+      {relation.tags?.length ? <> · tags artiste : {relation.tags.slice(0, 3).join(" / ")}</> : null}
+    </p> : null}
   </div>;
 }
 
