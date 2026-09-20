@@ -4,10 +4,24 @@ export type BenchmarkVerdict =
     | "acceptable"
     | "bad";
 
+export type BenchmarkTaste =
+    | "love"
+    | "like"
+    | "neutral"
+    | "dislike";
+
+export type BenchmarkCoherence =
+    | "strong"
+    | "moderate"
+    | "weak"
+    | "none";
+
 export type BenchmarkExample = {
     artist: string;
     title?: string;
     verdict: BenchmarkVerdict;
+    taste?: BenchmarkTaste;
+    coherence?: BenchmarkCoherence;
     known?: boolean;
     note?: string;
 };
@@ -671,20 +685,50 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
                         artist: "Veust",
                         title: "4 Chemins",
                         verdict: "good",
+                        taste: "like",
+                        coherence: "strong",
                         known: true,
-                        note: "Pertinent par rapport à Pleine Forêt, mais déjà connu.",
+                        note: "Pertinent par rapport à Pleine Forêt, déjà connu, et la recommandation convient.",
                     },
                     {
                         artist: "Huntrill",
                         title: "Gucci EN 2010",
                         verdict: "good",
+                        taste: "like",
+                        coherence: "strong",
                         known: true,
-                        note: "Pertinent par rapport à Pleine Forêt, mais déjà connu.",
+                        note: "Pertinent par rapport à Pleine Forêt, déjà connu, et la recommandation convient.",
                     },
                 ],
                 observations: [
                     "Les chemins artist-hop via Jungle Jack → Infinit' ont été jugés pertinents humainement.",
                     "Le problème observé n'est pas ici la dérive sémantique mais la faible valeur de découverte, les deux titres étant déjà connus.",
+                ],
+            },
+            {
+                label: "known-probe-human-review-2026-09-20",
+                examples: [
+                    {
+                        artist: "Piotr Wiese",
+                        title: "Emptiness",
+                        verdict: "good",
+                        taste: "like",
+                        coherence: "weak",
+                        note: "Recommandation appréciée, mais le rapport avec Pleine Forêt n'est pas évident.",
+                    },
+                    {
+                        artist: "Ashley Henry",
+                        title: "Star child (feat. Judi Jackson)",
+                        verdict: "good",
+                        taste: "like",
+                        coherence: "weak",
+                        note: "Recommandation appréciée, mais le rapport avec Pleine Forêt n'est pas évident.",
+                    },
+                ],
+                observations: [
+                    "Le known-probe trouve deux nouveaux artistes appréciés humainement.",
+                    "La valeur de découverte est positive même quand la cohérence perçue avec la seed est faible.",
+                    "Surprends-moi doit préserver une part de sérendipité sans présenter ces sauts comme une forte similarité musicale.",
                 ],
             },
         ],

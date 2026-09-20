@@ -16,6 +16,8 @@ import {
 } from "../src/lib/types";
 import {
   discoveryBenchmark,
+  type BenchmarkCoherence,
+  type BenchmarkTaste,
   type BenchmarkVerdict,
   type DiscoveryBenchmarkCase,
 } from "../tests/fixtures/discovery-benchmark";
@@ -33,6 +35,8 @@ type NumericSummary = {
 
 type HumanVerdictMatch = {
   verdict: BenchmarkVerdict;
+  taste?: BenchmarkTaste;
+  coherence?: BenchmarkCoherence;
   known?: boolean;
   note?: string;
   source: string;
@@ -307,6 +311,8 @@ function matchHistoricalVerdict(
   if (exact) {
     return {
       verdict: exact.verdict,
+      taste: exact.taste,
+      coherence: exact.coherence,
       known: exact.known,
       note: exact.note,
       source: exact.source,
@@ -322,6 +328,8 @@ function matchHistoricalVerdict(
 
   return {
     verdict: artistOnly.verdict,
+    taste: artistOnly.taste,
+    coherence: artistOnly.coherence,
     known: artistOnly.known,
     note: artistOnly.note,
     source: artistOnly.source,
@@ -357,6 +365,23 @@ function measureHumanComparison(
   const relevantCount = matches.filter(
     match => match.human.verdict !== "bad",
   ).length;
+  const tasteLabeled = matches.filter(
+    match => match.human.taste !== undefined,
+  );
+  const coherenceLabeled = matches.filter(
+    match => match.human.coherence !== undefined,
+  );
+  const tasteCounts = countBy(
+    tasteLabeled.map(match => match.human.taste!),
+  );
+  const coherenceCounts = countBy(
+    coherenceLabeled.map(match => match.human.coherence!),
+  );
+  const likedCount =
+    (tasteCounts.love ?? 0) + (tasteCounts.like ?? 0);
+  const coherentCount =
+    (coherenceCounts.strong ?? 0) + (coherenceCounts.moderate ?? 0);
+
   const noveltyLabeled = matches.filter(
     match => match.human.known !== undefined,
   );
@@ -388,6 +413,18 @@ function measureHumanComparison(
     positiveCount,
     positiveRatioAmongMatched:
       matches.length === 0 ? 0 : positiveCount / matches.length,
+    tasteLabeledCount: tasteLabeled.length,
+    tasteCounts,
+    likedCount,
+    likedRatioAmongTasteLabeled:
+      tasteLabeled.length === 0 ? 0 : likedCount / tasteLabeled.length,
+    coherenceLabeledCount: coherenceLabeled.length,
+    coherenceCounts,
+    coherentCount,
+    coherentRatioAmongCoherenceLabeled:
+      coherenceLabeled.length === 0
+        ? 0
+        : coherentCount / coherenceLabeled.length,
     noveltyLabeledCount: noveltyLabeled.length,
     knownCount,
     newCount,
@@ -899,6 +936,12 @@ async function main() {
           `    humain: match=${humanComparison.matchedCount}/${tracks.length} | pertinents=${humanComparison.relevantCount} | positifs=${humanComparison.positiveCount} | bad=${humanComparison.badCount}`,
         );
         console.log(
+          `    goût: étiquetés=${humanComparison.tasteLabeledCount}/${humanComparison.matchedCount} | love=${humanComparison.tasteCounts.love || 0} | like=${humanComparison.tasteCounts.like || 0} | neutral=${humanComparison.tasteCounts.neutral || 0} | dislike=${humanComparison.tasteCounts.dislike || 0}`,
+        );
+        console.log(
+          `    cohérence: étiquetés=${humanComparison.coherenceLabeledCount}/${humanComparison.matchedCount} | forte=${humanComparison.coherenceCounts.strong || 0} | modérée=${humanComparison.coherenceCounts.moderate || 0} | faible=${humanComparison.coherenceCounts.weak || 0} | aucune=${humanComparison.coherenceCounts.none || 0}`,
+        );
+        console.log(
           `    nouveauté: étiquetés=${humanComparison.noveltyLabeledCount}/${humanComparison.matchedCount} | connus=${humanComparison.knownCount} | nouveaux=${humanComparison.newCount} | pertinents-connus=${humanComparison.knownRelevantCount} | découvertes-positives=${humanComparison.newPositiveCount}`,
         );
         if (humanComparison.badReappearances.length) {
@@ -1067,7 +1110,7 @@ async function main() {
   );
 
   const output = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     generatedAt,
     profile: full ? "full" : "focused",
     sourceAvailability: {

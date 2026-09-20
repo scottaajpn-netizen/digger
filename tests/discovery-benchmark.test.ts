@@ -167,3 +167,40 @@ test("Pleine Forêt separates relevance from novelty for known artist-hop result
         assert.equal(example.known, true);
     }
 });
+
+
+test("Pleine Forêt stores taste, coherence and novelty as separate human axes", () => {
+    const benchmarkCase = discoveryBenchmark.find(
+        item => item.id === "leon-phal-jungle-jack-pleine-foret",
+    );
+    assert.ok(benchmarkCase);
+
+    const reviews = benchmarkCase.followUpRuns
+        ?.flatMap(run => run.examples) ?? [];
+
+    const veust = reviews.find(
+        example => example.artist === "Veust" && example.title === "4 Chemins",
+    );
+    assert.ok(veust);
+    assert.equal(veust.coherence, "strong");
+    assert.equal(veust.taste, "like");
+    assert.equal(veust.known, true);
+
+    const piotr = reviews.find(
+        example => example.artist === "Piotr Wiese" && example.title === "Emptiness",
+    );
+    assert.ok(piotr);
+    assert.equal(piotr.coherence, "weak");
+    assert.equal(piotr.taste, "like");
+    assert.equal(piotr.known, undefined);
+
+    const ashley = reviews.find(
+        example =>
+            example.artist === "Ashley Henry" &&
+            example.title === "Star child (feat. Judi Jackson)",
+    );
+    assert.ok(ashley);
+    assert.equal(ashley.coherence, "weak");
+    assert.equal(ashley.taste, "like");
+    assert.equal(ashley.known, undefined);
+});
