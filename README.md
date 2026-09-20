@@ -23,6 +23,12 @@ npm run dev
 
 La recherche privilégie MusicBrainz, puis Last.fm, puis Discogs si nécessaire et configuré. Elle rapproche accents, ponctuation, ordre titre/artiste et fautes mineures sans inventer d’identifiant. Les anciennes requêtes sont annulées. Cache de suggestions : deux minutes dans le navigateur, cinq minutes sur le serveur (15 secondes pour une recherche vide ; pas de cache des réponses dégradées).
 
+## Mode Sampling
+
+L’onglet **Sampling** ouvre une caisse YouTube aléatoire orientée recherche de matière à sampler : un seul lecteur à la fois, ❤️ À sampler / 👎 Pas pour moi / 🎲 Suivant, historique local et filtres de genre, mots-clés, vues, durée et année approximative. Les vues viennent des statistiques YouTube ; l’année originale d’un disque n’est pas fournie par YouTube et sert donc uniquement de terme de recherche approximatif dans ce MVP.
+
+Le mode Sampling utilise sa propre mémoire locale (`digger.sampling.v1`) afin de ne pas contaminer le benchmark HOLDOUT. Il nécessite `YOUTUBE_API_KEY` dans `.env.local`, avec **YouTube Data API v3** activée dans Google Cloud. La clé reste côté serveur. Après ajout ou modification de la clé, redémarrer Digger.
+
 ## Connexions actives
 
 - **MusicBrainz** : recherche, identifiants stables, artistes, tags, sorties, labels et catalogue de label.
@@ -65,6 +71,7 @@ Le profil connecté est dans `localStorage`, clé `digger.profile.v2`. La démo 
 Variables serveur :
 
 - `LASTFM_API_KEY` : clé API Last.fm. Copier `.env.example` vers `.env.local`, puis renseigner la clé. Ne jamais utiliser `NEXT_PUBLIC_` pour cette clé.
+- `YOUTUBE_API_KEY` : clé serveur pour l’onglet Sampling. Activer YouTube Data API v3 dans Google Cloud. Ne jamais utiliser `NEXT_PUBLIC_` pour cette clé.
 - `DISCOGS_TOKEN` : token personnel Discogs dans `.env.local`, côté serveur uniquement. Redémarrer après ajout. Sans ce token, le moteur conserve les autres sources.
 - `DISCOGS_USER_AGENT` : identification optionnelle pour Discogs.
 - `MUSICBRAINZ_USER_AGENT` : optionnelle, pour identifier proprement l’application auprès de MusicBrainz.
