@@ -147,14 +147,15 @@ export function rankDiscoveryCandidates({
           ],
         })
         : buildMusicalProfile(track);
+      const contextualTags = [
+        ...(track.retrieval?.artistRelation?.tags || []),
+        ...(track.retrieval?.contextTags || []),
+      ];
       const contextualProfile =
-        !track.discogs && track.retrieval?.artistRelation?.tags?.length
+        !track.discogs && contextualTags.length
           ? buildMusicalProfile({
               ...track,
-              tags: [
-                ...track.tags,
-                ...track.retrieval.artistRelation.tags,
-              ],
+              tags: [...track.tags, ...contextualTags],
             })
           : candidateProfile;
       const comparison = compareMusicalProfiles(seedProfile, candidateProfile);
@@ -380,7 +381,7 @@ export function rankDiscoveryCandidates({
         score += 18;
         scoreBreakdown.direction += 18;
 
-        if (track.origin === "lastfm-deep") {
+        if (track.origin === "lastfm-deep" || track.origin === "lastfm-artist-hop") {
           score += 22;
           scoreBreakdown.direction += 22;
         }
@@ -388,6 +389,11 @@ export function rankDiscoveryCandidates({
         if (track.origin === "lastfm-crate") {
           score += 28;
           scoreBreakdown.direction += 28;
+        }
+
+        if (track.origin === "lastfm-tag-crate") {
+          score += 12;
+          scoreBreakdown.direction += 12;
         }
 
         if (track.origin === "lastfm-tag") {

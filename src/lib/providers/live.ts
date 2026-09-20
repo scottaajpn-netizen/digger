@@ -5,7 +5,7 @@ import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { cleanLastFmArtistTags } from "../music/lastfm-context";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
-import { lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, listenBrainzPath } from "../discovery/paths";
+import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, lastFmTagArtistPath, listenBrainzPath } from "../discovery/paths";
 import { resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
 import { loadCatalogueEntries, rememberCatalogueEntries, type CatalogueEntryInput } from "../discovery/catalogue";
 export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
@@ -35,6 +35,7 @@ type LastFmSimilarResponse = { similartracks?: { track?: LastFmTrack[] } };
 type LastFmTagsResponse = { toptags?: { tag?: { name?: string; count?: number | string }[] } };
 type LastFmTopTracksResponse = { tracks?: { track?: LastFmTrack[] }; toptracks?: { track?: LastFmTrack[] } };
 type LastFmSimilarArtistsResponse = { similarartists?: { artist?: { name?: string; match?: number | string }[] } };
+type LastFmTopArtistsResponse = { topartists?: { artist?: { name?: string; mbid?: string; url?: string }[] } };
 type LastFmTrackInfoResponse = {
   track?: {
     name?: string;
@@ -641,6 +642,10 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     neighbours: 0,
     liveCandidates: 0,
     storedCandidates: 0,
+    artistHopArtists: 0,
+    artistHopCandidates: 0,
+    tagContextArtists: 0,
+    tagContextCandidates: 0,
   };
 
   // Sparse discovery fallback: a non-empty direct list can still be too small
@@ -923,6 +928,305 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
         "Le catalogue local Digger n’a pas pu être mis à jour.",
       );
       catalogueDiagnostics.storedCandidates = stored || 0;
+    }
+
+    const diversifySparseDiscovery =
+      input.direction === "Surprends-moi" ||
+      input.direction === "Rabbit hole" ||
+      input.obscurity >= 80;
+
+    if (diversifySparseDiscovery && neighbours.length) {
+      // Branch 2: walk one more artist hop instead of repeatedly mining the
+      // same first-circle catalogues. Rotate bridge artists by session so
+      // Surprends-moi explores different parts of the graph across runs.
+      const bridgeOffset = input.session % neighbours.length;
+      const rotatedBridges = [
+        ...neighbours.slice(bridgeOffset),
+        ...neighbours.slice(0, bridgeOffset),
+      ].slice(0, 3);
+
+      const secondCircleRows = await Promise.all(
+        rotatedBridges.map(bridge =>
+          optional(
+            lastFmJson<LastFmSimilarArtistsResponse>(
+              "artist.getSimilar",
+              {
+                artist: bridge.name,
+                limit: "8",
+                autocorrect: "1",
+              },
+              signal,
+            ),
+            `Le deuxième cercle d’artistes autour de ${bridge.name} est indisponible.`,
+          ),
+        ),
+      );
+
+      const excludedArtistKeys = new Set(
+        [
+          ...seedParticipantNames,
+          seed.artist,
+          ...artistAnchors,
+          ...neighbours.map(row => row.name),
+        ]
+          .map(normalized)
+          .filter(Boolean),
+      );
+      const secondHopArtists: Array<{
+        anchor: string;
+        bridge: string;
+        name: string;
+        match: number;
+      }> = [];
+      const secondHopSeen = new Set<string>();
+
+      for (let rowIndex = 0; rowIndex < 8 && secondHopArtists.length < 6; rowIndex += 1) {
+        for (let bridgeIndex = 0; bridgeIndex < rotatedBridges.length; bridgeIndex += 1) {
+          const bridge = rotatedBridges[bridgeIndex];
+          const row = secondCircleRows[bridgeIndex]?.similarartists?.artist?.[rowIndex];
+          const name = row?.name?.trim();
+          const key = normalized(name || "");
+          if (!name || !key || excludedArtistKeys.has(key) || secondHopSeen.has(key)) {
+            continue;
+          }
+          secondHopSeen.add(key);
+          secondHopArtists.push({
+            anchor: bridge.anchor,
+            bridge: bridge.name,
+            name,
+            match: Math.max(0, Math.min(1, Number(row?.match || 0))),
+          });
+          if (secondHopArtists.length >= 6) break;
+        }
+      }
+      catalogueDiagnostics.artistHopArtists = secondHopArtists.length;
+
+      const secondHopCatalogues = await Promise.all(
+        secondHopArtists.map(row =>
+          optional(
+            lastFmJson<LastFmTopTracksResponse>(
+              "artist.getTopTracks",
+              {
+                artist: row.name,
+                limit: "10",
+                autocorrect: "1",
+              },
+              signal,
+            ),
+            `Le catalogue de deuxième cercle Last.fm de ${row.name} est indisponible.`,
+          ),
+        ),
+      );
+
+      secondHopCatalogues.forEach((result, artistIndex) => {
+        const relation = secondHopArtists[artistIndex];
+        for (const [trackIndex, item] of (result?.toptracks?.track || []).entries()) {
+          const title = item.name?.trim();
+          const artistName = item.artist?.name?.trim() || relation.name;
+          if (!title || !artistName) continue;
+
+          const mbid =
+            item.mbid && mbidPattern.test(item.mbid)
+              ? item.mbid
+              : undefined;
+          const id =
+            mbid || `lastfm-artist-hop:${hash(`${artistName}:${title}`)}`;
+          const listeners = Number(item.listeners);
+          const externalIds = {
+            musicbrainz: mbid,
+            lastfm: item.url,
+          };
+
+          pool.push({
+            id,
+            title,
+            artist: artistName,
+            scene:
+              seedProfile.subgenres[0] ||
+              seedProfile.genres[0] ||
+              "Last.fm deuxième cercle",
+            label: "",
+            tags: [],
+            year: 0,
+            obscurity:
+              Number.isFinite(listeners) && listeners > 0
+                ? obscurityFromLastFmListeners(listeners)
+                : 50,
+            obscurityKnown: Number.isFinite(listeners) && listeners > 0,
+            lastfmListeners:
+              Number.isFinite(listeners) && listeners > 0
+                ? listeners
+                : undefined,
+            colors: colors[hash(id) % colors.length],
+            externalIds,
+            discoveryPath: lastFmArtistHopPath(
+              seed,
+              relation.anchor,
+              relation.bridge,
+              relation.name,
+              { id, title, artist: artistName, externalIds },
+            ),
+            retrieval: {
+              provider: "lastfm",
+              source: "live",
+              artistRelation: {
+                anchorArtist: relation.bridge,
+                neighbourArtist: relation.name,
+                similarity: relation.match,
+              },
+            },
+            reason:
+              `Deuxième cercle d’artistes : ${relation.anchor} → ${relation.bridge} → ${relation.name} → « ${title} ».`,
+            relevance:
+              58 +
+              relation.match * 10 +
+              Math.max(0, 6 - trackIndex * 0.6) -
+              artistIndex * 0.25,
+            origin: "lastfm-artist-hop",
+          });
+          catalogueDiagnostics.artistHopCandidates += 1;
+        }
+      });
+
+      // Branch 3: a contextual route through tags. Prefer seed tags; when a
+      // sparse seed has none, infer only tags repeated across at least two
+      // verified first-circle neighbours.
+      const neighbourTagCounts = new Map<string, { name: string; count: number }>();
+      for (const bundle of catalogueBundles) {
+        for (const tag of bundle.artistTags) {
+          const key = normalized(tag);
+          if (!key) continue;
+          const existing = neighbourTagCounts.get(key);
+          neighbourTagCounts.set(key, {
+            name: existing?.name || tag,
+            count: (existing?.count || 0) + 1,
+          });
+        }
+      }
+      const inferredContextTags = [...neighbourTagCounts.values()]
+        .filter(row => row.count >= 2)
+        .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+        .map(row => row.name);
+      const contextTags = [
+        ...new Set([...tagQueries.slice(0, 2), ...inferredContextTags]),
+      ].slice(0, 2);
+
+      const tagArtistPages = await Promise.all(
+        contextTags.map((tag, tagIndex) =>
+          optional(
+            lastFmJson<LastFmTopArtistsResponse>(
+              "tag.getTopArtists",
+              {
+                tag,
+                limit: "12",
+                page: String(2 + ((input.session + tagIndex) % 4)),
+              },
+              signal,
+            ),
+            `La branche Last.fm du contexte « ${tag} » est indisponible.`,
+          ),
+        ),
+      );
+
+      const contextualArtists: Array<{ tag: string; name: string }> = [];
+      const contextualSeen = new Set<string>();
+      const blockedContextArtists = new Set([
+        ...excludedArtistKeys,
+        ...secondHopArtists.map(row => normalized(row.name)),
+      ]);
+
+      for (let rowIndex = 0; rowIndex < 12 && contextualArtists.length < 4; rowIndex += 1) {
+        for (let tagIndex = 0; tagIndex < contextTags.length; tagIndex += 1) {
+          const name =
+            tagArtistPages[tagIndex]?.topartists?.artist?.[rowIndex]?.name?.trim();
+          const key = normalized(name || "");
+          if (!name || !key || blockedContextArtists.has(key) || contextualSeen.has(key)) {
+            continue;
+          }
+          contextualSeen.add(key);
+          contextualArtists.push({ tag: contextTags[tagIndex], name });
+          if (contextualArtists.length >= 4) break;
+        }
+      }
+      catalogueDiagnostics.tagContextArtists = contextualArtists.length;
+
+      const contextualCatalogues = await Promise.all(
+        contextualArtists.map(row =>
+          optional(
+            lastFmJson<LastFmTopTracksResponse>(
+              "artist.getTopTracks",
+              {
+                artist: row.name,
+                limit: "10",
+                autocorrect: "1",
+              },
+              signal,
+            ),
+            `Le catalogue contextuel Last.fm de ${row.name} est indisponible.`,
+          ),
+        ),
+      );
+
+      contextualCatalogues.forEach((result, artistIndex) => {
+        const context = contextualArtists[artistIndex];
+        for (const [trackIndex, item] of (result?.toptracks?.track || []).entries()) {
+          const title = item.name?.trim();
+          const artistName = item.artist?.name?.trim() || context.name;
+          if (!title || !artistName) continue;
+
+          const mbid =
+            item.mbid && mbidPattern.test(item.mbid)
+              ? item.mbid
+              : undefined;
+          const id =
+            mbid || `lastfm-tag-crate:${hash(`${artistName}:${title}`)}`;
+          const listeners = Number(item.listeners);
+          const externalIds = {
+            musicbrainz: mbid,
+            lastfm: item.url,
+          };
+
+          pool.push({
+            id,
+            title,
+            artist: artistName,
+            scene: context.tag,
+            label: "",
+            tags: [],
+            year: 0,
+            obscurity:
+              Number.isFinite(listeners) && listeners > 0
+                ? obscurityFromLastFmListeners(listeners)
+                : 50,
+            obscurityKnown: Number.isFinite(listeners) && listeners > 0,
+            lastfmListeners:
+              Number.isFinite(listeners) && listeners > 0
+                ? listeners
+                : undefined,
+            colors: colors[hash(id) % colors.length],
+            externalIds,
+            discoveryPath: lastFmTagArtistPath(
+              seed,
+              context.tag,
+              context.name,
+              { id, title, artist: artistName, externalIds },
+            ),
+            retrieval: {
+              provider: "lastfm",
+              source: "live",
+              contextTags: [context.tag],
+            },
+            reason:
+              `Branche de contexte Last.fm : « ${context.tag} » → ${context.name} → « ${title} ».`,
+            relevance:
+              52 +
+              Math.max(0, 8 - trackIndex * 0.65) -
+              artistIndex * 0.25,
+            origin: "lastfm-tag-crate",
+          });
+          catalogueDiagnostics.tagContextCandidates += 1;
+        }
+      });
     }
   }
   for (const [index, item] of lastFmSimilarTracks.entries()) {

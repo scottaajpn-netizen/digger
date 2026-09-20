@@ -546,7 +546,7 @@ function printRetrievalDiagnostics(
   );
   if (catalogue) {
     console.log(
-      `    catalogue: expand=${catalogue.expansionTriggered ? "yes" : "no"} | anchors=${catalogue.anchors.join(" + ") || "none"} | cache=${catalogue.cacheCandidates} | neighbours=${catalogue.neighbours} | live=${catalogue.liveCandidates} | stored=${catalogue.storedCandidates}`,
+      `    catalogue: expand=${catalogue.expansionTriggered ? "yes" : "no"} | anchors=${catalogue.anchors.join(" + ") || "none"} | cache=${catalogue.cacheCandidates} | neighbours=${catalogue.neighbours} | live=${catalogue.liveCandidates} | stored=${catalogue.storedCandidates} | artist-hop=${catalogue.artistHopArtists || 0} artists/${catalogue.artistHopCandidates || 0} tracks | tag-context=${catalogue.tagContextArtists || 0} artists/${catalogue.tagContextCandidates || 0} tracks`,
     );
   }
   console.log(

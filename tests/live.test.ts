@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { artistAudienceReferences, artistSearchParts, coreTrackTitle, findCredibleTrackMatch, passesDeepAudienceGate, deduplicate, fromRecording, musicBrainzQuery, obscurityFromLastFmListeners, recommendLive, searchLive, selectDiverseRecommendations, selectSurpriseRecommendations, trackSearchMatchScore } from "../src/lib/providers/live";
 
 const emptyScoreBreakdown = () => ({
@@ -537,6 +540,151 @@ test("Pleine Forêt regression expands a poor direct list through the verified L
   assert.equal(
     result.retrievalDiagnostics?.catalogue?.anchors.includes("Jungle Jack"),
     false,
+  );
+});
+
+test("Surprends-moi builds several independent Last.fm branches for a sparse seed", async t => {
+  const oldKey = process.env.LASTFM_API_KEY;
+  const oldCataloguePath = process.env.DIGGER_CATALOGUE_PATH;
+  const directory = await mkdtemp(join(tmpdir(), "digger-multibranch-"));
+  process.env.LASTFM_API_KEY = "multi-branch-fixture";
+  process.env.DIGGER_CATALOGUE_PATH = join(directory, "catalogue.json");
+
+  t.after(async () => {
+    if (oldKey === undefined) delete process.env.LASTFM_API_KEY;
+    else process.env.LASTFM_API_KEY = oldKey;
+    if (oldCataloguePath === undefined) delete process.env.DIGGER_CATALOGUE_PATH;
+    else process.env.DIGGER_CATALOGUE_PATH = oldCataloguePath;
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  t.mock.method(globalThis, "fetch", async (input: URL) => {
+    const u = new URL(String(input));
+    const method = u.searchParams.get("method");
+
+    if (
+      u.hostname === "api.listenbrainz.org" &&
+      u.pathname.includes("/lb-radio/tags")
+    ) {
+      return Response.json([]);
+    }
+    if (method === "track.getTopTags") {
+      return Response.json({
+        toptags: {
+          tag: [
+            { name: "jazz", count: 100 },
+            { name: "broken beat", count: 80 },
+          ],
+        },
+      });
+    }
+    if (method === "track.getInfo") {
+      return Response.json({
+        track: {
+          name: "Sparse Seed",
+          artist: { name: "Seed Artist" },
+          listeners: "600",
+          url: "https://www.last.fm/music/Seed+Artist/_/Sparse+Seed",
+        },
+      });
+    }
+    if (method === "track.getSimilar") {
+      return Response.json({ similartracks: { track: [] } });
+    }
+    if (method === "artist.getSimilar") {
+      const artist = u.searchParams.get("artist") || "";
+      if (artist === "Seed Artist") {
+        return Response.json({
+          similarartists: {
+            artist: ["Bridge A", "Bridge B", "Bridge C", "Bridge D"].map(
+              (name, index) => ({ name, match: 0.9 - index * 0.05 }),
+            ),
+          },
+        });
+      }
+      return Response.json({
+        similarartists: {
+          artist: Array.from({ length: 4 }, (_, index) => ({
+            name: `${artist} Deep ${index + 1}`,
+            match: 0.75 - index * 0.05,
+          })),
+        },
+      });
+    }
+    if (method === "artist.getTopTags") {
+      return Response.json({
+        toptags: {
+          tag: [
+            { name: "jazz", count: 100 },
+            { name: "broken beat", count: 80 },
+          ],
+        },
+      });
+    }
+    if (method === "tag.getTopArtists") {
+      const tag = u.searchParams.get("tag") || "context";
+      return Response.json({
+        topartists: {
+          artist: Array.from({ length: 8 }, (_, index) => ({
+            name: `${tag} Context Artist ${index + 1}`,
+          })),
+        },
+      });
+    }
+    if (method === "artist.getTopTracks") {
+      const artist = u.searchParams.get("artist") || "Artist";
+      return Response.json({
+        toptracks: {
+          track: Array.from({ length: 3 }, (_, index) => ({
+            name: `${artist} Cut ${index + 1}`,
+            artist: { name: artist },
+            listeners: String(400 + index * 50),
+            url: `https://www.last.fm/music/${encodeURIComponent(artist)}/cut-${index + 1}`,
+          })),
+        },
+      });
+    }
+
+    throw Error(`Unexpected multi-branch route ${u}`);
+  });
+
+  const result = await recommendLive({
+    seed: "Sparse Seed — Seed Artist",
+    seedTrack: {
+      id: "lastfm:sparse-seed",
+      title: "Sparse Seed",
+      artist: "Seed Artist",
+      source: "lastfm" as const,
+    },
+    direction: "Surprends-moi",
+    obscurity: 70,
+    feedback: {},
+    session: 2,
+  }, AbortSignal.timeout(15000));
+
+  const poolOrigins = result.retrievalDiagnostics?.mergedPool.byOrigin || {};
+  assert.ok((poolOrigins["lastfm-crate"] || 0) > 0);
+  assert.ok((poolOrigins["lastfm-artist-hop"] || 0) > 0);
+  assert.ok((poolOrigins["lastfm-tag-crate"] || 0) > 0);
+
+  const selectedOrigins = new Set(
+    result.tracks.map(track => (track as typeof track & { origin?: string }).origin),
+  );
+  assert.ok(selectedOrigins.has("lastfm-crate"));
+  assert.ok(selectedOrigins.has("lastfm-artist-hop"));
+  assert.ok(selectedOrigins.has("lastfm-tag-crate"));
+  assert.ok(selectedOrigins.size >= 3);
+  assert.ok(result.tracks.length >= 6);
+  assert.ok(
+    Math.max(
+      ...Object.values(
+        result.tracks.reduce<Record<string, number>>((counts, track) => {
+          const origin = (track as typeof track & { origin?: string }).origin || "unknown";
+          counts[origin] = (counts[origin] || 0) + 1;
+          return counts;
+        }, {}),
+      ),
+    ) <= 2,
   );
 });
 

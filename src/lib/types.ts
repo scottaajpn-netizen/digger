@@ -58,6 +58,7 @@ export interface TrackRetrievalProvenance {
   source: "live" | "local-catalogue";
   storedAt?: string;
   artistRelation?: ArtistRelationProvenance;
+  contextTags?: string[];
 }
 export interface Track {
   id: string; title: string; artist: string; scene: string; label: string;
@@ -160,6 +161,10 @@ export interface CatalogueRetrievalDiagnostics {
   neighbours: number;
   liveCandidates: number;
   storedCandidates: number;
+  artistHopArtists?: number;
+  artistHopCandidates?: number;
+  tagContextArtists?: number;
+  tagContextCandidates?: number;
 }
 export interface RetrievalDiagnostics {
   discogs: DiscogsRetrievalDiagnostics;

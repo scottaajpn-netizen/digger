@@ -10,7 +10,9 @@ export type CandidateOrigin =
   | "lastfm-similar"
   | "lastfm-tag"
   | "lastfm-deep"
-  | "lastfm-crate";
+  | "lastfm-crate"
+  | "lastfm-artist-hop"
+  | "lastfm-tag-crate";
 
 export type Candidate = Recommendation & {
   relevance: number;

@@ -95,6 +95,36 @@ export function lastFmCataloguePath(
   ]);
 }
 
+export function lastFmArtistHopPath(
+  seed: Track,
+  anchorArtist: string,
+  bridgeArtist: string,
+  neighbourArtist: string,
+  candidate: Pick<Track, "id" | "title" | "artist" | "externalIds">,
+): DiscoveryPath {
+  return discoveryPath("lastfm", "listening", [
+    trackNode(seed, "lastfm"),
+    pathNode("artist", anchorArtist, "lastfm"),
+    pathNode("artist", bridgeArtist, "lastfm"),
+    pathNode("artist", neighbourArtist, "lastfm"),
+    trackNode(candidate, "lastfm"),
+  ]);
+}
+
+export function lastFmTagArtistPath(
+  seed: Track,
+  tag: string,
+  artist: string,
+  candidate: Pick<Track, "id" | "title" | "artist" | "externalIds">,
+): DiscoveryPath {
+  return discoveryPath("lastfm", "tag", [
+    trackNode(seed, "lastfm"),
+    pathNode("context", tag, "lastfm"),
+    pathNode("artist", artist, "lastfm"),
+    trackNode(candidate, "lastfm"),
+  ]);
+}
+
 export function listenBrainzPath(
   seed: Track,
   candidate: Pick<Track, "id" | "title" | "artist" | "externalIds">,
