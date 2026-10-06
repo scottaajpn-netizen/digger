@@ -155,7 +155,7 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
     }
   }
 
-  async function explore(nextSeed = seed, seedTrack = selectedSeed?.text === nextSeed ? selectedSeed.track : undefined) {
+  async function explore(nextSeed = seed, seedTrack = selectedSeed?.text === nextSeed ? selectedSeed.track : undefined, nextObscurity = obscurity) {
     if (!nextSeed.trim() || busy) return;
     const seedId = seedTrack?.externalIds?.musicbrainz && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(seedTrack.externalIds.musicbrainz)
       ? seedTrack.externalIds.musicbrainz
@@ -189,7 +189,7 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
     } : undefined;
     setBusy(true); setError(""); setChoices([]); setTab("explore");
     try {
-      const response = await fetch("/api/recommendations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seed: nextSeed, seedId, seedTrack: seedReference, direction, obscurity, feedback: Object.fromEntries(Object.entries(feedback).slice(-200)), session: session + 1 }), signal: AbortSignal.timeout(55000) });
+      const response = await fetch("/api/recommendations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seed: nextSeed, seedId, seedTrack: seedReference, direction, obscurity: nextObscurity, feedback: Object.fromEntries(Object.entries(feedback).slice(-200)), session: session + 1 }), signal: AbortSignal.timeout(55000) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Impossible de lancer l’exploration.");
       if (data.choices) { setChoices(data.choices); setResult(null); }
@@ -262,7 +262,7 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
       <p className="soulseek-note">Choisis un fichier puis clique sur Télécharger. Destination : 00_INBOX ; le classement existant vers Navidrome reste automatique. Aucun téléchargement ne démarre pendant la recherche.</p>
     </section>}
     <div className="track-grid">{visible.map((track, i) => <TrackCard key={track.id} track={track} index={i} feedback={feedback[track.id]} onFeedback={react} onExplore={(value, track) => { setSeed(value); setSelectedSeed({ text: value, track }); void explore(value, track); }} onSoulseek={searchSoulseek} />)}</div>
-    {!visible.length && !busy && !choices.length && <div className="empty"><span>◎</span><h3>{tab === "collection" ? "Ton prochain coup de cœur t’attend." : result ? "Pas encore de piste pour cette exploration." : "Un morceau. Des chemins à découvrir."}</h3><p>{tab === "collection" ? "Un ❤️ ou un 👀 sur une carte, et tu la retrouveras ici." : result ? "Essaie une autre direction, un autre morceau ou retire des exclusions avec le bouton en bas de page." : "Entre un titre et son artiste, puis lance l’exploration pour chercher dans MusicBrainz."}</p>{tab === "collection" ? <button onClick={() => setTab("explore")}>Retour à l’exploration ↗</button> : null}</div>}
+    {!visible.length && !busy && !choices.length && <div className="empty"><span>◎</span><h3>{tab === "collection" ? "Ton prochain coup de cœur t’attend." : result ? "Pas encore de piste pour cette exploration." : "Un morceau. Des chemins à découvrir."}</h3><p>{tab === "collection" ? "Un ❤️ ou un 👀 sur une carte, et tu la retrouveras ici." : result && obscurity >= 90 ? "À ce niveau, Digger écarte aussi les pistes dont l’audience n’est pas vérifiable. Élargir à 85 % conserve les chemins profonds tout en laissant entrer ces trouvailles." : result ? "Essaie une autre direction, un autre morceau ou retire des exclusions avec le bouton en bas de page." : "Entre un titre et son artiste, puis lance l’exploration pour chercher dans MusicBrainz."}</p>{tab === "collection" ? <button onClick={() => setTab("explore")}>Retour à l’exploration ↗</button> : result && obscurity >= 90 ? <button onClick={() => { setObscurity(85); void explore(seed, selectedSeed?.track, 85); }}>Élargir à 85 % et relancer ↗</button> : null}</div>}
     </section><footer><span className="brand">digger.</span><p>KEEP DIGGING.</p><span>{rated} avis · Mémoire locale active</span>{rated > 0 && <div className="reset-actions">{resetPending ? <><button onClick={() => { setFeedback({}); setSaved({}); setResetPending(false); void fetch("/api/memory/feedback", { method: "DELETE" }).catch(() => undefined); setNotice("Tes avis et la mémoire locale ont été réinitialisés."); }}>Confirmer la remise à zéro</button><button onClick={() => setResetPending(false)}>Annuler</button></> : <button onClick={() => setResetPending(true)}>Réinitialiser mes avis</button>}</div>}</footer></main>
   </div>;
 }
