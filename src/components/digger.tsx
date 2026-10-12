@@ -128,7 +128,8 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
   }, [feedback, saved, ready]);
 
   function react(id: string, value: Feedback, fromInfinite?: Recommendation) {
-    const nextValue: Feedback | null = feedback[id] === value ? null : value;
+    // Dig infini records an explicit verdict; only grid buttons toggle a prior vote.
+    const nextValue: Feedback | null = fromInfinite ? value : feedback[id] === value ? null : value;
     setFeedback(previous => {
       const next = { ...previous };
       if (nextValue === null) delete next[id];
