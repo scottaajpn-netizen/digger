@@ -276,3 +276,39 @@ and regressed pair counts expose order inversions.
 
 These statistics require no additional calls, change no ranking scores,
 do not touch the UI, and cannot replace actual listening validation.
+
+
+## 16. Explain each ranking decision (read-only)
+
+The discovery benchmark now writes a human-readable report at
+\`benchmark-results/latest-ranking.md\` in addition to
+\`benchmark-results/latest.json\`. For each seed/mode and its optional
+\`--compare-vibe\`, \`--compare-scope\` or \`--compare-paths\` shadow:
+
+- per-title final position, previous position in the baseline, score and
+  largest *accounting* contributions (retrieval, overlap, origins, etc.);
+- path relation, qualitative reliability warnings and tag-overlap scope;
+- exact historical human coherence/taste labels, **never invented labels**;
+- all misordered pairs where a title known to be less coherent appears above
+  a reviewed more coherent title;
+- score factors favoring the wrongly advanced title and a separate warning
+  when its raw score is lower, because diversity/selection may explain
+  the displayed rank instead.
+
+The rank audit uses only the already selected 10 tracks and the same
+historical user verdicts. Components describe what increased the score;
+they are **not** acoustic evidence or necessarily the cause of final
+placement. Missing human ratings mean unknown performance, not success.
+This diagnostic does not modify ranking, call music APIs, require a new
+listening session or touch the production app UI.
+
+For a short, focused example:
+
+\`\`\`powershell
+pnpm benchmark:discovery -- --case=mia-love-me-right-vibe-80 --direction="Même vibe" --compare-vibe
+\`\`\`
+
+Then read \`benchmark-results/latest-ranking.md\` and the corresponding
+\`runs[].rankingDecisionAudit\` or
+\`runs[].vibeShadow.rankingDecisionAudit\` in JSON. Experiments remain
+opt-in; the standard engine stays on the baseline strategy.
