@@ -915,7 +915,7 @@ export async function recommendLive(
 
         pushCatalogueCandidate({
           anchorArtist: neighbour?.anchor || seed.artist,
-          neighbourArtist: artistName,
+          neighbourArtist: neighbourName || artistName,
           neighbourRank: artistIndex,
           trackRank: index,
           source: "live",
@@ -935,7 +935,7 @@ export async function recommendLive(
 
         catalogueEntries.push({
           anchorArtist: neighbour?.anchor || seed.artist,
-          neighbourArtist: artistName,
+          neighbourArtist: neighbourName || artistName,
           neighbourRank: artistIndex,
           trackRank: index,
           similarity: Number.isFinite(similarity) ? similarity : undefined,
