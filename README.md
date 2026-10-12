@@ -98,3 +98,24 @@ Documentation des sources :
 - https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting
 - https://listenbrainz.readthedocs.io/en/latest/users/api/core.html
 - https://listenbrainz.readthedocs.io/en/latest/users/api/metadata.html
+
+
+## Dig infini (première version)
+
+Après une exploration, cliquer sur **Dig infini** à côté de **Vue grille**.
+Un seul morceau est présenté à la fois, avec les liens YouTube/Soulseek, les
+raisons de sa découverte et cinq actions : **J’aime**, **À écouter**,
+**Pas pour moi**, **Déjà connu** ou **Passer sans noter**.
+Les avis partagent la mémoire de l’exploration normale.
+
+La sélection initiale est réutilisée sans nouvelle requête. Lorsque la réserve
+descend à deux morceaux, Digger prépare une seule nouvelle sélection à partir
+du dernier morceau apprécié (ou du morceau de départ). Un résultat déjà vu
+est écarté. Si l'API échoue ou retourne uniquement des doublons, le morceau
+affiché reste visible ; un bouton permet de retenter explicitement. Aucune
+lecture audio automatique et aucune boucle de requêtes en cas d'échec.
+
+La file de lecture est temporaire, limitée à l'onglet en cours. Les avis et
+la collection restent enregistrés normalement. Le changement de morceau
+de départ réinitialise ce dig ; changer de vue conserve la file tant que
+la même exploration reste active.

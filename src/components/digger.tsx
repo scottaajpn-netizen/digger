@@ -7,6 +7,7 @@ import { lastFmNeighbourStrength } from "@/lib/music/lastfm-context";
 import { directions, feedbackValues, type Direction, type DigResponse, type Feedback, type FeedbackMap, type Recommendation, type Track } from "@/lib/types";
 
 import { SeedSearch } from "./seed-search";
+import { InfiniteDig } from "./infinite-dig";
 
 const reactions: { value: Feedback; icon: string; label: string }[] = [{ value: "love", icon: "❤️", label: "J’aime" }, { value: "curious", icon: "👀", label: "À écouter" }, { value: "neutral", icon: "😐", label: "Pas pour moi" }, { value: "known", icon: "✓", label: "Déjà connu" }];
 const directionIcons = ["≈", "◎", "▤", "↳", "✳"];
@@ -69,6 +70,8 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
   const [feedback, setFeedback] = useState<FeedbackMap>({});
   const [saved, setSaved] = useState<Record<string, Recommendation>>({});
   const [tab, setTab] = useState<"explore" | "collection">("explore");
+  const [digView, setDigView] = useState(false);
+  const [digOpened, setDigOpened] = useState(false);
   const [filter, setFilter] = useState<"all" | "love" | "curious">("all");
   const [busy, setBusy] = useState(false);
   const [session, setSession] = useState(0);
@@ -124,7 +127,7 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
     catch { setNotice("Sauvegarde indisponible : tes avis restent actifs pour cette session uniquement."); }
   }, [feedback, saved, ready]);
 
-  function react(id: string, value: Feedback) {
+  function react(id: string, value: Feedback, fromInfinite?: Recommendation) {
     const nextValue: Feedback | null = feedback[id] === value ? null : value;
     setFeedback(previous => {
       const next = { ...previous };
@@ -132,7 +135,7 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
       else next[id] = nextValue;
       return next;
     });
-    const track = result?.tracks.find(t => t.id === id) ?? saved[id];
+    const track = fromInfinite ?? result?.tracks.find(t => t.id === id) ?? saved[id];
     if (track) {
       setSaved(previous => ({ ...previous, [id]: track }));
       void fetch("/api/memory/feedback", {
@@ -181,7 +184,7 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
       credits: seedTrack.credits,
       source,
     } : undefined;
-    setBusy(true); setError(""); setChoices([]); setTab("explore");
+    setBusy(true); setError(""); setChoices([]); setTab("explore"); setDigView(false); setDigOpened(false);
     try {
       const response = await fetch("/api/recommendations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seed: nextSeed, seedId, seedTrack: seedReference, direction, obscurity, feedback: Object.fromEntries(Object.entries(feedback).slice(-200)), session: session + 1 }), signal: AbortSignal.timeout(55000) });
       const data = await response.json();
@@ -255,8 +258,10 @@ export function Digger({ initial }: { initial: DigResponse | null }) {
       {soulseekResults.length > 0 && <div className="soulseek-results">{soulseekResults.map((item, index) => <div className="soulseek-result" key={item.username + item.filename + index}><div><strong>{item.filename.split(/[\\/]/).pop()}</strong><span>{item.username}{item.freeUploadSlot ? " · slot libre" : ""}{typeof item.queueLength === "number" ? ` · file ${item.queueLength}` : ""}</span></div><div><span>{item.format} · {(item.size / 1024 / 1024).toFixed(1)} Mo</span>{item.uploadSpeed !== undefined ? <span>Vitesse annoncée : {(item.uploadSpeed / 1024).toFixed(0)} Ko/s</span> : null}{item.bitRate ? <span>{Math.round(item.bitRate)} kb/s</span> : null}<button disabled={!!downloads[JSON.stringify([item.username,item.filename])]} onClick={() => void downloadSoulseek(item)}>{downloads[JSON.stringify([item.username,item.filename])] || "Télécharger"}</button></div></div>)}</div>}
       <p className="soulseek-note">Choisis un fichier puis clique sur Télécharger. Destination : 00_INBOX ; le classement existant vers Navidrome reste automatique. Aucun téléchargement ne démarre pendant la recherche.</p>
     </section>}
-    <div className="track-grid">{visible.map((track, i) => <TrackCard key={track.id} track={track} index={i} feedback={feedback[track.id]} onFeedback={react} onExplore={(value, track) => { setSeed(value); setSelectedSeed({ text: value, track }); void explore(value, track); }} onSoulseek={searchSoulseek} />)}</div>
-    {!visible.length && !busy && !choices.length && <div className="empty"><span>◎</span><h3>{tab === "collection" ? "Ton prochain coup de cœur t’attend." : result ? "Pas encore de piste pour cette exploration." : "Un morceau. Des chemins à découvrir."}</h3><p>{tab === "collection" ? "Un ❤️ ou un 👀 sur une carte, et tu la retrouveras ici." : result ? "Essaie une autre direction, un autre morceau ou retire des exclusions avec le bouton en bas de page." : "Entre un titre et son artiste, puis lance l’exploration pour chercher dans MusicBrainz."}</p>{tab === "collection" ? <button onClick={() => setTab("explore")}>Retour à l’exploration ↗</button> : null}</div>}
+    {tab === "explore" && result?.tracks.length ? <div className="dig-view-toggle" aria-label="Mode de découverte"><button aria-pressed={!digView} onClick={() => setDigView(false)}>Vue grille</button><button aria-pressed={digView} onClick={() => { setDigView(true); setDigOpened(true); }}>Dig infini ↗</button></div> : null}
+    {tab === "explore" && result && digOpened && <div style={{display:digView?"block":"none"}}><InfiniteDig key={session} initial={result} feedback={feedback} onFeedback={(track, value) => react(track.id, value, track)} onSoulseek={searchSoulseek} onExplore={track => { const value = `${track.title} — ${track.artist}`; setSeed(value); setSelectedSeed({text:value,track}); void explore(value,track); }} /></div>}
+    {(!digView || tab === "collection") && <div className="track-grid">{visible.map((track, i) => <TrackCard key={track.id} track={track} index={i} feedback={feedback[track.id]} onFeedback={react} onExplore={(value, track) => { setSeed(value); setSelectedSeed({ text: value, track }); void explore(value, track); }} onSoulseek={searchSoulseek} />)}</div>}
+    {(!digView || tab === "collection") && !visible.length && !busy && !choices.length && <div className="empty"><span>◎</span><h3>{tab === "collection" ? "Ton prochain coup de cœur t’attend." : result ? "Pas encore de piste pour cette exploration." : "Un morceau. Des chemins à découvrir."}</h3><p>{tab === "collection" ? "Un ❤️ ou un 👀 sur une carte, et tu la retrouveras ici." : result ? "Essaie une autre direction, un autre morceau ou retire des exclusions avec le bouton en bas de page." : "Entre un titre et son artiste, puis lance l’exploration pour chercher dans MusicBrainz."}</p>{tab === "collection" ? <button onClick={() => setTab("explore")}>Retour à l’exploration ↗</button> : null}</div>}
     </section><footer><span className="brand">digger.</span><p>KEEP DIGGING.</p><span>{rated} avis · Mémoire locale active</span>{rated > 0 && <div className="reset-actions">{resetPending ? <><button onClick={() => { setFeedback({}); setSaved({}); setResetPending(false); void fetch("/api/memory/feedback", { method: "DELETE" }).catch(() => undefined); setNotice("Tes avis et la mémoire locale ont été réinitialisés."); }}>Confirmer la remise à zéro</button><button onClick={() => setResetPending(false)}>Annuler</button></> : <button onClick={() => setResetPending(true)}>Réinitialiser mes avis</button>}</div>}</footer></main>
   </div>;
 }
