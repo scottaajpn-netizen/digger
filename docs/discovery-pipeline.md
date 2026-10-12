@@ -366,3 +366,38 @@ The numbers are hypotheses, NOT listening-validated accuracy. Use
 \`--compare-vibe\` to compare both rankings over the exact same candidate
 pool without extra Last.fm/Discogs API calls. The production algorithm
 remains \`baseline\` until there's sufficient human evidence.
+
+## 19. Conservative evidence gate for vibe-aware (offline)
+
+A passing technical test is not proof of better music recommendations.
+Each --compare-vibe run now records an evidence decision:
+
+- insufficient-evidence: not enough comparable reviews, source gaps, incomplete runs, low rated coverage, or no measured gain;
+- regression-risk: human-reviewed ranking pairs get worse or a known coherent recording disappears from the top ten;
+- candidate-for-listening: several independent same-mode comparisons show a promising signal worth checking by ear.
+
+The gate requires at least **4 independent seeds with exact track-specific listening reviews**,
+**12 reviewed recordings**, **8 comparable pairs of different musical coherence**
+and **75% retention of rated tracks**. Last.fm and Discogs must have been configured
+and there must be zero benchmark errors. These thresholds are engineering safeguards,
+not scientifically validated accuracy cutoffs. No status activates a strategy automatically.
+
+Crucially, the historical feedback must be from the **same direction and obscurity**
+as the new run. Old Surprends-moi ratings cannot certify Même vibe.
+Old snapshot versions without mode provenance are intentionally insufficient.
+Unreviewed replacements are never counted as better music.
+
+The normal comparison automatically writes
+benchmark-results/latest-vibe-decision.md and adds vibeDecision to latest.json.
+Review a previously saved benchmark **with no music API calls**:
+
+    pnpm report:vibe
+    pnpm report:vibe -- --input=benchmark-results/discovery-....json
+
+To create a live A/B snapshot (provider credentials required):
+
+    pnpm benchmark:discovery -- --case=mia-love-me-right-vibe-80 --direction="Même vibe" --compare-vibe
+
+The historical corpus currently has just one specifically rated Même vibe seed
+at obscurity 80%, Mia — Love Me Right. The expected responsible outcome
+remains insufficient-evidence until other same-mode human reviews exist.
