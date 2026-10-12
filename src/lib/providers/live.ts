@@ -603,7 +603,7 @@ export async function recommendLive(
   );
   const lastFmArtistAnchors = artistIdentity.approved;
   const lastFmSeedArtistVerified = lastFmArtistAnchors.some(
-    anchor => anchor.source === "lastfm-track",
+    anchor => anchor.source === "lastfm-track" || Boolean(anchor.confirmedMbid),
   );
   const suspectLastFmIdentity = artistIdentity.conflictingMbid ||
     (namedAnchors.length>0 && lastFmArtistAnchors.length===0);
@@ -840,7 +840,7 @@ export async function recommendLive(
               : {artist:anchor.name,limit:"12",autocorrect:"1"},
             signal,
           ),
-          `Les artistes voisins Last.fm autour de ${anchor} sont indisponibles.`,
+          `Les artistes voisins Last.fm autour de ${anchor.name} sont indisponibles.`,
         ),
       ),
     );
