@@ -127,7 +127,7 @@ test("a sufficiently reviewed same-mode positive comparison is only a listening 
 
 test("missing provider source or incomplete benchmark blocks promotion even with adequate labels",()=>{
   const original=[reviewed("B","none"),reviewed("W","weak"),reviewed("A","strong"),reviewed("S","moderate")];
-  const corrected=[...original].reverse();
+  const corrected=[original[2],original[3],original[1],original[0]];
   const runs=Array.from({length:4},(_,i)=>sameMode("seed"+i,
     original.map(row=>({...row,artist:row.artist+i})),
     corrected.map(row=>({...row,artist:row.artist+i})),
