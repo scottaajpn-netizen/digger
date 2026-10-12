@@ -334,3 +334,35 @@ Previously saved path feedback under the old label is still honored as
 a fallback until a newer preference exists. This change adds no API
 requests or candidate retrieval. Listening tests are still needed to
 determine whether users prefer the changed ordering.
+
+
+## 18. Score-source calibration in the opt-in Même vibe shadow
+
+The shadow-only \`vibe-aware\` adjustment now explicitly reverses
+**unsupported Last.fm source bonuses**, instead of applying a single
+flat negative score to every indirect artist connection.
+
+When no *recording-scoped* fine-tag overlap is established:
+
+- \`lastfm-crate\` at obscurity 80+ loses precisely the +24 origin bonus
+  granted to catalogue expansion, plus up to 6 points previously
+  granted solely for Last.fm's \`artist.getSimilar\` match.
+- Below obscurity 80, the crate has no +24 bonus to remove; it gets
+  only a cautious 8-point context adjustment, plus that artist match.
+- Second-circle \`lastfm-artist-hop\` loses its artist-neighbour match
+  bonus plus a restrained 8-point path-context adjustment, preserving
+  deep niche candidate discovery.
+- A \`lastfm-tag-crate\` gets a 12-point context caution.
+
+Candidates with *independently shared recording-scoped* tags are exempt.
+Direct Last.fm track-to-track similarity and Discogs/label/compilation
+paths are untouched; all other directions are exactly unchanged.
+User-taught path-memory scores stay intact. The score changes are
+accounted for in \`scoreBreakdown.origin\`,
+\`scoreBreakdown.discoveryPath\` and \`scoreBreakdown.direction\`, for
+transparent before/after reports.
+
+The numbers are hypotheses, NOT listening-validated accuracy. Use
+\`--compare-vibe\` to compare both rankings over the exact same candidate
+pool without extra Last.fm/Discogs API calls. The production algorithm
+remains \`baseline\` until there's sufficient human evidence.
