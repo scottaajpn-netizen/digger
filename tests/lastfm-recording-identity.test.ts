@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { assessLastFmRecordingIdentity } from "../src/lib/discovery/recording-identity";
 import { recommendLive } from "../src/lib/providers/live";
@@ -50,7 +50,7 @@ const input:DigRequest={
   session:0,
 };
 
-async function runMia(t: Parameters<Parameters<typeof test>[1]>[0],reportedRecordingMbid?:string) {
+async function runMia(t: TestContext,reportedRecordingMbid?:string) {
   const previous=process.env.LASTFM_API_KEY;
   process.env.LASTFM_API_KEY="recording-identity-fixture";
   t.after(()=>{
