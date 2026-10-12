@@ -92,3 +92,29 @@ test("catalogue is scoped by verified anchor and refreshes duplicate paths", asy
   assert.equal(a[0].track.lastfmListeners, 500);
   assert.deepEqual(b, []);
 });
+
+
+test("Mia cache excludes old name-only paths and separates distinct artist MBIDs",async t=>{
+  const directory=await mkdtemp(join(tmpdir(),"digger-homonym-"));
+  const filePath=join(directory,"catalogue.json");
+  t.after(async()=>rm(directory,{recursive:true,force:true}));
+  const correct="aaaaaaaa-1111-4111-8111-111111111111";
+  const other="bbbbbbbb-1111-4111-8111-111111111111";
+  const now=Date.parse("2026-10-12T12:00:00Z");
+  const entry=(id:string,anchorArtistMbid?:string)=>({
+    anchorArtist:"Mia",anchorArtistMbid,neighbourArtist:"Artist",
+    neighbourRank:0,trackRank:0,track:{
+      id,title:"Cut "+id,artist:"Artist",lastfmListeners:1200,
+    },
+  });
+  await rememberCatalogueEntries([entry("legacy"),entry("correct",correct),entry("wrong",other)],{filePath,now});
+  assert.deepEqual(await loadCatalogueEntries(["Mia"],{filePath,now:now+1000}),[]);
+  const good=await loadCatalogueEntries(["Mia"],{
+    filePath,now:now+1000,anchorMbids:{mia:correct},
+  });
+  assert.deepEqual(good.map(x=>x.track.title),["Cut correct"]);
+  const wrong=await loadCatalogueEntries(["Mia"],{
+    filePath,now:now+1000,anchorMbids:{mia:other},
+  });
+  assert.deepEqual(wrong.map(x=>x.track.title),["Cut wrong"]);
+});

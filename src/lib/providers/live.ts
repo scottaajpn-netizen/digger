@@ -8,7 +8,7 @@ import { singleVerifiedIsrc } from "../discovery/recording-identity";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, lastFmTagArtistPath, listenBrainzPath } from "../discovery/paths";
-import { resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
+import { assessLastFmArtistIdentity, resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
 import { loadCatalogueEntries, rememberCatalogueEntries, type CatalogueEntryInput } from "../discovery/catalogue";
 import { analyzeBranchDiagnostics } from "../discovery/branch-diagnostics";
 import { comparePathShadow, compareScopeShadow } from "../discovery/shadow-comparison";
@@ -43,7 +43,7 @@ type LastFmTopArtistsResponse = { topartists?: { artist?: { name?: string; mbid?
 type LastFmTrackInfoResponse = {
   track?: {
     name?: string;
-    artist?: { name?: string };
+    artist?: { name?: string; mbid?: string };
     listeners?: string;
     playcount?: string;
     url?: string;
@@ -593,27 +593,41 @@ export async function recommendLive(
   seed.label = release?.["label-info"]?.find(l => l.label?.name)?.label?.name || seed.label || "";
   const [lastFmSeedTags, lastFmSeedInfo] = await lastFmSeedJob;
   const lastFmSeedArtist = lastFmSeedInfo?.track?.artist?.name?.trim();
-
-  const lastFmArtistAnchors = resolveVerifiedArtistAnchors({
+  const namedAnchors = resolveVerifiedArtistAnchors({
     seedArtist: seed.artist,
     credits: seed.credits,
     lastFmTrackArtist: lastFmSeedArtist,
   });
-  const lastFmSeedArtistVerified = lastFmArtistAnchors.some(
-    anchor => anchor.source === "lastfm-track",
+  const artistIdentity = assessLastFmArtistIdentity(
+    namedAnchors,seedArtistIds,lastFmSeedInfo?.track?.artist?.mbid,
   );
+  const lastFmArtistAnchors = artistIdentity.approved;
+  const lastFmSeedArtistVerified = lastFmArtistAnchors.some(
+    anchor => anchor.source === "lastfm-track" || Boolean(anchor.confirmedMbid),
+  );
+  const suspectLastFmIdentity = artistIdentity.conflictingMbid ||
+    (namedAnchors.length>0 && lastFmArtistAnchors.length===0);
+  if (artistIdentity.blocked.length) {
+    notes.push(
+      "Voisinage Last.fm ignoré pour une identité d'artiste ambiguë ou contradictoire : " +
+      artistIdentity.blocked.map(row=>row.name).join(", ") +
+      ". Les pistes Discogs, MusicBrainz et ListenBrainz restent disponibles.",
+    );
+  }
   for (const anchor of lastFmArtistAnchors) {
     seedParticipantKeys.add(normalized(anchor.name));
   }
-  if (lastFmSeedInfo?.track?.url) seed.externalIds = { ...(seed.externalIds || {}), lastfm: lastFmSeedInfo.track.url };
+  if (!suspectLastFmIdentity && lastFmSeedInfo?.track?.url)
+    seed.externalIds = { ...(seed.externalIds || {}), lastfm: lastFmSeedInfo.track.url };
   const seedListeners = Number(lastFmSeedInfo?.track?.listeners || 0);
-  if (Number.isFinite(seedListeners) && seedListeners > 0) seed.lastfmListeners = seedListeners;
+  if (!suspectLastFmIdentity && Number.isFinite(seedListeners) && seedListeners > 0)
+    seed.lastfmListeners = seedListeners;
   const extraLastFmTags = (lastFmSeedTags?.toptags?.tag || [])
     .filter(tag => typeof tag.name === "string")
     .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
     .map(tag => tag.name!)
     .slice(0, 6);
-  if (extraLastFmTags.length) {
+  if (!suspectLastFmIdentity && extraLastFmTags.length) {
     seed.tagEvidence = [...(seed.tagEvidence || []), {source:"lastfm",scope:"recording",tags:extraLastFmTags}];
     seed.tags = [...new Set([...seed.tags, ...extraLastFmTags])].slice(0, 8);
   }
@@ -664,7 +678,10 @@ export async function recommendLive(
       return row;
     });
   });
-  const allLastFmSimilarTracks = lastFmSimilar?.similartracks?.track || [];
+  // A name-only artist collision must not silence verified *track-level*
+  // discovery (e.g. DÜK). Only an explicit MBID conflict invalidates it.
+  const allLastFmSimilarTracks = artistIdentity.conflictingMbid
+    ? [] : lastFmSimilar?.similartracks?.track || [];
   const directLastFmOffset = input.obscurity >= 90 ? 12 : input.obscurity >= 75 ? 6 : 0;
   const lastFmSimilarTracks = allLastFmSimilarTracks.slice(directLastFmOffset);
 
@@ -688,14 +705,18 @@ export async function recommendLive(
     lastFmSeedArtistVerified &&
     shouldExpandArtistCatalogue(lastFmSimilarTracks)
   ) {
-    const artistAnchors = lastFmArtistAnchors
-      .map(anchor => anchor.name)
-      .slice(0, 3);
+    const approvedAnchors = lastFmArtistAnchors.slice(0,3);
+    const artistAnchors = approvedAnchors.map(anchor=>anchor.name);
+    const confirmedAnchorIds = Object.fromEntries(
+      approvedAnchors.flatMap(anchor=>anchor.confirmedMbid
+        ? [[normalized(anchor.name),anchor.confirmedMbid]] : []),
+    );
     catalogueDiagnostics.expansionTriggered = true;
     catalogueDiagnostics.anchors = artistAnchors;
 
     const pushCatalogueCandidate = (entry: {
       anchorArtist: string;
+      anchorArtistMbid?: string;
       neighbourArtist: string;
       neighbourRank: number;
       trackRank: number;
@@ -787,12 +808,13 @@ export async function recommendLive(
     };
 
     const cachedCatalogue = await optional(
-      loadCatalogueEntries(artistAnchors),
+      loadCatalogueEntries(artistAnchors,{anchorMbids:confirmedAnchorIds}),
       "Le catalogue local Digger est momentanément indisponible.",
     );
     for (const entry of cachedCatalogue || []) {
       pushCatalogueCandidate({
         anchorArtist: entry.anchorArtist,
+        anchorArtistMbid: entry.anchorArtistMbid,
         neighbourArtist: entry.neighbourArtist,
         neighbourRank: entry.neighbourRank,
         trackRank: entry.trackRank,
@@ -811,18 +833,16 @@ export async function recommendLive(
     }
 
     const similarArtistRows = await Promise.all(
-      artistAnchors.map(anchor =>
+      approvedAnchors.map(anchor =>
         optional(
           lastFmJson<LastFmSimilarArtistsResponse>(
             "artist.getSimilar",
-            {
-              artist: anchor,
-              limit: "12",
-              autocorrect: "1",
-            },
+            anchor.confirmedMbid
+              ? {mbid:anchor.confirmedMbid,limit:"12",autocorrect:"0"}
+              : {artist:anchor.name,limit:"12",autocorrect:"1"},
             signal,
           ),
-          `Les artistes voisins Last.fm autour de ${anchor} sont indisponibles.`,
+          `Les artistes voisins Last.fm autour de ${anchor.name} sont indisponibles.`,
         ),
       ),
     );
@@ -915,6 +935,7 @@ export async function recommendLive(
 
         pushCatalogueCandidate({
           anchorArtist: neighbour?.anchor || seed.artist,
+          anchorArtistMbid: confirmedAnchorIds[normalized(neighbour?.anchor || seed.artist)],
           neighbourArtist: neighbourName || artistName,
           neighbourRank: artistIndex,
           trackRank: index,
@@ -935,6 +956,7 @@ export async function recommendLive(
 
         catalogueEntries.push({
           anchorArtist: neighbour?.anchor || seed.artist,
+          anchorArtistMbid: confirmedAnchorIds[normalized(neighbour?.anchor || seed.artist)],
           neighbourArtist: neighbourName || artistName,
           neighbourRank: artistIndex,
           trackRank: index,

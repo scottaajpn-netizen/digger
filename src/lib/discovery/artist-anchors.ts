@@ -189,3 +189,34 @@ export function selectBalancedArtistNeighbours(
 
   return selected;
 }
+
+
+const artistMbidPattern=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+/** Last.fm track.getInfo may confirm a name while meaning a different artist.
+ * Short artist names require an MBID corroborated independently by MusicBrainz.
+ * An explicit MBID conflict blocks any name-based artist catalogue traversal.
+ */
+export function assessLastFmArtistIdentity(
+  anchors: readonly VerifiedArtistAnchor[],
+  trustedArtistMbids: readonly string[],
+  lastFmTrackArtistMbid?: string,
+) {
+  const trusted=new Set(trustedArtistMbids.filter(id=>artistMbidPattern.test(id)).map(id=>id.toLowerCase()));
+  const reported=lastFmTrackArtistMbid && artistMbidPattern.test(lastFmTrackArtistMbid)
+    ? lastFmTrackArtistMbid.toLowerCase():undefined;
+  const conflictingMbid=Boolean(reported&&trusted.size&&!trusted.has(reported));
+  const approved:Array<VerifiedArtistAnchor&{confirmedMbid?:string}>=[];
+  const blocked:Array<{name:string;reason:"conflicting-mbid"|"ambiguous-short-name"}>=[];
+  for(const anchor of anchors){
+    const sourceId=anchor.sourceId&&artistMbidPattern.test(anchor.sourceId)
+      ? anchor.sourceId.toLowerCase():undefined;
+    const confirmedMbid=reported&&sourceId===reported&&trusted.has(reported)
+      ? reported:undefined;
+    const shortName=normalized(anchor.name).replace(/\s+/g,"").length<=4;
+    if(conflictingMbid)blocked.push({name:anchor.name,reason:"conflicting-mbid"});
+    else if(shortName&&!confirmedMbid)blocked.push({name:anchor.name,reason:"ambiguous-short-name"});
+    else approved.push({...anchor,...(confirmedMbid?{confirmedMbid}:{})});
+  }
+  return {approved,blocked,conflictingMbid};
+}

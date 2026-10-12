@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  assessLastFmArtistIdentity,
   containsArtistParticipant,
   resolveVerifiedArtistAnchors,
   selectBalancedArtistNeighbours,
@@ -134,4 +135,36 @@ test("neighbour selection round-robins verified anchors", () => {
     selected.map(row => row.anchor),
     ["Anchor A", "Anchor B", "Anchor A", "Anchor B", "Anchor A", "Anchor B"],
   );
+});
+
+
+test("Mia name-only match cannot open the Last.fm German homonym catalogue",()=>{
+  const trusted="aaaaaaaa-1111-4111-8111-111111111111";
+  const anchors=resolveVerifiedArtistAnchors({
+    seedArtist:"Mia",lastFmTrackArtist:"Mia",
+    credits:[{name:"Mia",role:"primary",source:"musicbrainz",sourceId:trusted}],
+  });
+  const unknown=assessLastFmArtistIdentity(anchors,[trusted],undefined);
+  assert.deepEqual(unknown.approved,[]);
+  assert.equal(unknown.blocked[0]?.reason,"ambiguous-short-name");
+  const wrong=assessLastFmArtistIdentity(anchors,[trusted],"bbbbbbbb-1111-4111-8111-111111111111");
+  assert.equal(wrong.conflictingMbid,true);
+  assert.deepEqual(wrong.approved,[]);
+  assert.equal(wrong.blocked[0]?.reason,"conflicting-mbid");
+  const correct=assessLastFmArtistIdentity(anchors,[trusted],trusted.toUpperCase());
+  assert.equal(correct.approved.length,1);
+  assert.equal(correct.approved[0].confirmedMbid,trusted);
+  assert.deepEqual(correct.blocked,[]);
+});
+test("Léon Phal retains name fallback when no MBID is returned, except explicit conflict",()=>{
+  const anchors=resolveVerifiedArtistAnchors({
+    seedArtist:"Léon Phal & Jungle Jack",lastFmTrackArtist:"Léon Phal",
+  });
+  assert.deepEqual(assessLastFmArtistIdentity(anchors,[],undefined).approved.map(a=>a.name),["Léon Phal"]);
+  const trusted="aaaaaaaa-1111-4111-8111-111111111111";
+  const credited=resolveVerifiedArtistAnchors({
+    seedArtist:"Léon Phal",lastFmTrackArtist:"Léon Phal",
+    credits:[{name:"Léon Phal",role:"primary",source:"musicbrainz",sourceId:trusted}],
+  });
+  assert.deepEqual(assessLastFmArtistIdentity(credited,[trusted],"bbbbbbbb-1111-4111-8111-111111111111").approved,[]);
 });
