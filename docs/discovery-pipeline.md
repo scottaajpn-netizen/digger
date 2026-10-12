@@ -201,3 +201,28 @@ unchanged; strict obscurity gates, known-track exclusions and diversity
 selection apply identically. `pathShadow` in the resulting benchmark JSON
 records position changes, entrants/exits, coverage and historical verdict
 matches. A reported difference is NOT proof of improved musical taste.
+
+
+## 13. Last.fm recording-level identity guard
+
+Artist-identity validation alone does not secure Last.fm
+\`track.getSimilar(artist, track, autocorrect=1)\`: a track lookup by name
+can still refer to a different recording. If the selected seed has a
+verified MusicBrainz recording ID, its Last.fm \`track.getInfo.track.mbid\`
+is compared to it **before** trusting track tags, listener counts or the
+direct track-similarity branch.
+
+An explicit recording-ID conflict rejects the Last.fm track metadata and
+direct recommendations. For short names (up to four letters), a
+MusicBrainz-identified recording requires either the **same recording MBID**
+or a corroborated artist MBID before that Last.fm track branch is used.
+This does not require a new provider request: the existing \`track.getInfo\`
+response supplies the confirmation or its absence. A seed without a
+recording MBID (for example the rare DÜK test case) retains direct Last.fm
+track discovery rather than losing all niche recommendations.
+
+The MusicBrainz/ListenBrainz/Discogs branches and the production ranking
+formula remain unchanged. Integration regression tests cover missing,
+contradictory and matching recording IDs using the observed Mia failure
+pattern. A missing ID is uncertainty, not proof of incorrect music; a
+few more sparse results can be preferable to false confidence.
