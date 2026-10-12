@@ -34,3 +34,45 @@ export function partitionByRecordingIdentity<T extends Pick<Track, "externalIds"
   }
   return [...groups.values()];
 }
+
+
+const mbidPattern=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const validMbid=(id:string|undefined)=>id&&mbidPattern.test(id)?id.toLowerCase():undefined;
+
+/**
+ * Last.fm's autocorrected artist+track lookup is not necessarily the
+ * MusicBrainz recording requested by the user. A known recording MBID
+ * allows us to detect contradictions without a new API request.
+ *
+ * For a MusicBrainz-identified recording by a short artist name, the
+ * Last.fm track feed needs at least a matching recording MBID or a
+ * corroborated artist MBID. For a niche seed without a recording MBID
+ * (DÜK et al.), direct track-level Last.fm discovery remains possible,
+ * although uncertain artist-level catalogues are handled separately.
+ */
+export function assessLastFmRecordingIdentity(input:{
+  seedArtist:string;
+  expectedRecordingMbid?:string;
+  returnedRecordingMbid?:string;
+  artistMbidConflicts:boolean;
+  confirmedArtistMbid:boolean;
+}){
+  const expected=validMbid(input.expectedRecordingMbid);
+  const returned=validMbid(input.returnedRecordingMbid);
+  const confirmedRecording=Boolean(expected&&returned&&expected===returned);
+  const contradictsRecording=Boolean(expected&&returned&&expected!==returned);
+  const compactArtist=input.seedArtist.normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g,"").replace(/[^\p{L}\p{N}]+/gu,"");
+  const shortArtist=compactArtist.length>0&&compactArtist.length<=4;
+  const insufficientIdentity=Boolean(expected&&shortArtist&&!confirmedRecording&&!input.confirmedArtistMbid);
+  const reason=input.artistMbidConflicts?"artist-mbid-conflict" as const:
+    contradictsRecording?"recording-mbid-conflict" as const:
+    insufficientIdentity?"uncorroborated-short-name" as const:
+    "allowed" as const;
+  return {
+    reason,
+    recordingConfirmed:confirmedRecording,
+    allowTrackSimilarity:reason==="allowed",
+    allowSeedMetadata:reason==="allowed",
+  };
+}
