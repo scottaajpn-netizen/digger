@@ -194,7 +194,7 @@ test("NDJSON stream decodes split UTF-8 boundaries and ignores intermediate comp
     controller.enqueue(bytes.slice(split+9));
     controller.close();
   }});
-  const updates:typeof partial[]=[];
+  const updates:{ suggestions: Suggestion[]; warnings: string[] }[]=[];
   const result=await readSearchStream(new Response(body),value=>updates.push(value));
   assert.equal(updates[0].suggestions[0].title,"Été d'amour");
   assert.equal(updates.length,1);
