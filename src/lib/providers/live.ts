@@ -4,7 +4,7 @@ import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { cleanLastFmArtistTags } from "../music/lastfm-context";
 import { auditMusicalContext } from "../music/context-evidence";
-import { singleVerifiedIsrc } from "../discovery/recording-identity";
+import { assessLastFmRecordingIdentity, singleVerifiedIsrc } from "../discovery/recording-identity";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, lastFmTagArtistPath, listenBrainzPath } from "../discovery/paths";
@@ -43,6 +43,7 @@ type LastFmTopArtistsResponse = { topartists?: { artist?: { name?: string; mbid?
 type LastFmTrackInfoResponse = {
   track?: {
     name?: string;
+    mbid?: string;
     artist?: { name?: string; mbid?: string };
     listeners?: string;
     playcount?: string;
@@ -605,8 +606,23 @@ export async function recommendLive(
   const lastFmSeedArtistVerified = lastFmArtistAnchors.some(
     anchor => anchor.source === "lastfm-track" || Boolean(anchor.confirmedMbid),
   );
-  const suspectLastFmIdentity = artistIdentity.conflictingMbid ||
-    (namedAnchors.length>0 && lastFmArtistAnchors.length===0);
+  const recordingIdentity = assessLastFmRecordingIdentity({
+    seedArtist:seed.artist,
+    expectedRecordingMbid:seed.externalIds?.musicbrainz,
+    returnedRecordingMbid:lastFmSeedInfo?.track?.mbid,
+    artistMbidConflicts:artistIdentity.conflictingMbid,
+    confirmedArtistMbid:lastFmArtistAnchors.some(anchor=>Boolean(anchor.confirmedMbid)),
+  });
+  const suspectLastFmIdentity = !recordingIdentity.allowSeedMetadata ||
+    (namedAnchors.length>0 && lastFmArtistAnchors.length===0 &&
+      !recordingIdentity.recordingConfirmed);
+  if (!recordingIdentity.allowTrackSimilarity) {
+    notes.push(
+      "Similarités directes Last.fm ignorées : l'identité de l'enregistrement " +
+      "n'est pas suffisamment corroborée ("+recordingIdentity.reason+"). " +
+      "Les autres sources restent disponibles.",
+    );
+  }
   if (artistIdentity.blocked.length) {
     notes.push(
       "Voisinage Last.fm ignoré pour une identité d'artiste ambiguë ou contradictoire : " +
@@ -657,12 +673,14 @@ export async function recommendLive(
       "La radio d’un artiste crédité ListenBrainz est indisponible ; les autres pistes restent actives."
     ))),
     input.direction === "Labels" && release?.["label-info"]?.some(l => l.label?.id) ? optional(musicJson<{ releases?: Release[] }>("mb", "release", { label: release["label-info"]!.find(l => l.label?.id)!.label!.id, inc: "recordings+artist-credits", limit: "6" }, signal), "Le catalogue du label n’a pas pu être chargé ; les autres pistes sont proposées.") : null,
-    optional(lastFmJson<LastFmSimilarResponse>("track.getSimilar", {
-      artist: seed.artist,
-      track: seed.title,
-      autocorrect: "1",
-      limit: "40",
-    }, signal), "Les morceaux similaires Last.fm sont indisponibles ; les autres sources restent actives."),
+    recordingIdentity.allowTrackSimilarity
+      ? optional(lastFmJson<LastFmSimilarResponse>("track.getSimilar", {
+          artist: seed.artist,
+          track: seed.title,
+          autocorrect: "1",
+          limit: "40",
+        }, signal), "Les morceaux similaires Last.fm sont indisponibles ; les autres sources restent actives.")
+      : Promise.resolve(null),
     ...tagQueries.map(tag => optional(
       musicJson<Radio[]>("lb", "lb-radio/tags", { tag, pop_begin: String(popBegin), pop_end: String(popEnd), count: "35" }, signal),
       `La recherche ListenBrainz pour le genre « ${tag} » est indisponible.`
@@ -678,10 +696,12 @@ export async function recommendLive(
       return row;
     });
   });
-  // A name-only artist collision must not silence verified *track-level*
-  // discovery (e.g. DÜK). Only an explicit MBID conflict invalidates it.
-  const allLastFmSimilarTracks = artistIdentity.conflictingMbid
-    ? [] : lastFmSimilar?.similartracks?.track || [];
+  // A name-only artist collision must not silence track-level discovery
+  // for a seed with no MusicBrainz recording ID (e.g. DÜK).
+  // Confirmed recording contradictions or unverified short-name recordings
+  // from MusicBrainz cannot seed Last.fm similarities.
+  const allLastFmSimilarTracks = recordingIdentity.allowTrackSimilarity
+    ? lastFmSimilar?.similartracks?.track || [] : [];
   const directLastFmOffset = input.obscurity >= 90 ? 12 : input.obscurity >= 75 ? 6 : 0;
   const lastFmSimilarTracks = allLastFmSimilarTracks.slice(directLastFmOffset);
 
