@@ -226,3 +226,31 @@ formula remain unchanged. Integration regression tests cover missing,
 contradictory and matching recording IDs using the observed Mia failure
 pattern. A missing ID is uncertainty, not proof of incorrect music; a
 few more sparse results can be preferable to false confidence.
+
+
+## 14. Annotated "Même vibe" regression and opt-in vibe scoring
+
+A separate benchmark case, \`mia-love-me-right-vibe-80\`, records the
+five actual listening verdicts for Mia — Love Me Right in "Même vibe"
+at 80% obscurity. Coherence and personal taste stay independent:
+Thee Lakesiders = coherent / liked, Jeans Team = distant / liked,
+Polarkreis 18 = distant / neutral, LEA and 2raumwohnung = off-topic
+/ disliked. The earlier Mia "Surprends-moi" at 100% remains a
+different benchmark case rather than mixing evaluation conditions.
+
+To evaluate the isolated same-pool experiment:
+
+\`\`\`powershell
+pnpm benchmark:discovery -- --case=mia-love-me-right-vibe-80 --direction="Même vibe" --compare-vibe
+\`\`\`
+
+The optional \`vibe-aware\` strategy subtracts at most 20 points from
+Last.fm artist-catalogue and artist-hop connections (16 for tag-to-artist
+catalogue) when no independently recording-scoped fine tag overlap is
+available. It does NOT filter these candidates, rewrite evidence,
+touch direct Last.fm track similarity, or penalize Discogs paths.
+The adjustment never applies to other directions. The offline
+\`vibeShadow\` report compares the same candidates under unchanged
+obscurity gates and selection rules, including separate human coherence
+and taste counts. No extra API requests are made for the experiment.
+The production strategy remains baseline until reviewed by listening.

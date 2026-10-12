@@ -94,6 +94,12 @@ type BenchmarkRun = {
   retrievalDiagnostics?: DigResponse["retrievalDiagnostics"];
   metrics: ReturnType<typeof measureTracks>;
   humanComparison: ReturnType<typeof measureHumanComparison>;
+  vibeShadow?: {
+    summary: Omit<NonNullable<DigResponse["shadowVibeComparison"]>, "experimentTracks">;
+    metrics: ReturnType<typeof measureTracks>;
+    humanComparison: ReturnType<typeof measureHumanComparison>;
+    tracks: BenchmarkRunTrack[];
+  };
   pathShadow?: {
     summary: Omit<NonNullable<DigResponse["shadowPathComparison"]>, "experimentTracks">;
     metrics: ReturnType<typeof measureTracks>;
@@ -884,6 +890,7 @@ async function main() {
   const knownProbeEnabled = process.argv.includes("--known-probe");
   const compareScope = process.argv.includes("--compare-scope");
   const comparePaths = process.argv.includes("--compare-paths");
+  const compareVibe = process.argv.includes("--compare-vibe");
   const requestedCaseIds = optionValues("--case");
   const requestedDirections = optionValues("--direction");
 
@@ -932,6 +939,9 @@ async function main() {
   if (comparePaths) {
     console.log("[benchmark] Comparaison path-aware activée sur le même pool; aucun appel API supplémentaire.");
   }
+  if (compareVibe) {
+    console.log("[benchmark] Comparaison vibe-aware (Même vibe uniquement) sur les mêmes candidats; aucune requête API supplémentaire.");
+  }
 
   const generatedAt = new Date().toISOString();
   const runs: BenchmarkRun[] = [];
@@ -976,7 +986,7 @@ async function main() {
         const response = await recommendLive(
           input,
           AbortSignal.timeout(50_000),
-          { compareScope, comparePaths },
+          { compareScope, comparePaths, compareVibe },
         );
         const tracks = response.tracks as RuntimeRecommendation[];
         const metrics = measureTracks(tracks, benchmarkCase.obscurity);
@@ -1037,6 +1047,26 @@ async function main() {
           }
           return {
             summary,metrics:shadowMetrics,humanComparison:shadowHuman,
+            tracks:experiment.map(track=>({
+              ...compactTrack(track),
+              humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
+            })),
+          };
+        })() : undefined;
+        const vibeShadow = response.shadowVibeComparison ? (() => {
+          const shadow=response.shadowVibeComparison!;
+          const {experimentTracks,...summary}=shadow;
+          const experiment=experimentTracks as RuntimeRecommendation[];
+          const metrics=measureTracks(experiment,benchmarkCase.obscurity);
+          const compared=measureHumanComparison(benchmarkCase,experiment);
+          console.log(
+            `    vibe-shadow: baseline=${shadow.baselineCount}, expérimental=${shadow.experimentCount}, communs=${shadow.sharedCount}, entrées=${shadow.entered.length}, sorties=${shadow.dropped.length}, mouvements=${shadow.moved.length}`,
+          );
+          console.log(
+            `    vibe-shadow cohérence annotée: baseline ${JSON.stringify(humanComparison.coherenceCounts)}, expérimental ${JSON.stringify(compared.coherenceCounts)}; avis absents = inconnus`,
+          );
+          return {
+            summary,metrics,humanComparison:compared,
             tracks:experiment.map(track=>({
               ...compactTrack(track),
               humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
@@ -1160,6 +1190,7 @@ async function main() {
           humanComparison,
           ...(scopeShadow ? { scopeShadow } : {}),
           ...(pathShadow ? { pathShadow } : {}),
+          ...(vibeShadow ? { vibeShadow } : {}),
           knownReplay,
           knownProbe,
           tracks: tracks.map(track => ({
@@ -1218,6 +1249,12 @@ async function main() {
         ([relation,count])=>Array.from({length:count},()=>relation),
       )),
     ),
+    vibeShadowRuns: runs.filter(run => run.vibeShadow).length,
+    vibeShadowEntered: runs.reduce((sum,run)=>sum+(run.vibeShadow?.summary.entered.length||0),0),
+    vibeShadowDropped: runs.reduce((sum,run)=>sum+(run.vibeShadow?.summary.dropped.length||0),0),
+    vibeShadowKnownBadReappearanceCount: runs.reduce(
+      (sum,run)=>sum+(run.vibeShadow?.humanComparison.badReappearances.length||0),0,
+    ),
     pathShadowRuns: runs.filter(run => run.pathShadow).length,
     pathShadowEntered: runs.reduce((sum,run)=>sum+(run.pathShadow?.summary.entered.length||0),0),
     pathShadowDropped: runs.reduce((sum,run)=>sum+(run.pathShadow?.summary.dropped.length||0),0),
@@ -1260,6 +1297,11 @@ async function main() {
   if (comparePaths) {
     console.log(
       `[path-shadow] runs=${aggregate.pathShadowRuns} | entrées=${aggregate.pathShadowEntered} | sorties=${aggregate.pathShadowDropped} | bad historiques baseline=${aggregate.historicalBadReappearanceCount}, expérimental=${aggregate.pathShadowKnownBadReappearanceCount} (couverture des verdicts variable)`,
+    );
+  }
+  if (compareVibe) {
+    console.log(
+      `[vibe-shadow] runs=${aggregate.vibeShadowRuns} | entrées=${aggregate.vibeShadowEntered} | sorties=${aggregate.vibeShadowDropped} | bad historiques baseline=${aggregate.historicalBadReappearanceCount}, expérimental=${aggregate.vibeShadowKnownBadReappearanceCount} (couverture des verdicts variable)`,
     );
   }
   const lookup = aggregate.artistAudienceLookupCounts;

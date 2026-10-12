@@ -86,3 +86,6 @@ export function compareScopeShadow(input: ShadowInput): ScopeShadowComparison {
 export function comparePathShadow(input: ShadowInput): ScopeShadowComparison {
   return compareShadow(input,"path-aware");
 }
+export function compareVibeShadow(input: ShadowInput): ScopeShadowComparison {
+  return compareShadow(input,"vibe-aware");
+}

@@ -53,8 +53,8 @@ export type DiscoveryBenchmarkCase = {
         artist: string;
         title: string;
     };
-    direction: "surprise";
-    obscurity: 100;
+    direction: "surprise" | "same-vibe";
+    obscurity: 80 | 100;
     overall: "excellent" | "good" | "mixed" | "bad" | "regression";
     examples: BenchmarkExample[];
     observations: string[];
@@ -584,6 +584,63 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
         ],
     },
 
+    {
+        id: "mia-love-me-right-vibe-80",
+        seed: {
+            artist: "Mia",
+            title: "Love Me Right",
+        },
+        direction: "same-vibe",
+        obscurity: 80,
+        overall: "bad",
+        examples: [
+            {
+                artist: "Polarkreis 18",
+                title: "After All, He Was Sad",
+                verdict: "acceptable",
+                coherence: "weak",
+                taste: "neutral",
+                note: "Éloigné musicalement de Mia, goût : bof.",
+            },
+            {
+                artist: "Lea",
+                title: "Kennst du das",
+                verdict: "bad",
+                coherence: "none",
+                taste: "dislike",
+            },
+            {
+                artist: "Thee Lakesiders",
+                title: "Can’t Fool Me Twice",
+                verdict: "good",
+                coherence: "strong",
+                taste: "like",
+                note: "Seule recommandation pleinement pertinente et appréciée, via Discogs/Mango Hill.",
+            },
+            {
+                artist: "2raumwohnung",
+                title: "Liebe ohne Ende",
+                verdict: "bad",
+                coherence: "none",
+                taste: "dislike",
+            },
+            {
+                artist: "Jeans Team",
+                title: "Moara Mea",
+                verdict: "acceptable",
+                coherence: "weak",
+                taste: "like",
+                note: "Apprécié personnellement, mais lien musical lointain : conserver la distinction goût / cohérence.",
+            },
+        ],
+        observations: [
+            "Écoute humaine de cinq titres en mode Même vibe, obscurité 80 %.",
+            "Deux titres hors sujet, deux liens musicaux lointains, un pertinent.",
+            "Polarkreis 18, LEA, 2raumwohnung et Jeans Team sont issus du catalogue d'artistes voisins Last.fm associé au mauvais Mia.",
+            "Thee Lakesiders a été trouvé via Discogs/Mango Hill et jugé pertinent.",
+            "Le problème d'identité Last.fm a ensuite été corrigé : ne pas attribuer les différences avant/après au seul scoring vibe-aware.",
+        ],
+    },
     {
         id: "mia-love-me-right",
         seed: {
