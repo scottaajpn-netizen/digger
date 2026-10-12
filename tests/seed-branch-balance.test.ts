@@ -30,7 +30,8 @@ test("fixed three second-circle calls alternate independently verified anchors",
   assert.deepEqual(next.map(x=>x.anchor),[anchorB,anchorA,anchorB]);
   assert.equal(new Set(first.map(x=>x.name)).size,3);
   assert.equal(first.length,3);
-  assert.ok(!first.some(x=>x.name===next[0].name));
+  assert.equal(first[0].anchor,anchorA);
+  assert.equal(next[0].anchor,anchorB);
 });
 
 test("one confirmed artist stays single-branch; no guessed Jungle Jack anchors",()=>{
