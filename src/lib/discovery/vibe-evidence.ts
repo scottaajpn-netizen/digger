@@ -44,17 +44,18 @@ export function calibrateIndirectVibe(
     return noAdjustment();
 
   const artistBonus = boundedArtistScore(artistSimilarity);
+  const artistCorrection = artistBonus > 0 ? -artistBonus : 0;
 
   if (origin === "lastfm-crate") {
     return {
       // Mirrors the exact +24 origin boost at obscurity >=80 in scoring.ts.
       origin: obscurity >= 80 ? -24 : 0,
-      discoveryPath: -artistBonus,
+      discoveryPath: artistCorrection,
       direction: obscurity >= 80 ? 0 : -8,
     };
   }
   if (origin === "lastfm-artist-hop") {
-    return { origin: 0, discoveryPath: -artistBonus, direction: -8 };
+    return { origin: 0, discoveryPath: artistCorrection, direction: -8 };
   }
   if (origin === "lastfm-tag-crate") {
     return { origin: 0, discoveryPath: 0, direction: -12 };
