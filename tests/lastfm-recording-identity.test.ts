@@ -81,6 +81,10 @@ async function runMia(t: TestContext,reportedRecordingMbid?:string) {
       toptags:{tag:[{name:"german",count:100},{name:"indie",count:75}]},
     });
     if(method==="track.getSimilar"){
+      // Count only the seed lookup: obscurity 80 may legitimately query a
+      // second-circle bridge later in the same discovery pass.
+      if(u.searchParams.get("artist")!=="Mia" || u.searchParams.get("track")!=="Love Me Right")
+        return Response.json({similartracks:{track:[]}});
       similarCalls++;
       return Response.json({similartracks:{track:[
         ...Array.from({length:8},(_,index)=>({
