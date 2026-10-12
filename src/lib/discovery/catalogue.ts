@@ -9,6 +9,7 @@ const MAX_CATALOGUE_ENTRIES = 1500;
 
 export type CatalogueEntry = {
   anchorArtist: string;
+  anchorArtistMbid?: string;
   neighbourArtist: string;
   savedAt: string;
   neighbourRank: number;
@@ -32,6 +33,7 @@ type CatalogueOptions = {
   filePath?: string;
   now?: number;
   ttlMs?: number;
+  anchorMbids?: Record<string,string>;
 };
 
 let writeQueue: Promise<unknown> = Promise.resolve();
@@ -43,9 +45,10 @@ function defaultCataloguePath() {
   );
 }
 
-function entryKey(entry: Pick<CatalogueEntry, "anchorArtist" | "neighbourArtist" | "track">) {
+function entryKey(entry: Pick<CatalogueEntry, "anchorArtist" | "anchorArtistMbid" | "neighbourArtist" | "track">) {
   return [
     normalized(entry.anchorArtist),
+    entry.anchorArtistMbid?.toLowerCase() || "",
     normalized(entry.neighbourArtist),
     trackIdentity(entry.track),
   ].join("\u0000");
@@ -56,6 +59,7 @@ function validEntry(value: unknown): value is CatalogueEntry {
   const entry = value as Partial<CatalogueEntry>;
   return Boolean(
     typeof entry.anchorArtist === "string" &&
+      (entry.anchorArtistMbid === undefined || typeof entry.anchorArtistMbid === "string") &&
       typeof entry.neighbourArtist === "string" &&
       typeof entry.savedAt === "string" &&
       Number.isFinite(entry.neighbourRank) &&
@@ -122,7 +126,15 @@ export async function loadCatalogueEntries(
 
   const file = await readCatalogueFile(filePath);
   return activeEntries(file.entries, now, ttlMs)
-    .filter(entry => anchorKeys.has(normalized(entry.anchorArtist)))
+    .filter(entry => {
+      const key=normalized(entry.anchorArtist);
+      if(!anchorKeys.has(key))return false;
+      const expected=options.anchorMbids?.[key];
+      if(expected)return entry.anchorArtistMbid?.toLowerCase()===expected.toLowerCase();
+      // Legacy name-only cache can refer to another homonymous artist.
+      if(key.replace(/\s+/g,"").length<=4)return false;
+      return true;
+    })
     .sort(
       (left, right) =>
         Date.parse(right.savedAt) - Date.parse(left.savedAt) ||
