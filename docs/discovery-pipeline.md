@@ -401,3 +401,38 @@ To create a live A/B snapshot (provider credentials required):
 The historical corpus currently has just one specifically rated Même vibe seed
 at obscurity 80%, Mia — Love Me Right. The expected responsible outcome
 remains insufficient-evidence until other same-mode human reviews exist.
+
+## 20. Multi-artist seed coverage and empty seed field
+
+The main seed search now starts empty, with its existing autocomplete and
+submit validation unchanged. Clicking a recommendation to explore it still
+sets the selected seed explicitly.
+
+When Last.fm catalogue expansion is available, second-circle exploration
+now divides its existing budget of 3 bridge lookups and up to 6 deeper
+artists between the independently verified seed artists. Sessions rotate
+the initial anchor. No additional API requests, no guessed collaborators
+and no extra Last.fm aliases are introduced.
+
+The Surprise MMR selector gently discourages repeated use of the same
+seed-artist root only when **at least two distinct verified roots** already
+have eligible candidates. This is a soft diversity penalty, not a forced
+50/50 split, and does not exempt candidates from strict audience gates.
+
+The live response includes retrievalDiagnostics.anchorCoverage with
+per-participant `verified`, `generated`, `eligible` and `selected` counts.
+An unverified participant is displayed with zero Last.fm branch coverage
+rather than silently pretending it was searched. The main UI exposes
+these counts in the collapsible 'Branches Last.fm du morceau' section.
+
+Important: all counts concern only Last.fm artist-catalogue and artist-hop
+routes. A zero value does not mean the participant is absent from other
+providers or that it cannot be discovered via labels or recording similarity.
+Some candidate identities merge across providers, in which case the
+surviving route determines its selected anchor.
+
+For Léon Phal & Jungle Jack — Pleine Forêt, inspect the diagnostics to
+tell apart (a) Jungle Jack identity not verified, (b) no candidate
+generated, (c) eliminated by audience/obscurity, and (d) generated and
+eligible but not picked by ranking. This diagnostic is actionable without
+guessing musical similarity from an artist chain.

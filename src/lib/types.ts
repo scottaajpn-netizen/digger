@@ -234,6 +234,15 @@ export interface RetrievalDiagnostics {
   strictGateRejected: RetrievalStageDiagnostics;
   selected: RetrievalStageDiagnostics;
   branchAnalysis?: BranchDiagnostics;
+  /** Last.fm second-circle coverage by verified seed participant. Missing
+   *  verification is explicit; no guessed artist anchor is searched. */
+  anchorCoverage?: Array<{
+    anchor: string;
+    verified: boolean;
+    generated: number;
+    eligible: number;
+    selected: number;
+  }>;
 }
 export type ShadowSelectionTrack = {
   id: string; artist: string; title: string; position: number; score: number;
