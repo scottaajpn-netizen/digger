@@ -42,6 +42,20 @@ export type RankedCandidate = Candidate & {
   scoreBreakdown: ScoreBreakdown;
   evidence?: CandidateEvidence;
 };
+/** Source of an independently verified seed-artist Last.fm traversal.
+ * Contextual or direct track similarity does not claim a seed anchor.
+ */
+export function discoverySeedAnchor(
+  track: Pick<Candidate, "origin" | "retrieval">,
+): string | null {
+  const anchor = track.origin === "lastfm-artist-hop"
+    ? track.retrieval?.artistHop?.anchorArtist
+    : track.origin === "lastfm-crate"
+      ? track.retrieval?.artistRelation?.anchorArtist
+      : undefined;
+  return anchor?.trim() || null;
+}
+
 
 export function obscurityFromLastFmListeners(listeners: number) {
   if (!Number.isFinite(listeners) || listeners <= 0) return 90;
@@ -555,6 +569,22 @@ export function selectMmrRecommendations(
 
   const selected: RankedCandidate[] = [];
   const lambda = Math.max(0, Math.min(1, options.lambda ?? 0.68));
+  // Only rebalance branches if two independently verified roots have
+  // survived the same obscurity/evidence gates. Never invent a second
+  // branch or rescue a rejected track.
+  const eligibleSeedAnchors = new Set(ordered
+    .map(track => normalized(discoverySeedAnchor(track) || ""))
+    .filter(Boolean));
+  const balanceSeedAnchors = eligibleSeedAnchors.size >= 2;
+  const repeatedAnchorPenalty = (track: RankedCandidate) => {
+    if (!balanceSeedAnchors) return 0;
+    const anchor = normalized(discoverySeedAnchor(track) || "");
+    if (!anchor) return 0;
+    const alreadySelected = selected.filter(chosen =>
+      normalized(discoverySeedAnchor(chosen) || "") === anchor,
+    ).length;
+    return Math.min(0.22, alreadySelected * 0.12);
+  };
 
   while (selected.length < limit) {
     let available = ordered.filter(track => {
@@ -591,9 +621,11 @@ export function selectMmrRecommendations(
           )
         : 0;
       const mmrA =
-        lambda * (quality.get(a.id) ?? 0) - (1 - lambda) * redundancyA;
+        lambda * (quality.get(a.id) ?? 0) -
+        (1 - lambda) * (redundancyA + repeatedAnchorPenalty(a));
       const mmrB =
-        lambda * (quality.get(b.id) ?? 0) - (1 - lambda) * redundancyB;
+        lambda * (quality.get(b.id) ?? 0) -
+        (1 - lambda) * (redundancyB + repeatedAnchorPenalty(b));
 
       return (
         mmrB - mmrA ||
