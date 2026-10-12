@@ -235,5 +235,29 @@ export interface RetrievalDiagnostics {
   selected: RetrievalStageDiagnostics;
   branchAnalysis?: BranchDiagnostics;
 }
-export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics }
+export type ShadowSelectionTrack = {
+  id: string; artist: string; title: string; position: number; score: number;
+  overlapScope?: MusicalOverlapScope;
+};
+export type ShadowSelectionMove = {
+  id: string; artist: string; title: string; baselinePosition: number;
+  experimentPosition: number; baselineScore: number; experimentScore: number;
+  overlapScope?: MusicalOverlapScope;
+};
+export interface ScopeShadowComparison {
+  strategy: "scope-aware";
+  // Exactly the same enriched candidate pool, API calls and audience lookups.
+  rankedCandidateCount: number;
+  baselineEligibleCount: number;
+  experimentEligibleCount: number;
+  baselineCount: number;
+  experimentCount: number;
+  sharedCount: number;
+  entered: ShadowSelectionTrack[];
+  dropped: ShadowSelectionTrack[];
+  moved: ShadowSelectionMove[];
+  // Full rows are used only for offline human-verdict comparison.
+  experimentTracks: Recommendation[];
+}
+export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics; shadowComparison?: ScopeShadowComparison }
 export interface MusicProvider { id: string; search(query: string): Promise<Track[]>; candidates(seed: Track): Promise<Track[]> }

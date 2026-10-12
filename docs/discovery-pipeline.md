@@ -100,3 +100,28 @@ activates the experiment. Discogs editorial path relevance, direction
 bonuses and the evidence tier are unchanged. Automated tests verify both
 strategies and their score breakdown; an actual improvement in listening
 quality must still be measured with the human benchmark.
+
+
+## 8. Offline same-pool ranking comparison
+
+To compare the current scoring with the candidate release-scope adjustment:
+
+```powershell
+pnpm benchmark:discovery -- --case=mia-love-me-right,qendresa-good-love,leon-phal-jungle-jack-pleine-foret --direction=Surprends-moi --compare-scope
+```
+
+The command makes one normal discovery request per seed and direction, then
+scores the *same final enriched candidate pool* twice in memory. It applies
+the same obscurity gate, mode-specific selection, artist constraints and
+known-track exclusions. No second provider/API run is made for the shadow.
+
+Each JSON run now includes `scopeShadow`: shared results, entrants,
+exits, position changes, candidate counts, separate standard metrics,
+and separate historical human-verdict matches. Unrated tracks are
+reported as **unknown**, not as good discoveries.
+
+**Caveat**: artist-audience enrichment still uses the baseline shortlist.
+An experiment-only entrant may lack artist-audience metadata; inspect the
+shadow's unknown-audience metrics before interpreting a result. This is
+an offline diagnostic, not a claim of better recommendations. The
+production ranking continues to default to baseline.

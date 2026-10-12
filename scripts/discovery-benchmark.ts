@@ -93,6 +93,12 @@ type BenchmarkRun = {
   retrievalDiagnostics?: DigResponse["retrievalDiagnostics"];
   metrics: ReturnType<typeof measureTracks>;
   humanComparison: ReturnType<typeof measureHumanComparison>;
+  scopeShadow?: {
+    summary: Omit<NonNullable<DigResponse["shadowComparison"]>, "experimentTracks">;
+    metrics: ReturnType<typeof measureTracks>;
+    humanComparison: ReturnType<typeof measureHumanComparison>;
+    tracks: BenchmarkRunTrack[];
+  };
   knownReplay?: KnownReplaySummary;
   knownProbe?: KnownReplaySummary;
   tracks: BenchmarkRunTrack[];
@@ -849,6 +855,7 @@ async function main() {
   const full = process.argv.includes("--full");
   const knownReplayEnabled = process.argv.includes("--known-replay");
   const knownProbeEnabled = process.argv.includes("--known-probe");
+  const compareScope = process.argv.includes("--compare-scope");
   const requestedCaseIds = optionValues("--case");
   const requestedDirections = optionValues("--direction");
 
@@ -888,8 +895,11 @@ async function main() {
   );
   if (!full) {
     console.log(
-      "[benchmark] Profil par défaut: Mia + Midland + Anri × Même vibe / Rabbit hole / Surprends-moi. Utilise --full pour le corpus 10 × 5.",
+      "[benchmark] Profil par défaut: Mia + Midland + Anri × Même vibe / Rabbit hole / Surprends-moi. Utilise --full pour les 11 seeds × 5 directions.",
     );
+  }
+  if (compareScope) {
+    console.log("[benchmark] Comparaison scope-aware activée sur le même pool; aucun appel API supplémentaire.");
   }
 
   const generatedAt = new Date().toISOString();
@@ -935,6 +945,7 @@ async function main() {
         const response = await recommendLive(
           input,
           AbortSignal.timeout(50_000),
+          { compareScope },
         );
         const tracks = response.tracks as RuntimeRecommendation[];
         const metrics = measureTracks(tracks, benchmarkCase.obscurity);
@@ -945,6 +956,34 @@ async function main() {
 
         printRun(benchmarkCase, direction, tracks, metrics);
         printRetrievalDiagnostics(response.retrievalDiagnostics);
+        const shadow = response.shadowComparison;
+        const scopeShadow = shadow ? (() => {
+          const { experimentTracks, ...summary } = shadow;
+          const experiment = experimentTracks as RuntimeRecommendation[];
+          const shadowMetrics = measureTracks(experiment, benchmarkCase.obscurity);
+          const shadowHuman = measureHumanComparison(benchmarkCase, experiment);
+          console.log(
+            `    scope-shadow: baseline=${shadow.baselineCount}, expérimentale=${shadow.experimentCount}, communes=${shadow.sharedCount}, entrées=${shadow.entered.length}, sorties=${shadow.dropped.length}, mouvements=${shadow.moved.length}`,
+          );
+          console.log(
+            `    scope-shadow humain: baseline bad=${humanComparison.badCount}/${humanComparison.matchedCount} étiquetés, expérimental bad=${shadowHuman.badCount}/${shadowHuman.matchedCount} étiquetés (non étiquetés = inconnus)`,
+          );
+          if (shadow.entered.length || shadow.dropped.length) {
+            console.log(
+              `    scope-shadow nouveaux: ${shadow.entered.map(x => `${x.artist} — ${x.title} [${x.overlapScope || "?"}]`).join(" | ") || "aucun"}`,
+            );
+            console.log(
+              `    scope-shadow sortants: ${shadow.dropped.map(x => `${x.artist} — ${x.title} [${x.overlapScope || "?"}]`).join(" | ") || "aucun"}`,
+            );
+          }
+          return {
+            summary,metrics:shadowMetrics,humanComparison:shadowHuman,
+            tracks:experiment.map(track => ({
+              ...compactTrack(track),
+              humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
+            })),
+          };
+        })() : undefined;
         console.log(
           `    humain: match=${humanComparison.matchedCount}/${tracks.length} | pertinents=${humanComparison.relevantCount} | positifs=${humanComparison.positiveCount} | bad=${humanComparison.badCount}`,
         );
@@ -1060,6 +1099,7 @@ async function main() {
           retrievalDiagnostics: response.retrievalDiagnostics,
           metrics,
           humanComparison,
+          ...(scopeShadow ? { scopeShadow } : {}),
           knownReplay,
           knownProbe,
           tracks: tracks.map(track => ({
@@ -1094,6 +1134,12 @@ async function main() {
         total + run.humanComparison.badReappearances.length,
       0,
     ),
+    scopeShadowRuns: runs.filter(run => run.scopeShadow).length,
+    scopeShadowEntered: runs.reduce((sum, run) => sum + (run.scopeShadow?.summary.entered.length || 0), 0),
+    scopeShadowDropped: runs.reduce((sum, run) => sum + (run.scopeShadow?.summary.dropped.length || 0), 0),
+    scopeShadowKnownBadReappearanceCount: runs.reduce(
+      (sum, run) => sum + (run.scopeShadow?.humanComparison.badReappearances.length || 0), 0,
+    ),
     strictArtistAudienceLeakCount: runs.reduce(
       (total, run) =>
         total + run.metrics.strictArtistAudienceLeakCount,
@@ -1117,6 +1163,11 @@ async function main() {
   console.log(
     `\n[diagnostic] scores<0=${aggregate.negativeScoreCount} | anciens bad revenus=${aggregate.historicalBadReappearanceCount} | fuites audience artiste strictes=${aggregate.strictArtistAudienceLeakCount} | piste connue mais audience artiste inconnue=${aggregate.trackAudienceKnownArtistAudienceUnknownCount}`,
   );
+  if (compareScope) {
+    console.log(
+      `[scope-shadow] runs=${aggregate.scopeShadowRuns} | entrées=${aggregate.scopeShadowEntered} | sorties=${aggregate.scopeShadowDropped} | bad historiques baseline=${aggregate.historicalBadReappearanceCount}, expérimental=${aggregate.scopeShadowKnownBadReappearanceCount} (couverture des verdicts variable)`,
+    );
+  }
   const lookup = aggregate.artistAudienceLookupCounts;
   console.log(
     `[audience-artiste] mbid=${lookup.mbid || 0} | name=${lookup.name || 0} | fallback=${lookup["name-fallback"] || 0} | partial=${lookup.partial || 0} | failed=${lookup.failed || 0} | non ciblé=${lookup["not-targeted"] || 0} | unset=${lookup.unset || 0}`,
