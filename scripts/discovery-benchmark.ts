@@ -77,6 +77,8 @@ type KnownReplaySummary = {
 type BenchmarkRun = {
   caseId: string;
   historicalOverall: DiscoveryBenchmarkCase["overall"];
+  historicalDirection: DiscoveryBenchmarkCase["direction"];
+  historicalObscurity: DiscoveryBenchmarkCase["obscurity"];
   historicalObservations: string[];
   seed: DiscoveryBenchmarkCase["seed"];
   seedResolution: {
@@ -1351,6 +1353,8 @@ async function main() {
         runs.push({
           caseId: benchmarkCase.id,
           historicalOverall: benchmarkCase.overall,
+          historicalDirection: benchmarkCase.direction,
+          historicalObscurity: benchmarkCase.obscurity,
           historicalObservations: benchmarkCase.observations,
           seed: benchmarkCase.seed,
           seedResolution: {
