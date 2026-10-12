@@ -104,3 +104,19 @@ export function auditDiscoveryPath(track: AuditedTrack): PathReliabilityAudit {
     unclassifiedSteps: edges.filter(edge=>edge.support==="unclassified").length,
   };
 }
+
+
+/**
+ * Opt-in offline scoring experiment. Discount only a positive discovery path
+ * bonus (at most 8 points) when its semantic type can overstate sonic
+ * similarity. We do not filter artists, overwrite evidence or touch
+ * Discogs editorial/origin bonuses. No network access is performed.
+ */
+export function cautiousPathIncentive(track: AuditedTrack, baseAdjustment: number): number {
+  if (baseAdjustment<=0) return baseAdjustment;
+  const audit=auditDiscoveryPath(track);
+  const indirect=audit.relation==="artist-similarity-chain" ||
+    audit.relation==="editorial-context" ||
+    audit.flags.includes("discogs-link-labeled-editorial");
+  return indirect ? baseAdjustment-Math.min(8,baseAdjustment*0.5) : baseAdjustment;
+}

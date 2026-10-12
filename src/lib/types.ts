@@ -245,7 +245,7 @@ export type ShadowSelectionMove = {
   overlapScope?: MusicalOverlapScope;
 };
 export interface ScopeShadowComparison {
-  strategy: "scope-aware";
+  strategy: "scope-aware" | "path-aware";
   // Exactly the same enriched candidate pool, API calls and audience lookups.
   rankedCandidateCount: number;
   baselineEligibleCount: number;

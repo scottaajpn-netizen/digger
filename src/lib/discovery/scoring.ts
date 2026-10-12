@@ -3,6 +3,7 @@ import { auditMusicalContext, classifyMusicalOverlap, cautiousReleaseSimilarity,
 import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
 import { assessCandidateEvidence } from "./evidence";
+import { cautiousPathIncentive } from "./path-reliability";
 import { discoveryPathPreferenceKey } from "./paths";
 import { containsArtistParticipant } from "./artist-anchors";
 import {
@@ -73,7 +74,7 @@ type RankDiscoveryInput = {
   input: DigRequest;
   seedParticipantKeys: Set<string>;
   // Pure shadow experiment, never set by the production endpoint.
-  strategy?: "baseline" | "scope-aware";
+  strategy?: "baseline" | "scope-aware" | "path-aware";
 };
 
 export type CandidateEligibilityFailure =
@@ -285,8 +286,10 @@ export function rankDiscoveryCandidates({
         scoreBreakdown.origin += 24;
       }
 
-      const discoveryPathAdjustment =
-        discoveryPathScoreAdjustment(track.discoveryPath, input.direction);
+      const basePathAdjustment = discoveryPathScoreAdjustment(track.discoveryPath,input.direction);
+      const discoveryPathAdjustment = strategy==="path-aware"
+        ? cautiousPathIncentive({...track,evidence},basePathAdjustment)
+        : basePathAdjustment;
       const artistRelationAdjustment =
         track.retrieval?.provider === "lastfm" &&
         track.retrieval.artistRelation?.similarity !== undefined

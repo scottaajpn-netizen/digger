@@ -24,14 +24,14 @@ export type ShadowInput = {
  * the baseline; an experiment-only candidate may therefore lack audience
  * metadata. That limitation is visible in the benchmark's metrics.
  */
-export function compareScopeShadow(input: ShadowInput): ScopeShadowComparison {
+function compareShadow(input: ShadowInput, strategy: ScopeShadowComparison["strategy"]): ScopeShadowComparison {
   const experimentalRanked = rankDiscoveryCandidates({
     pool: input.pool,
     seed: input.seed,
     seedProfile: input.seedProfile,
     input: input.input,
     seedParticipantKeys: input.seedParticipantKeys,
-    strategy: "scope-aware",
+    strategy,
   });
   const eligible = (tracks: RankedCandidate[]) => input.input.obscurity >= 90
     ? tracks.filter(track => track.origin !== "lastfm-tag" &&
@@ -68,7 +68,7 @@ export function compareScopeShadow(input: ShadowInput): ScopeShadowComparison {
     }];
   });
   return {
-    strategy: "scope-aware",
+    strategy,
     rankedCandidateCount: experimentalRanked.length,
     baselineEligibleCount: baselineEligible.length,
     experimentEligibleCount: experimentEligible.length,
@@ -78,4 +78,11 @@ export function compareScopeShadow(input: ShadowInput): ScopeShadowComparison {
     entered, dropped, moved,
     experimentTracks: experimental.map(({ relevance: _relevance, feedbackIds: _feedbackIds, ...track }) => track),
   };
+}
+
+export function compareScopeShadow(input: ShadowInput): ScopeShadowComparison {
+  return compareShadow(input,"scope-aware");
+}
+export function comparePathShadow(input: ShadowInput): ScopeShadowComparison {
+  return compareShadow(input,"path-aware");
 }
