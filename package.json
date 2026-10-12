@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test --test-isolation=none .test-build/tests/*.test.js",
     "benchmark:discovery": "tsc -p tsconfig.benchmark.json && node .benchmark-build/scripts/discovery-benchmark.js",
+    "report:vibe": "tsc -p tsconfig.benchmark.json && node .benchmark-build/scripts/vibe-decision-report.js",
     "report:holdout": "tsc -p tsconfig.benchmark.json && node .benchmark-build/scripts/holdout-report.js"
   },
   "dependencies": {
