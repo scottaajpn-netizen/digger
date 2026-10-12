@@ -2,6 +2,13 @@ import { discogsJson as strictDiscogsJson } from "./discogs-http";
 export class MusicServiceError extends Error {
   constructor(message: string, public status = 502) { super(message); }
 }
+/** Preserve only the Last.fm numeric API code in user-facing diagnostics.
+ * Avoid printing API keys, URLs or arbitrary upstream error messages. */
+export class LastFmApiError extends MusicServiceError {
+  constructor(public readonly apiCode: number, message: string) {
+    super(message,503);
+  }
+}
 const cache = new Map<string, { data: unknown; expires: number }>();
 let nextMusicBrainzRequest = 0;
 const delay = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -91,7 +98,7 @@ export async function lastFmJson<T>(method: string, params: Record<string, strin
     if (!response.ok) throw new MusicServiceError(`Last.fm est momentanément indisponible (${response.status}).`, 503);
     const data = await response.json() as { error?: number; message?: string } & T;
     if (data && typeof data === "object" && "error" in data && data.error) {
-      throw new MusicServiceError(data.message || "Last.fm a refusé la requête.", 503);
+      throw new LastFmApiError(Number(data.error),data.message || "Last.fm a refusé la requête.");
     }
 
     if (cache.size >= 300) cache.delete(cache.keys().next().value!);
