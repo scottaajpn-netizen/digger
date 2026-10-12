@@ -4,7 +4,7 @@ import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
 import { assessCandidateEvidence } from "./evidence";
 import { cautiousPathIncentive } from "./path-reliability";
-import { indirectVibeAdjustment } from "./vibe-evidence";
+import { calibrateIndirectVibe } from "./vibe-evidence";
 import { discoveryPathPreferenceKey } from "./paths";
 import { containsArtistParticipant } from "./artist-anchors";
 import {
@@ -361,15 +361,23 @@ export function rankDiscoveryCandidates({
       }
 
       if (input.direction === "Même vibe") {
-        // Same-pool shadow only: preserve every candidate, its existing
-        // evidence tier and all other modes. Artist links are not proof that
-        // the recordings share a sound; verified recording tags exempt them.
+        // Same-pool shadow experiment only. Remove the precise positive
+        // source/artist-neighbour bonuses that can overstate track similarity,
+        // preserving user feedback and independently scoped recording overlap.
         if (strategy === "vibe-aware") {
-          const contextAdjustment = indirectVibeAdjustment(
-            input.direction,track.origin,overlapScope,
+          const calibration = calibrateIndirectVibe(
+            input.direction,
+            track.origin,
+            overlapScope,
+            input.obscurity,
+            track.retrieval?.provider === "lastfm"
+              ? track.retrieval.artistRelation?.similarity : undefined,
           );
-          score += contextAdjustment;
-          scoreBreakdown.direction += contextAdjustment;
+          score += calibration.origin + calibration.discoveryPath +
+            calibration.direction;
+          scoreBreakdown.origin += calibration.origin;
+          scoreBreakdown.discoveryPath += calibration.discoveryPath;
+          scoreBreakdown.direction += calibration.direction;
         }
         const vibeSimilarityBonus = scoringSimilarity * 35;
         score += vibeSimilarityBonus;
