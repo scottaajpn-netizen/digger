@@ -10,9 +10,9 @@ import { lastFmJson, LastFmApiError } from "../src/lib/providers/http";
 import { recommendLive } from "../src/lib/providers/live";
 import type { DigRequest } from "../src/lib/types";
 
-const recordingId="aaaaaaaa-1111-4111-8111-111111111111";
-const leonId="bbbbbbbb-1111-4111-8111-111111111111";
-const jungleId="cccccccc-1111-4111-8111-111111111111";
+const recordingId="7a7a7a7a-1111-4111-8111-111111111111";
+const leonId="8b8b8b8b-1111-4111-8111-111111111111";
+const jungleId="9c9c9c9c-1111-4111-8111-111111111111";
 
 test("independent MusicBrainz IDs can authorize both collaborator branches without Last.fm track.getInfo",()=>{
   const anchors=resolveVerifiedArtistAnchors({
@@ -139,6 +139,7 @@ test("if Last.fm has no seed track, structured MBIDs still request both artists 
     feedback:{},session:0,
   };
   const report=await recommendLive(input,AbortSignal.timeout(30000));
+  assert.equal(report.seed.artist,"Léon Phal feat. Jungle Jack");
   assert.ok(seedTrackInfo>0);
   assert.ok(requestedMbids.includes(leonId));
   assert.ok(requestedMbids.includes(jungleId));
