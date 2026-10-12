@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { loadEnvFile } from "node:process";
 
 import { normalized } from "../src/lib/discovery/ranking";
+import { auditDiscoveryPath } from "../src/lib/discovery/path-reliability";
 import { findCredibleTrackMatch, recommendLive, searchLive } from "../src/lib/providers/live";
 import {
   directions,
@@ -93,6 +94,18 @@ type BenchmarkRun = {
   retrievalDiagnostics?: DigResponse["retrievalDiagnostics"];
   metrics: ReturnType<typeof measureTracks>;
   humanComparison: ReturnType<typeof measureHumanComparison>;
+  pathShadow?: {
+    summary: Omit<NonNullable<DigResponse["shadowPathComparison"]>, "experimentTracks">;
+    metrics: ReturnType<typeof measureTracks>;
+    humanComparison: ReturnType<typeof measureHumanComparison>;
+    tracks: BenchmarkRunTrack[];
+  };
+  scopeShadow?: {
+    summary: Omit<NonNullable<DigResponse["shadowComparison"]>, "experimentTracks">;
+    metrics: ReturnType<typeof measureTracks>;
+    humanComparison: ReturnType<typeof measureHumanComparison>;
+    tracks: BenchmarkRunTrack[];
+  };
   knownReplay?: KnownReplaySummary;
   knownProbe?: KnownReplaySummary;
   tracks: BenchmarkRunTrack[];
@@ -198,6 +211,11 @@ function measureTracks(
   const strongEvidenceCount = tracks.filter(
     track => track.evidence?.tier === "strong",
   ).length;
+  const pathAudits = tracks.map(auditDiscoveryPath);
+  const pathRelationCounts = countBy(pathAudits.map(audit => audit.relation));
+  const pathReliabilityFlags = countBy(pathAudits.flatMap(audit => audit.flags));
+  const pathEdgeRelations = countBy(pathAudits.flatMap(audit => audit.edges.map(edge=>edge.relation)));
+  const pathEdgeSupport = countBy(pathAudits.flatMap(audit => audit.edges.map(edge=>edge.support)));
   const unknownAudienceCount = tracks.filter(
     track =>
       track.lastfmListeners === undefined &&
@@ -251,6 +269,20 @@ function measureTracks(
       tracks.length === 0 ? 0 : evidenceCount / tracks.length,
     strongEvidenceRatio:
       tracks.length === 0 ? 0 : strongEvidenceCount / tracks.length,
+    pathRelationCounts,
+    pathReliabilityFlags,
+    pathEdgeRelations,
+    pathEdgeSupport,
+    directTrackAssociationCount: pathAudits.reduce((sum,audit)=>sum+audit.directTrackAssociations,0),
+    contextualStepCount: pathAudits.reduce((sum,audit)=>sum+audit.contextualSteps,0),
+    unclassifiedStepCount: pathAudits.reduce((sum,audit)=>sum+audit.unclassifiedSteps,0),
+    flaggedPathCount: pathAudits.filter(audit => audit.flags.length > 0).length,
+    metadataScopeCounts: countBy(
+      tracks.map(track => track.analysis?.overlapScope || "not-measured"),
+    ),
+    releaseContextCount: tracks.filter(
+      track => track.analysis?.overlapScope === "release-context",
+    ).length,
     unknownAudienceCount,
     negativeScoreCount,
     negativeScoreRatio:
@@ -671,6 +703,9 @@ function compactTrack(track: RuntimeRecommendation) {
     genres: track.analysis?.genres,
     subgenres: track.analysis?.subgenres,
     traits: track.analysis?.traits,
+    metadataOverlapScope: track.analysis?.overlapScope,
+    metadataEvidence: track.analysis?.metadataEvidence,
+    pathAudit: auditDiscoveryPath(track),
     discogsGenres: track.discogs?.genres,
     discogsStyles: track.discogs?.styles,
     label: track.label,
@@ -795,6 +830,17 @@ function printRun(
   console.log(
     `tracks=${metrics.trackCount} | artistes=${metrics.uniqueArtistCount} | répétitions=${metrics.repeatedArtistSlots} | branches=${metrics.branchCount} | branche dominante=${(metrics.dominantBranchRatio * 100).toFixed(0)}% | preuve=${(metrics.evidenceCoverageRatio * 100).toFixed(0)}% | scores<0=${metrics.negativeScoreCount} | audience artiste inconnue=${metrics.artistAudienceUnknownCount}`,
   );
+  console.log(
+    "    métadonnées partagées: " +
+    formatOriginCounts(metrics.metadataScopeCounts) +
+    " | sortie/compilation: " + metrics.releaseContextCount + "/" + metrics.trackCount,
+  );
+  console.log(
+    "    chemins: " + formatOriginCounts(metrics.pathRelationCounts) +
+    " | signaux à examiner: " + metrics.flaggedPathCount + "/" + metrics.trackCount +
+    " [" + formatOriginCounts(metrics.pathReliabilityFlags) + "]" +
+    " | maillons: " + formatOriginCounts(metrics.pathEdgeSupport),
+  );
   if (metrics.artistAudienceUnknownCount > 0) {
     const lookup = metrics.artistAudienceLookupCounts;
     console.log(
@@ -811,7 +857,7 @@ function printRun(
       : "none";
 
     console.log(
-      `${String(index + 1).padStart(2, " ")}. ${track.artist} — ${track.title} | score=${formatNumber(track.score)} | branch=${branchKey(track)} | evidence=${evidence} | path=${path} | obsc=${formatNumber(track.obscurity)}`,
+      `${String(index + 1).padStart(2, " ")}. ${track.artist} — ${track.title} | score=${formatNumber(track.score)} | branch=${branchKey(track)} | evidence=${evidence} | path=${path} | obsc=${formatNumber(track.obscurity)} | tags=${track.analysis?.overlapScope || "not-measured"}`,
     );
 
     if (track.scoreBreakdown) {
@@ -836,6 +882,8 @@ async function main() {
   const full = process.argv.includes("--full");
   const knownReplayEnabled = process.argv.includes("--known-replay");
   const knownProbeEnabled = process.argv.includes("--known-probe");
+  const compareScope = process.argv.includes("--compare-scope");
+  const comparePaths = process.argv.includes("--compare-paths");
   const requestedCaseIds = optionValues("--case");
   const requestedDirections = optionValues("--direction");
 
@@ -875,8 +923,14 @@ async function main() {
   );
   if (!full) {
     console.log(
-      "[benchmark] Profil par défaut: Mia + Midland + Anri × Même vibe / Rabbit hole / Surprends-moi. Utilise --full pour le corpus 10 × 5.",
+      "[benchmark] Profil par défaut: Mia + Midland + Anri × Même vibe / Rabbit hole / Surprends-moi. Utilise --full pour les 11 seeds × 5 directions.",
     );
+  }
+  if (compareScope) {
+    console.log("[benchmark] Comparaison scope-aware activée sur le même pool; aucun appel API supplémentaire.");
+  }
+  if (comparePaths) {
+    console.log("[benchmark] Comparaison path-aware activée sur le même pool; aucun appel API supplémentaire.");
   }
 
   const generatedAt = new Date().toISOString();
@@ -922,6 +976,7 @@ async function main() {
         const response = await recommendLive(
           input,
           AbortSignal.timeout(50_000),
+          { compareScope, comparePaths },
         );
         const tracks = response.tracks as RuntimeRecommendation[];
         const metrics = measureTracks(tracks, benchmarkCase.obscurity);
@@ -932,6 +987,62 @@ async function main() {
 
         printRun(benchmarkCase, direction, tracks, metrics);
         printRetrievalDiagnostics(response.retrievalDiagnostics);
+        const shadow = response.shadowComparison;
+        const scopeShadow = shadow ? (() => {
+          const { experimentTracks, ...summary } = shadow;
+          const experiment = experimentTracks as RuntimeRecommendation[];
+          const shadowMetrics = measureTracks(experiment, benchmarkCase.obscurity);
+          const shadowHuman = measureHumanComparison(benchmarkCase, experiment);
+          console.log(
+            `    scope-shadow: baseline=${shadow.baselineCount}, expérimentale=${shadow.experimentCount}, communes=${shadow.sharedCount}, entrées=${shadow.entered.length}, sorties=${shadow.dropped.length}, mouvements=${shadow.moved.length}`,
+          );
+          console.log(
+            `    scope-shadow humain: baseline bad=${humanComparison.badCount}/${humanComparison.matchedCount} étiquetés, expérimental bad=${shadowHuman.badCount}/${shadowHuman.matchedCount} étiquetés (non étiquetés = inconnus)`,
+          );
+          if (shadow.entered.length || shadow.dropped.length) {
+            console.log(
+              `    scope-shadow nouveaux: ${shadow.entered.map(x => `${x.artist} — ${x.title} [${x.overlapScope || "?"}]`).join(" | ") || "aucun"}`,
+            );
+            console.log(
+              `    scope-shadow sortants: ${shadow.dropped.map(x => `${x.artist} — ${x.title} [${x.overlapScope || "?"}]`).join(" | ") || "aucun"}`,
+            );
+          }
+          return {
+            summary,metrics:shadowMetrics,humanComparison:shadowHuman,
+            tracks:experiment.map(track => ({
+              ...compactTrack(track),
+              humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
+            })),
+          };
+        })() : undefined;
+        const pathShadow = response.shadowPathComparison ? (() => {
+          const shadow = response.shadowPathComparison!;
+          const {experimentTracks,...summary} = shadow;
+          const experiment = experimentTracks as RuntimeRecommendation[];
+          const shadowMetrics = measureTracks(experiment,benchmarkCase.obscurity);
+          const shadowHuman = measureHumanComparison(benchmarkCase,experiment);
+          console.log(
+            `    path-shadow: baseline=${shadow.baselineCount}, expérimental=${shadow.experimentCount}, communs=${shadow.sharedCount}, entrées=${shadow.entered.length}, sorties=${shadow.dropped.length}, mouvements=${shadow.moved.length}`,
+          );
+          console.log(
+            `    path-shadow humain: baseline bad=${humanComparison.badCount}/${humanComparison.matchedCount} évalués, expérimental bad=${shadowHuman.badCount}/${shadowHuman.matchedCount} évalués (non évalués = inconnus)`,
+          );
+          if (shadow.entered.length || shadow.dropped.length) {
+            console.log(
+              `    path-shadow nouveaux: ${shadow.entered.map(x=>`${x.artist} — ${x.title}`).join(" | ") || "aucun"}`,
+            );
+            console.log(
+              `    path-shadow sortants: ${shadow.dropped.map(x=>`${x.artist} — ${x.title}`).join(" | ") || "aucun"}`,
+            );
+          }
+          return {
+            summary,metrics:shadowMetrics,humanComparison:shadowHuman,
+            tracks:experiment.map(track=>({
+              ...compactTrack(track),
+              humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
+            })),
+          };
+        })() : undefined;
         console.log(
           `    humain: match=${humanComparison.matchedCount}/${tracks.length} | pertinents=${humanComparison.relevantCount} | positifs=${humanComparison.positiveCount} | bad=${humanComparison.badCount}`,
         );
@@ -1047,6 +1158,8 @@ async function main() {
           retrievalDiagnostics: response.retrievalDiagnostics,
           metrics,
           humanComparison,
+          ...(scopeShadow ? { scopeShadow } : {}),
+          ...(pathShadow ? { pathShadow } : {}),
           knownReplay,
           knownProbe,
           tracks: tracks.map(track => ({
@@ -1081,6 +1194,41 @@ async function main() {
         total + run.humanComparison.badReappearances.length,
       0,
     ),
+    pathRelationCounts: countBy(
+      runs.flatMap(run =>
+        Object.entries(run.metrics.pathRelationCounts).flatMap(
+          ([relation, count]) => Array.from({length:count}, () => relation),
+        ),
+      ),
+    ),
+    pathReliabilityFlags: countBy(
+      runs.flatMap(run =>
+        Object.entries(run.metrics.pathReliabilityFlags).flatMap(
+          ([flag, count]) => Array.from({length:count}, () => flag),
+        ),
+      ),
+    ),
+    pathEdgeSupport: countBy(
+      runs.flatMap(run => Object.entries(run.metrics.pathEdgeSupport).flatMap(
+        ([support,count])=>Array.from({length:count},()=>support),
+      )),
+    ),
+    pathEdgeRelations: countBy(
+      runs.flatMap(run => Object.entries(run.metrics.pathEdgeRelations).flatMap(
+        ([relation,count])=>Array.from({length:count},()=>relation),
+      )),
+    ),
+    pathShadowRuns: runs.filter(run => run.pathShadow).length,
+    pathShadowEntered: runs.reduce((sum,run)=>sum+(run.pathShadow?.summary.entered.length||0),0),
+    pathShadowDropped: runs.reduce((sum,run)=>sum+(run.pathShadow?.summary.dropped.length||0),0),
+    pathShadowKnownBadReappearanceCount: runs.reduce((sum,run)=>
+      sum+(run.pathShadow?.humanComparison.badReappearances.length||0),0),
+    scopeShadowRuns: runs.filter(run => run.scopeShadow).length,
+    scopeShadowEntered: runs.reduce((sum, run) => sum + (run.scopeShadow?.summary.entered.length || 0), 0),
+    scopeShadowDropped: runs.reduce((sum, run) => sum + (run.scopeShadow?.summary.dropped.length || 0), 0),
+    scopeShadowKnownBadReappearanceCount: runs.reduce(
+      (sum, run) => sum + (run.scopeShadow?.humanComparison.badReappearances.length || 0), 0,
+    ),
     strictArtistAudienceLeakCount: runs.reduce(
       (total, run) =>
         total + run.metrics.strictArtistAudienceLeakCount,
@@ -1104,6 +1252,16 @@ async function main() {
   console.log(
     `\n[diagnostic] scores<0=${aggregate.negativeScoreCount} | anciens bad revenus=${aggregate.historicalBadReappearanceCount} | fuites audience artiste strictes=${aggregate.strictArtistAudienceLeakCount} | piste connue mais audience artiste inconnue=${aggregate.trackAudienceKnownArtistAudienceUnknownCount}`,
   );
+  if (compareScope) {
+    console.log(
+      `[scope-shadow] runs=${aggregate.scopeShadowRuns} | entrées=${aggregate.scopeShadowEntered} | sorties=${aggregate.scopeShadowDropped} | bad historiques baseline=${aggregate.historicalBadReappearanceCount}, expérimental=${aggregate.scopeShadowKnownBadReappearanceCount} (couverture des verdicts variable)`,
+    );
+  }
+  if (comparePaths) {
+    console.log(
+      `[path-shadow] runs=${aggregate.pathShadowRuns} | entrées=${aggregate.pathShadowEntered} | sorties=${aggregate.pathShadowDropped} | bad historiques baseline=${aggregate.historicalBadReappearanceCount}, expérimental=${aggregate.pathShadowKnownBadReappearanceCount} (couverture des verdicts variable)`,
+    );
+  }
   const lookup = aggregate.artistAudienceLookupCounts;
   console.log(
     `[audience-artiste] mbid=${lookup.mbid || 0} | name=${lookup.name || 0} | fallback=${lookup["name-fallback"] || 0} | partial=${lookup.partial || 0} | failed=${lookup.failed || 0} | non ciblé=${lookup["not-targeted"] || 0} | unset=${lookup.unset || 0}`,

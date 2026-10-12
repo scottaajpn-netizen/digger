@@ -1,4 +1,5 @@
 import type { DiscogsOrigin } from "../providers/discogs";
+import { normalizeIsrc, partitionByRecordingIdentity } from "./recording-identity";
 import type { ArtistCredit, CandidateEvidence, Direction, Recommendation, Track } from "../types";
 
 export type CandidateOrigin =
@@ -89,15 +90,24 @@ export const trackIdentity = (track: Pick<Track, "artist" | "title">) =>
   `${normalized(track.artist)}\u0000${normalized(track.title)}`;
 
 export function deduplicate<T extends Track>(tracks: T[]): T[] {
+  // Preserve original order while preventing merges across contradictory ISRCs.
   const ids = new Set<string>();
-  const names = new Set<string>();
-  return tracks.filter(track => {
-    const name = trackIdentity(track);
-    if (ids.has(track.id) || names.has(name)) return false;
+  const byName = new Map<string, Array<{ track: T; index: number; externalIds?: Track["externalIds"] }>>();
+  tracks.forEach((track, index) => {
+    if (ids.has(track.id)) return;
     ids.add(track.id);
-    names.add(name);
-    return true;
+    const key = trackIdentity(track);
+    const group = byName.get(key) || [];
+    group.push({ track, index, externalIds: track.externalIds });
+    byName.set(key, group);
   });
+  const keep = new Set<number>();
+  for (const group of byName.values()) {
+    for (const partition of partitionByRecordingIdentity(group)) {
+      keep.add(partition[0].index);
+    }
+  }
+  return tracks.filter((_, index) => keep.has(index));
 }
 
 const mergeCredits = (tracks: Track[]): ArtistCredit[] | undefined => {
@@ -121,7 +131,7 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
     const key = trackIdentity(track);
     groups.set(key, [...(groups.get(key) || []), track]);
   }
-  return [...groups.values()].map(group => {
+  return [...groups.values()].flatMap(partitionByRecordingIdentity).map(group => {
     const ordered = [...group].sort((a, b) => b.relevance - a.relevance);
     const base =
       ordered.find(track => !track.discogs && track.externalIds?.musicbrainz) ||
@@ -130,6 +140,7 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
     const editorial = ordered.find(track => track.discogs);
     const lastfm = ordered.find(track => track.lastfmListeners !== undefined);
     const lb = ordered.find(track => track.popularity !== undefined);
+    const isrc = group.map(track => normalizeIsrc(track.externalIds?.isrc)).find((id): id is string => Boolean(id));
     return {
       ...base,
       relevance: Math.max(...group.map(track => track.relevance)),
@@ -154,6 +165,8 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
           externalIds: { ...editorial.externalIds, ...base.externalIds },
         }
         : {}),
+      // This identity is known to be unambiguous within the merged group.
+      ...(isrc ? { externalIds: { ...editorial?.externalIds, ...base.externalIds, isrc } } : {}),
     };
   });
 }

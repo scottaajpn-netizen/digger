@@ -5,7 +5,7 @@ export class SearchController {
   private abort:AbortController|undefined;
   private generation=0;
   private cache=new Map<string,{value:SearchResult;expires:number}>();
-  constructor(private publish:(state:SearchState)=>void,private request:(q:string,signal:AbortSignal)=>Promise<SearchResult>){}
+  constructor(private publish:(state:SearchState)=>void,private request:(q:string,signal:AbortSignal,onProgress:(value:SearchResult)=>void)=>Promise<SearchResult>){}
   cancel(){++this.generation;clearTimeout(this.timer);this.abort?.abort();}
   search(q:string){
     this.cancel();const generation=this.generation,key=normalize(q);
@@ -15,12 +15,25 @@ export class SearchController {
     this.publish({status:"loading",suggestions:[],warnings:[]});
     this.timer=setTimeout(async()=>{
       this.abort=new AbortController();
+      let latest:SearchResult|undefined;
+      const signal=this.abort.signal;
       try {
-        const value=await this.request(q,this.abort.signal);
-        if(generation!==this.generation)return;
+        const value=await this.request(q,signal,partial=>{
+          // Old requests can still resolve after cancellation; never publish them.
+          if(generation!==this.generation||signal.aborted)return;
+          latest=partial;
+          this.publish({...partial,status:"loading"});
+        });
+        if(generation!==this.generation||signal.aborted)return;
         if(!value.warnings.length){if(this.cache.size>=40)this.cache.delete(this.cache.keys().next().value!);this.cache.set(key,{value,expires:Date.now()+120000});}
         this.publish({...value,status:"done"});
-      }catch(e){if(generation===this.generation)this.publish({status:"error",suggestions:[],warnings:[],error:e instanceof Error?e.message:"Recherche indisponible."});}
+      }catch(e){
+        if(generation!==this.generation||signal.aborted)return;
+        const error=e instanceof Error?e.message:"Recherche indisponible.";
+        // Keep usable partial results on a late network failure.
+        if(latest?.suggestions.length)this.publish({...latest,status:"done",warnings:[...latest.warnings,error]});
+        else this.publish({status:"error",suggestions:[],warnings:latest?.warnings||[],error});
+      }
     },300);
   }
 }

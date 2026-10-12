@@ -450,7 +450,11 @@ test("catalogue fallback serves sparse non-MBID seeds in every direction and sup
     if (method === "track.getSimilar") return Response.json({ similartracks: { track: [] } });
     if (method === "artist.getSimilar") return Response.json({ similarartists: { artist: [{ name: u.searchParams.get("artist") === "Niche fixture" ? "Neighbour fixture" : "Next fixture", match: 0.6 }] } });
     if (method === "artist.getTopTags") return Response.json({ toptags: { tag: [{ name: "electronic", count: 100 }, { name: "funk_add_to_lidarr_batch_9", count: 95 }, { name: "broken beat", count: 80 }, { name: "Seen Live", count: 70 }] } });
-    if (method === "artist.getTopTracks") return Response.json({ toptracks: { track: [{ name: "Catalogue cut", artist: { name: u.searchParams.get("artist") }, listeners: "600", url: "https://www.last.fm/music/fixture" }] } });
+    if (method === "artist.getTopTracks") return Response.json({ toptracks: { track: [
+      { name: "Catalogue cut", artist: { name: u.searchParams.get("artist") }, listeners: "600", url: "https://www.last.fm/music/fixture" },
+      // Collaborations can be credited to a different artist than the catalogue owner.
+      { name: "Guest collaboration", artist: { name: "Guest Feature" }, listeners: "900", url: "https://www.last.fm/music/guest-feature" },
+    ] } });
     throw Error(`Unexpected catalogue route ${u.pathname}`);
   });
   const request = { seed: "Sparse seed", seedTrack: { id: "lastfm:niche", title: "Sparse seed", artist: "Niche fixture", source: "lastfm" as const }, direction: "Même vibe" as const, obscurity: 65, feedback: {}, session: 0 };
@@ -460,13 +464,18 @@ test("catalogue fallback serves sparse non-MBID seeds in every direction and sup
   assert.equal(first.tracks[0]?.discoveryPath?.evidence, "catalogue");
   assert.equal(first.tracks[0]?.evidence?.path, "catalogue");
   assert.equal(first.tracks[0]?.retrieval?.artistRelation?.similarity, 0.6);
+  const guest = first.tracks.find(track => track.artist === "Guest Feature");
+  assert.ok(guest, "Guest-credited track remains discoverable");
+  assert.equal(guest.discoveryPath?.nodes[2]?.name, "Neighbour fixture");
+  assert.equal(guest.retrieval?.artistRelation?.neighbourArtist, "Neighbour fixture");
+  assert.equal(guest.discoveryPath?.nodes.at(-1)?.name, "Guest Feature — Guest collaboration");
   assert.deepEqual(
     first.tracks[0]?.retrieval?.artistRelation?.tags,
     ["electronic", "broken beat"],
   );
   const second = await recommendLive({ ...request, seedTrack: first.tracks[0] }, AbortSignal.timeout(10000));
   assert.equal(second.seed.artist, "Neighbour fixture");
-  assert.equal(second.tracks[0]?.artist, "Next fixture");
+  assert.ok(second.tracks.some(track => track.artist === "Next fixture"), "Next fixture is still discoverable after an additional guest credit");
 });
 test("Pleine Forêt regression expands a poor direct list through the verified Léon Phal anchor", async t => {
   const oldKey = process.env.LASTFM_API_KEY;

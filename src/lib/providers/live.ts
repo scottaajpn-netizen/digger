@@ -3,17 +3,20 @@ import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } fro
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { cleanLastFmArtistTags } from "../music/lastfm-context";
+import { auditMusicalContext } from "../music/context-evidence";
+import { singleVerifiedIsrc } from "../discovery/recording-identity";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, lastFmTagArtistPath, listenBrainzPath } from "../discovery/paths";
 import { resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
 import { loadCatalogueEntries, rememberCatalogueEntries, type CatalogueEntryInput } from "../discovery/catalogue";
 import { analyzeBranchDiagnostics } from "../discovery/branch-diagnostics";
+import { comparePathShadow, compareScopeShadow } from "../discovery/shadow-comparison";
 export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Credit = { name?: string; joinphrase?: string; artist?: { id?: string; name?: string; country?: string } };
-interface Recording { id: string; title: string; score?: number; disambiguation?: string; "artist-credit"?: Credit[]; tags?: { name: string; count?: number }[]; "first-release-date"?: string; releases?: Release[] }
+interface Recording { id: string; title: string; score?: number; disambiguation?: string; "artist-credit"?: Credit[]; tags?: { name: string; count?: number }[]; "first-release-date"?: string; releases?: Release[]; isrcs?: string[] }
 interface Release { id: string; title: string; date?: string; "label-info"?: { label?: { id: string; name: string } }[]; media?: { tracks?: { recording?: Recording }[] }[] }
 interface Metadata { artist?: { name?: string; artists?: { name: string; artist_mbid: string; area?: string }[] }; recording?: { name?: string; first_release_date?: string }; release?: { name?: string; mbid?: string; year?: number }; tag?: Record<string, { tag?: string; count?: number }[]> }
 type MusicBrainzArtistMetadata = {
@@ -279,7 +282,8 @@ export function fromRecording(r: Recording): Track | null {
   const credits = musicBrainzCredits(rows);
   const release = r.releases?.find(item => !normalized(item.title).startsWith(normalized(r.title))) || r.releases?.[0];
   const tags = (r.tags || []).filter(t => typeof t.name === "string").sort((a, b) => (b.count || 0) - (a.count || 0)).map(t => t.name).slice(0, 6);
-  return { id: r.id, title: r.title, artist, artistId: credits.find(c => c.role === "primary")?.sourceId, credits, country: rows[0]?.artist?.country, releaseId: release?.id, album: release?.title, scene: tags[0] || "MusicBrainz", label: "", tags, year: Number(r["first-release-date"]?.slice(0, 4)) || 0, obscurity: 50, colors: colors[hash(r.id) % colors.length], externalIds: { musicbrainz: r.id } };
+  const isrc = singleVerifiedIsrc(r.isrcs);
+  return { id: r.id, title: r.title, artist, artistId: credits.find(c => c.role === "primary")?.sourceId, credits, country: rows[0]?.artist?.country, releaseId: release?.id, album: release?.title, scene: tags[0] || "MusicBrainz", label: "", tags, year: Number(r["first-release-date"]?.slice(0, 4)) || 0, obscurity: 50, colors: colors[hash(r.id) % colors.length], externalIds: { musicbrainz: r.id, ...(isrc ? { isrc } : {}) }, tagEvidence: tags.length ? [{source:"musicbrainz", scope:"recording", tags}] : [] };
 }
 export async function searchLive(query: string, signal: AbortSignal): Promise<Track[]> {
   const structured = structuredSearchParts(query);
@@ -448,7 +452,10 @@ export async function searchLive(query: string, signal: AbortSignal): Promise<Tr
   }
   return combined.slice(0, 8);
 }
-export async function recommendLive(input: DigRequest, signal: AbortSignal): Promise<DigResponse> {
+export async function recommendLive(
+  input: DigRequest, signal: AbortSignal,
+  options: { compareScope?: boolean; comparePaths?: boolean } = {},
+): Promise<DigResponse> {
   const notes: string[] = [];
   async function optional<T>(job: Promise<T>, message: string): Promise<T | null> { try { return await job; } catch { notes.push(message); return null; } }
 
@@ -463,7 +470,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   let seed: Track | null = null;
   if (requestedMbid) {
     try {
-      const recording = await musicJson<Recording>("mb", `recording/${requestedMbid}`, { inc: "artists+releases+tags" }, signal);
+      const recording = await musicJson<Recording>("mb", `recording/${requestedMbid}`, { inc: "artists+releases+tags+isrcs" }, signal);
       seed = fromRecording(recording);
     } catch (error) {
       if (!reference) throw error;
@@ -579,6 +586,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   }));
 
   const artistTags = artistRows.flatMap(row => row?.tags || []).sort((a, b) => (b.count || 0) - (a.count || 0)).map(t => t.name);
+  if (artistTags.length) seed.tagEvidence = [...(seed.tagEvidence || []), {source:"musicbrainz",scope:"artist",tags:artistTags.slice(0,8)}];
   seed.tags = [...new Set([...seed.tags, ...artistTags])].slice(0, 8);
   seed.country = artistRows.find(row => row?.country)?.country || seed.country;
   seed.scene = artistRows.find(row => row?.area?.name)?.area?.name || seed.tags[0] || seed.scene || "Sources musicales";
@@ -605,13 +613,17 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
     .map(tag => tag.name!)
     .slice(0, 6);
-  if (extraLastFmTags.length) seed.tags = [...new Set([...seed.tags, ...extraLastFmTags])].slice(0, 8);
+  if (extraLastFmTags.length) {
+    seed.tagEvidence = [...(seed.tagEvidence || []), {source:"lastfm",scope:"recording",tags:extraLastFmTags}];
+    seed.tags = [...new Set([...seed.tags, ...extraLastFmTags])].slice(0, 8);
+  }
 
   const seedProfile = buildMusicalProfile(seed);
   seed.analysis = {
     genres: seedProfile.genres,
     subgenres: seedProfile.subgenres,
     traits: seedProfile.traits,
+    metadataEvidence: auditMusicalContext(seed),
   };
   const pool: Candidate[] = [];
   function addRelease(r: Release, label: string, relevance: number, origin: CandidateOrigin = "release") {
@@ -903,7 +915,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
 
         pushCatalogueCandidate({
           anchorArtist: neighbour?.anchor || seed.artist,
-          neighbourArtist: artistName,
+          neighbourArtist: neighbourName || artistName,
           neighbourRank: artistIndex,
           trackRank: index,
           source: "live",
@@ -923,7 +935,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
 
         catalogueEntries.push({
           anchorArtist: neighbour?.anchor || seed.artist,
-          neighbourArtist: artistName,
+          neighbourArtist: neighbourName || artistName,
           neighbourRank: artistIndex,
           trackRank: index,
           similarity: Number.isFinite(similarity) ? similarity : undefined,
@@ -1435,6 +1447,14 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const discogsResult = await discogsJob;
   pool.push(...discogsResult.candidates);
   notes.push(...discogsResult.notes);
+  if (discogsResult.seedRelease) {
+    seed.tagEvidence = [...(seed.tagEvidence || []), {
+      source:"discogs",scope:"release",tags:[
+        ...discogsResult.seedRelease.styles,...discogsResult.seedRelease.genres
+      ],
+    }];
+    if (seed.analysis) seed.analysis.metadataEvidence = auditMusicalContext(seed);
+  }
   const rankingSeedProfile = discogsResult.seedRelease
     ? buildMusicalProfile({
       ...seed,
@@ -1812,6 +1832,16 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     ),
   );
   retrievalDiagnostics.selected = retrievalStage(selected);
+  // Offline-only comparison; the live API calls recommendLive without this option.
+  // Reuse identical enriched candidates and final audience metadata: no API calls.
+  const shadowInput = {
+    pool, seed, seedProfile: rankingSeedProfile, input, seedParticipantKeys,
+    baselineRanked: ranked, baselineSelected: selected,
+  };
+  const shadowComparison = options.compareScope
+    ? compareScopeShadow(shadowInput) : undefined;
+  const shadowPathComparison = options.comparePaths
+    ? comparePathShadow(shadowInput) : undefined;
   if (selected.length < 10) notes.push(`Seulement ${selected.length} pistes exploitables avec ces données et tes exclusions. Aucun morceau inventé n’a été ajouté.`);
   if (input.obscurity >= 90) notes.push("Digging strict : les audiences trop élevées ou non vérifiées sont écartées, même si cela réduit la sélection. Digger croise l’audience du morceau et, quand elle est disponible, celle des artistes crédités.");
   if (!selected.some(t => t.popularity !== undefined || t.lastfmListeners !== undefined)) notes.push("Popularité indisponible pour cette sélection : le curseur agit sur l’ouverture de la radio, sans indice d’obscurité individuel.");
@@ -1824,5 +1854,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     obscurity: input.obscurity,
     notes: [...new Set(notes)],
     retrievalDiagnostics,
+    ...(shadowComparison ? { shadowComparison } : {}),
+    ...(shadowPathComparison ? { shadowPathComparison } : {}),
   };
 }

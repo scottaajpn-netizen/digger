@@ -1,7 +1,9 @@
 import { buildMusicalProfile, compareMusicalProfiles, type MusicalProfile } from "../music/profile";
+import { auditMusicalContext, classifyMusicalOverlap, cautiousReleaseSimilarity, describeMusicalOverlap } from "../music/context-evidence";
 import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
 import { assessCandidateEvidence } from "./evidence";
+import { cautiousPathIncentive } from "./path-reliability";
 import { discoveryPathPreferenceKey } from "./paths";
 import { containsArtistParticipant } from "./artist-anchors";
 import {
@@ -71,6 +73,8 @@ type RankDiscoveryInput = {
   seedProfile: MusicalProfile;
   input: DigRequest;
   seedParticipantKeys: Set<string>;
+  // Pure shadow experiment, never set by the production endpoint.
+  strategy?: "baseline" | "scope-aware" | "path-aware";
 };
 
 export type CandidateEligibilityFailure =
@@ -119,6 +123,7 @@ export function rankDiscoveryCandidates({
   seedProfile,
   input,
   seedParticipantKeys,
+  strategy = "baseline",
 }: RankDiscoveryInput): RankedCandidate[] {
   const preferred = new Set(
     pool
@@ -162,13 +167,23 @@ export function rankDiscoveryCandidates({
         compareMusicalProfiles(seedProfile, contextualProfile);
       const evidence = assessCandidateEvidence(track, evidenceComparison);
       const shared = track.tags.filter(tag => seed.tags.includes(tag)).length;
+      const seedEvidence = auditMusicalContext(seed);
+      const candidateEvidence = auditMusicalContext(track);
+      const sharedFineTags = [
+        ...candidateProfile.subgenres.filter(tag => seedProfile.subgenres.includes(tag)),
+        ...candidateProfile.traits.filter(tag => seedProfile.traits.includes(tag)),
+      ];
+      const overlapScope = classifyMusicalOverlap(sharedFineTags,seedEvidence,candidateEvidence);
+      const scoringSimilarity = strategy === "scope-aware"
+        ? cautiousReleaseSimilarity(comparison,overlapScope)
+        : comparison.musicalSimilarity;
 
       const scoreBreakdown = {
         relevance:
           input.direction === "Surprends-moi"
             ? track.relevance * 0.2
             : track.relevance,
-        musicalSimilarity: comparison.musicalSimilarity * 55,
+        musicalSimilarity: scoringSimilarity * 55,
         sharedTags: shared * 3,
         preferredTags:
           track.tags.filter(tag => preferred.has(tag)).length * 4,
@@ -271,8 +286,10 @@ export function rankDiscoveryCandidates({
         scoreBreakdown.origin += 24;
       }
 
-      const discoveryPathAdjustment =
-        discoveryPathScoreAdjustment(track.discoveryPath, input.direction);
+      const basePathAdjustment = discoveryPathScoreAdjustment(track.discoveryPath,input.direction);
+      const discoveryPathAdjustment = strategy==="path-aware"
+        ? cautiousPathIncentive({...track,evidence},basePathAdjustment)
+        : basePathAdjustment;
       const artistRelationAdjustment =
         track.retrieval?.provider === "lastfm" &&
         track.retrieval.artistRelation?.similarity !== undefined
@@ -333,7 +350,7 @@ export function rankDiscoveryCandidates({
       }
 
       if (input.direction === "Même vibe") {
-        const vibeSimilarityBonus = comparison.musicalSimilarity * 35;
+        const vibeSimilarityBonus = scoringSimilarity * 35;
         score += vibeSimilarityBonus;
         scoreBreakdown.direction += vibeSimilarityBonus;
 
@@ -430,11 +447,10 @@ export function rankDiscoveryCandidates({
         seedProfile.traits.includes(value),
       );
 
-      let reason = track.reason;
-      if (sharedSubgenres.length)
-        reason = `Sous-genre commun : ${sharedSubgenres.slice(0, 2).join(" / ")}. ${reason}`;
-      else if (sharedTraits.length)
-        reason = `Traits musicaux communs : ${sharedTraits.slice(0, 2).join(" / ")}. ${reason}`;
+      const overlapDescription = sharedSubgenres.length
+        ? describeMusicalOverlap("subgenre",sharedSubgenres,seedEvidence,candidateEvidence)
+        : describeMusicalOverlap("traits",sharedTraits,seedEvidence,candidateEvidence);
+      const reason = overlapDescription ? `${overlapDescription} ${track.reason}` : track.reason;
 
       return {
         ...track,
@@ -447,6 +463,8 @@ export function rankDiscoveryCandidates({
           subgenres: candidateProfile.subgenres,
           traits: candidateProfile.traits,
           similarity: Math.round(comparison.musicalSimilarity * 100),
+          metadataEvidence: candidateEvidence,
+          overlapScope,
         },
       };
     })

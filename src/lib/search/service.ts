@@ -62,7 +62,7 @@ export const providers={
   }
 };
 const cache=new Map<string,{value:SearchResult;expires:number}>();
-export async function suggest(q:string,signal:AbortSignal,deps=providers):Promise<SearchResult> {
+export async function suggest(q:string,signal:AbortSignal,deps=providers,onProgress?:(value:SearchResult)=>void):Promise<SearchResult> {
   signal.throwIfAborted(); if(normalize(q).length<3)return {suggestions:[],warnings:[]};
   const structured=parseStructuredSearch(q);
   const key=normalize(q)+`|${!!process.env.LASTFM_API_KEY}|${!!process.env.DISCOGS_TOKEN}`;
@@ -74,6 +74,9 @@ export async function suggest(q:string,signal:AbortSignal,deps=providers):Promis
     try {pool.push(...await provider(q,AbortSignal.any([signal,AbortSignal.timeout(name==="MusicBrainz"?3500:6000)])));}
     catch {signal.throwIfAborted();warnings.push(`${name} est momentanément indisponible.`);}
     const best=mergeSuggestions(q,pool);
+    // Emit source-by-source snapshots without changing provider order or API budgets.
+    // The final result still goes through the existing cache and early-stop logic.
+    onProgress?.({suggestions:best,warnings:[...warnings]});
     const resolved=structured
       ? resolveSeedSuggestion(structured.title,structured.artist,best)
       : undefined;

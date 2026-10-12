@@ -4,11 +4,28 @@ export type Direction = typeof directions[number];
 export const feedbackValues = ["love", "curious", "neutral", "known"] as const;
 export type Feedback = typeof feedbackValues[number];
 export type FeedbackMap = Record<string, Feedback>;
+export type MusicalTagScope = "recording" | "artist" | "release" | "context";
+export type MusicalTagSource = "musicbrainz" | "lastfm" | "listenbrainz" | "discogs";
+export interface MusicalTagEvidence {
+  source: MusicalTagSource;
+  scope: MusicalTagScope;
+  tags: string[];
+}
+export interface MusicalContextAudit {
+  recording: string[];
+  artist: string[];
+  release: string[];
+  context: string[];
+  unscoped: string[];
+}
+export type MusicalOverlapScope = "recording" | "release-context" | "artist-context" | "unscoped" | "none";
 export interface MusicalAnalysis {
+  overlapScope?: MusicalOverlapScope;
   genres: string[];
   subgenres: string[];
   traits: string[];
   similarity?: number;
+  metadataEvidence?: MusicalContextAudit;
 }
 export type CandidateEvidenceTier = "strong" | "credible" | "exploratory";
 export type CandidateEvidencePath = "structured" | "behavioral" | "catalogue" | "tag" | "none";
@@ -77,12 +94,13 @@ export interface Track {
   lastfmArtistListeners?: number;
   artistAudienceLookup?: "mbid" | "name" | "name-fallback" | "partial" | "failed" | "not-targeted";
   analysis?: MusicalAnalysis;
+  tagEvidence?: MusicalTagEvidence[];
   discoveryPath?: DiscoveryPath;
   retrieval?: TrackRetrievalProvenance;
   credits?: ArtistCredit[];
   obscurityKnown?: boolean;
   discogs?: DiscogsEvidence;
-  externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string };
+  externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string; isrc?: string };
 }
 export interface Recommendation extends Track {
   reason: string;
@@ -217,5 +235,29 @@ export interface RetrievalDiagnostics {
   selected: RetrievalStageDiagnostics;
   branchAnalysis?: BranchDiagnostics;
 }
-export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics }
+export type ShadowSelectionTrack = {
+  id: string; artist: string; title: string; position: number; score: number;
+  overlapScope?: MusicalOverlapScope;
+};
+export type ShadowSelectionMove = {
+  id: string; artist: string; title: string; baselinePosition: number;
+  experimentPosition: number; baselineScore: number; experimentScore: number;
+  overlapScope?: MusicalOverlapScope;
+};
+export interface ScopeShadowComparison {
+  strategy: "scope-aware" | "path-aware";
+  // Exactly the same enriched candidate pool, API calls and audience lookups.
+  rankedCandidateCount: number;
+  baselineEligibleCount: number;
+  experimentEligibleCount: number;
+  baselineCount: number;
+  experimentCount: number;
+  sharedCount: number;
+  entered: ShadowSelectionTrack[];
+  dropped: ShadowSelectionTrack[];
+  moved: ShadowSelectionMove[];
+  // Full rows are used only for offline human-verdict comparison.
+  experimentTracks: Recommendation[];
+}
+export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics; shadowComparison?: ScopeShadowComparison; shadowPathComparison?: ScopeShadowComparison }
 export interface MusicProvider { id: string; search(query: string): Promise<Track[]>; candidates(seed: Track): Promise<Track[]> }
