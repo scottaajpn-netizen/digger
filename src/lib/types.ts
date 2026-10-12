@@ -259,5 +259,5 @@ export interface ScopeShadowComparison {
   // Full rows are used only for offline human-verdict comparison.
   experimentTracks: Recommendation[];
 }
-export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics; shadowComparison?: ScopeShadowComparison }
+export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics; shadowComparison?: ScopeShadowComparison; shadowPathComparison?: ScopeShadowComparison }
 export interface MusicProvider { id: string; search(query: string): Promise<Track[]>; candidates(seed: Track): Promise<Track[]> }

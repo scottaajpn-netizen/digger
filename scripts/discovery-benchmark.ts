@@ -94,6 +94,12 @@ type BenchmarkRun = {
   retrievalDiagnostics?: DigResponse["retrievalDiagnostics"];
   metrics: ReturnType<typeof measureTracks>;
   humanComparison: ReturnType<typeof measureHumanComparison>;
+  pathShadow?: {
+    summary: Omit<NonNullable<DigResponse["shadowPathComparison"]>, "experimentTracks">;
+    metrics: ReturnType<typeof measureTracks>;
+    humanComparison: ReturnType<typeof measureHumanComparison>;
+    tracks: BenchmarkRunTrack[];
+  };
   scopeShadow?: {
     summary: Omit<NonNullable<DigResponse["shadowComparison"]>, "experimentTracks">;
     metrics: ReturnType<typeof measureTracks>;
@@ -877,6 +883,7 @@ async function main() {
   const knownReplayEnabled = process.argv.includes("--known-replay");
   const knownProbeEnabled = process.argv.includes("--known-probe");
   const compareScope = process.argv.includes("--compare-scope");
+  const comparePaths = process.argv.includes("--compare-paths");
   const requestedCaseIds = optionValues("--case");
   const requestedDirections = optionValues("--direction");
 
@@ -922,6 +929,9 @@ async function main() {
   if (compareScope) {
     console.log("[benchmark] Comparaison scope-aware activée sur le même pool; aucun appel API supplémentaire.");
   }
+  if (comparePaths) {
+    console.log("[benchmark] Comparaison path-aware activée sur le même pool; aucun appel API supplémentaire.");
+  }
 
   const generatedAt = new Date().toISOString();
   const runs: BenchmarkRun[] = [];
@@ -966,7 +976,7 @@ async function main() {
         const response = await recommendLive(
           input,
           AbortSignal.timeout(50_000),
-          { compareScope },
+          { compareScope, comparePaths },
         );
         const tracks = response.tracks as RuntimeRecommendation[];
         const metrics = measureTracks(tracks, benchmarkCase.obscurity);
@@ -1000,6 +1010,34 @@ async function main() {
           return {
             summary,metrics:shadowMetrics,humanComparison:shadowHuman,
             tracks:experiment.map(track => ({
+              ...compactTrack(track),
+              humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
+            })),
+          };
+        })() : undefined;
+        const pathShadow = response.shadowPathComparison ? (() => {
+          const shadow = response.shadowPathComparison!;
+          const {experimentTracks,...summary} = shadow;
+          const experiment = experimentTracks as RuntimeRecommendation[];
+          const shadowMetrics = measureTracks(experiment,benchmarkCase.obscurity);
+          const shadowHuman = measureHumanComparison(benchmarkCase,experiment);
+          console.log(
+            `    path-shadow: baseline=${shadow.baselineCount}, expérimental=${shadow.experimentCount}, communs=${shadow.sharedCount}, entrées=${shadow.entered.length}, sorties=${shadow.dropped.length}, mouvements=${shadow.moved.length}`,
+          );
+          console.log(
+            `    path-shadow humain: baseline bad=${humanComparison.badCount}/${humanComparison.matchedCount} évalués, expérimental bad=${shadowHuman.badCount}/${shadowHuman.matchedCount} évalués (non évalués = inconnus)`,
+          );
+          if (shadow.entered.length || shadow.dropped.length) {
+            console.log(
+              `    path-shadow nouveaux: ${shadow.entered.map(x=>`${x.artist} — ${x.title}`).join(" | ") || "aucun"}`,
+            );
+            console.log(
+              `    path-shadow sortants: ${shadow.dropped.map(x=>`${x.artist} — ${x.title}`).join(" | ") || "aucun"}`,
+            );
+          }
+          return {
+            summary,metrics:shadowMetrics,humanComparison:shadowHuman,
+            tracks:experiment.map(track=>({
               ...compactTrack(track),
               humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
             })),
@@ -1121,6 +1159,7 @@ async function main() {
           metrics,
           humanComparison,
           ...(scopeShadow ? { scopeShadow } : {}),
+          ...(pathShadow ? { pathShadow } : {}),
           knownReplay,
           knownProbe,
           tracks: tracks.map(track => ({
@@ -1179,6 +1218,11 @@ async function main() {
         ([relation,count])=>Array.from({length:count},()=>relation),
       )),
     ),
+    pathShadowRuns: runs.filter(run => run.pathShadow).length,
+    pathShadowEntered: runs.reduce((sum,run)=>sum+(run.pathShadow?.summary.entered.length||0),0),
+    pathShadowDropped: runs.reduce((sum,run)=>sum+(run.pathShadow?.summary.dropped.length||0),0),
+    pathShadowKnownBadReappearanceCount: runs.reduce((sum,run)=>
+      sum+(run.pathShadow?.humanComparison.badReappearances.length||0),0),
     scopeShadowRuns: runs.filter(run => run.scopeShadow).length,
     scopeShadowEntered: runs.reduce((sum, run) => sum + (run.scopeShadow?.summary.entered.length || 0), 0),
     scopeShadowDropped: runs.reduce((sum, run) => sum + (run.scopeShadow?.summary.dropped.length || 0), 0),
@@ -1211,6 +1255,11 @@ async function main() {
   if (compareScope) {
     console.log(
       `[scope-shadow] runs=${aggregate.scopeShadowRuns} | entrées=${aggregate.scopeShadowEntered} | sorties=${aggregate.scopeShadowDropped} | bad historiques baseline=${aggregate.historicalBadReappearanceCount}, expérimental=${aggregate.scopeShadowKnownBadReappearanceCount} (couverture des verdicts variable)`,
+    );
+  }
+  if (comparePaths) {
+    console.log(
+      `[path-shadow] runs=${aggregate.pathShadowRuns} | entrées=${aggregate.pathShadowEntered} | sorties=${aggregate.pathShadowDropped} | bad historiques baseline=${aggregate.historicalBadReappearanceCount}, expérimental=${aggregate.pathShadowKnownBadReappearanceCount} (couverture des verdicts variable)`,
     );
   }
   const lookup = aggregate.artistAudienceLookupCounts;

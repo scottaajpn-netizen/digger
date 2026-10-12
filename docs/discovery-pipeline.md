@@ -181,3 +181,23 @@ Benchmark metrics now include `pathEdgeSupport`, `pathEdgeRelations`,
 direct track-level associations, contextual steps, and unclassified steps,
 with full per-link details in each compact track's `pathAudit.edges`.
 This changes no score, selection, provider calls, memory or production UI.
+
+
+## 11. Optional path-aware ranking shadow
+
+The existing `--compare-scope` flag remains available. To compare the
+current scoring with a **path-aware** shadow, use:
+
+```powershell
+pnpm benchmark:discovery -- --case=mia-love-me-right,qendresa-good-love,leon-phal-jungle-jack-pleine-foret --direction=Surprends-moi --compare-paths
+```
+
+This computes the third, opt-in strategy against the same enriched candidate
+pool with no new provider request. It caps the reduction of a *positive path
+bonus* to **8 points** when the association is an indirect Last.fm artist
+chain, Discogs scene-context connection or Discogs catalogue chain labelled
+editorial. Other score components, provenance and evidence tiers are
+unchanged; strict obscurity gates, known-track exclusions and diversity
+selection apply identically. `pathShadow` in the resulting benchmark JSON
+records position changes, entrants/exits, coverage and historical verdict
+matches. A reported difference is NOT proof of improved musical taste.
