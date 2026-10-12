@@ -72,7 +72,7 @@ test("unclassified edge is surfaced, never silently upgraded to a musical fact",
     {kind:"context",name:"Unknown hop",url:"https://www.discogs.com"},
   ],candidate);
   const audit=auditDiscoveryPath({discoveryPath:path,origin:"discogs-label"});
-  assert.equal(audit.unclassifiedSteps,2);
+  assert.equal(audit.unclassifiedSteps,3);
   assert.ok(audit.flags.includes("unclassified-path-step"));
   assert.equal(audit.directTrackAssociations,0);
 });
