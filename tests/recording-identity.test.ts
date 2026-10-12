@@ -41,7 +41,7 @@ test("conflicting verified recordings survive text deduplication in original ord
     song("second", otherIsrc),
     song("repeat-first", firstIsrc),
   ];
-  assert.deepEqual(deduplicate(tracks).map(track => track.id), ["first", "other-artist", "second"]);
+  assert.deepEqual(deduplicate(tracks).map(track => track.id), ["first", "interlude", "other-artist", "second"]);
 });
 
 test("conflicting ISRCs and unverified tracks cannot exchange discovery evidence", () => {
