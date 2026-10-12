@@ -5,6 +5,7 @@ import { loadEnvFile } from "node:process";
 
 import { normalized } from "../src/lib/discovery/ranking";
 import { auditDiscoveryPath } from "../src/lib/discovery/path-reliability";
+import { comparePairedHumanOrdering, type HumanRatedTrack } from "../src/lib/evaluation/paired-human-ordering";
 import { findCredibleTrackMatch, recommendLive, searchLive } from "../src/lib/providers/live";
 import {
   directions,
@@ -98,18 +99,21 @@ type BenchmarkRun = {
     summary: Omit<NonNullable<DigResponse["shadowVibeComparison"]>, "experimentTracks">;
     metrics: ReturnType<typeof measureTracks>;
     humanComparison: ReturnType<typeof measureHumanComparison>;
+    pairedHumanOrdering: ReturnType<typeof comparePairedHumanOrdering>;
     tracks: BenchmarkRunTrack[];
   };
   pathShadow?: {
     summary: Omit<NonNullable<DigResponse["shadowPathComparison"]>, "experimentTracks">;
     metrics: ReturnType<typeof measureTracks>;
     humanComparison: ReturnType<typeof measureHumanComparison>;
+    pairedHumanOrdering: ReturnType<typeof comparePairedHumanOrdering>;
     tracks: BenchmarkRunTrack[];
   };
   scopeShadow?: {
     summary: Omit<NonNullable<DigResponse["shadowComparison"]>, "experimentTracks">;
     metrics: ReturnType<typeof measureTracks>;
     humanComparison: ReturnType<typeof measureHumanComparison>;
+    pairedHumanOrdering: ReturnType<typeof comparePairedHumanOrdering>;
     tracks: BenchmarkRunTrack[];
   };
   knownReplay?: KnownReplaySummary;
@@ -478,6 +482,39 @@ function measureHumanComparison(
 
 function identityKey(track: Pick<Track, "artist" | "title">) {
   return `${normalized(track.artist)}\u0000${normalized(track.title)}`;
+}
+
+function measurePairedHumanOrdering(
+  benchmarkCase: DiscoveryBenchmarkCase,
+  baseline: RuntimeRecommendation[],
+  experimental: RuntimeRecommendation[],
+) {
+  // Only exact track matches can establish track-level coherence.
+  const rows=(tracks:RuntimeRecommendation[]):HumanRatedTrack[]=>
+    tracks.map(track=>{
+      const human=matchHistoricalVerdict(benchmarkCase,track);
+      return {
+        key:identityKey(track),
+        ...(human?.match==="track"
+          ? {coherence:human.coherence,taste:human.taste}:{}),
+      };
+    });
+  return comparePairedHumanOrdering(rows(baseline),rows(experimental));
+}
+
+function printPairedHumanOrdering(
+  label:string,
+  result:ReturnType<typeof comparePairedHumanOrdering>,
+) {
+  if(result.accuracyDelta===null){
+    console.log(
+      `    ${label} classement humain: indéterminé (${result.comparablePairs} paire comparable, ${result.sharedCoherenceCount} titres communs annotés)`,
+    );
+    return;
+  }
+  console.log(
+    `    ${label} classement humain: ${result.baselineCorrectPairs}/${result.comparablePairs} → ${result.experimentalCorrectPairs}/${result.comparablePairs} paires bien ordonnées; corrigées=${result.improvedPairs}, régressions=${result.regressedPairs}`,
+  );
 }
 
 function knownHistoricalTracks(
@@ -1003,6 +1040,8 @@ async function main() {
           const experiment = experimentTracks as RuntimeRecommendation[];
           const shadowMetrics = measureTracks(experiment, benchmarkCase.obscurity);
           const shadowHuman = measureHumanComparison(benchmarkCase, experiment);
+          const pairedHumanOrdering=measurePairedHumanOrdering(benchmarkCase,tracks,experiment);
+          printPairedHumanOrdering("scope-shadow",pairedHumanOrdering);
           console.log(
             `    scope-shadow: baseline=${shadow.baselineCount}, expérimentale=${shadow.experimentCount}, communes=${shadow.sharedCount}, entrées=${shadow.entered.length}, sorties=${shadow.dropped.length}, mouvements=${shadow.moved.length}`,
           );
@@ -1019,6 +1058,7 @@ async function main() {
           }
           return {
             summary,metrics:shadowMetrics,humanComparison:shadowHuman,
+            pairedHumanOrdering,
             tracks:experiment.map(track => ({
               ...compactTrack(track),
               humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
@@ -1031,6 +1071,8 @@ async function main() {
           const experiment = experimentTracks as RuntimeRecommendation[];
           const shadowMetrics = measureTracks(experiment,benchmarkCase.obscurity);
           const shadowHuman = measureHumanComparison(benchmarkCase,experiment);
+          const pairedHumanOrdering=measurePairedHumanOrdering(benchmarkCase,tracks,experiment);
+          printPairedHumanOrdering("path-shadow",pairedHumanOrdering);
           console.log(
             `    path-shadow: baseline=${shadow.baselineCount}, expérimental=${shadow.experimentCount}, communs=${shadow.sharedCount}, entrées=${shadow.entered.length}, sorties=${shadow.dropped.length}, mouvements=${shadow.moved.length}`,
           );
@@ -1047,6 +1089,7 @@ async function main() {
           }
           return {
             summary,metrics:shadowMetrics,humanComparison:shadowHuman,
+            pairedHumanOrdering,
             tracks:experiment.map(track=>({
               ...compactTrack(track),
               humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
@@ -1059,6 +1102,8 @@ async function main() {
           const experiment=experimentTracks as RuntimeRecommendation[];
           const metrics=measureTracks(experiment,benchmarkCase.obscurity);
           const compared=measureHumanComparison(benchmarkCase,experiment);
+          const pairedHumanOrdering=measurePairedHumanOrdering(benchmarkCase,tracks,experiment);
+          printPairedHumanOrdering("vibe-shadow",pairedHumanOrdering);
           console.log(
             `    vibe-shadow: baseline=${shadow.baselineCount}, expérimental=${shadow.experimentCount}, communs=${shadow.sharedCount}, entrées=${shadow.entered.length}, sorties=${shadow.dropped.length}, mouvements=${shadow.moved.length}`,
           );
@@ -1067,6 +1112,7 @@ async function main() {
           );
           return {
             summary,metrics,humanComparison:compared,
+            pairedHumanOrdering,
             tracks:experiment.map(track=>({
               ...compactTrack(track),
               humanVerdict:matchHistoricalVerdict(benchmarkCase,track),

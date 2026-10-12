@@ -254,3 +254,25 @@ The adjustment never applies to other directions. The offline
 obscurity gates and selection rules, including separate human coherence
 and taste counts. No extra API requests are made for the experiment.
 The production strategy remains baseline until reviewed by listening.
+
+ 
+## 15. Paired coherence ordering (without extra API calls)
+
+The existing same-pool comparisons --compare-vibe, --compare-paths and
+--compare-scope now include pairedHumanOrdering in their run JSON.
+
+This asks whether a ranking places a human-reviewed musically coherent
+track ahead of a less coherent reviewed track. Comparisons use exactly
+matched artist+title identities that are present in BOTH lists, under
+the same seed, direction and obscurity. Artist-only reviews are not
+treated as recording-level judgments. Pairs with identical coherence
+ratings are excluded, and taste/novelty remain separate.
+
+A new unreviewed recommendation replacing a rejected one is not counted
+as an improvement: coverage of common rated recordings and comparable
+pairs is shown explicitly. If no graded pair exists the accuracy and
+delta are null (indeterminate), never a false claim of success. Improved
+and regressed pair counts expose order inversions.
+
+These statistics require no additional calls, change no ranking scores,
+do not touch the UI, and cannot replace actual listening validation.
