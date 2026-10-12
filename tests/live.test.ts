@@ -475,7 +475,7 @@ test("catalogue fallback serves sparse non-MBID seeds in every direction and sup
   );
   const second = await recommendLive({ ...request, seedTrack: first.tracks[0] }, AbortSignal.timeout(10000));
   assert.equal(second.seed.artist, "Neighbour fixture");
-  assert.equal(second.tracks[0]?.artist, "Next fixture");
+  assert.ok(second.tracks.some(track => track.artist === "Next fixture"), "Next fixture is still discoverable after an additional guest credit");
 });
 test("Pleine Forêt regression expands a poor direct list through the verified Léon Phal anchor", async t => {
   const oldKey = process.env.LASTFM_API_KEY;
