@@ -41,7 +41,7 @@ export type RankingTrackAudit={
   scoreComponentSum:number|null;
   residualScore:number|null;
   origin:string|null;
-  evidenceTier:Recommendation["evidence"] extends infer _ ? "strong"|"credible"|"exploratory"|null : never;
+  evidenceTier:"strong"|"credible"|"exploratory"|null;
   metadataOverlapScope:string|null;
   pathRelation:string;
   pathFlags:string[];
