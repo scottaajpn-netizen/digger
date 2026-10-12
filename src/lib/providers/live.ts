@@ -8,7 +8,8 @@ import { assessLastFmRecordingIdentity, singleVerifiedIsrc } from "../discovery/
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, lastFmTagArtistPath, listenBrainzPath } from "../discovery/paths";
-import { assessLastFmArtistIdentity, resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
+import { artistNameParts, assessLastFmArtistIdentity, resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
+import { analyzeSeedAnchorCoverage, selectBalancedBridges, selectBalancedSecondHopArtists } from "../discovery/seed-branch-balance";
 import { loadCatalogueEntries, rememberCatalogueEntries, type CatalogueEntryInput } from "../discovery/catalogue";
 import { analyzeBranchDiagnostics } from "../discovery/branch-diagnostics";
 import { comparePathShadow, compareScopeShadow, compareVibeShadow } from "../discovery/shadow-comparison";
@@ -1014,11 +1015,9 @@ export async function recommendLive(
       // Branch 2: walk one more artist hop instead of repeatedly mining the
       // same first-circle catalogues. Rotate bridge artists by session so
       // Surprends-moi explores different parts of the graph across runs.
-      const bridgeOffset = input.session % neighbours.length;
-      const rotatedBridges = [
-        ...neighbours.slice(bridgeOffset),
-        ...neighbours.slice(0, bridgeOffset),
-      ].slice(0, 3);
+      // Reserve opportunities for distinct verified seed participants within
+      // the SAME three Last.fm bridge requests. Do not multiply API calls.
+      const rotatedBridges = selectBalancedBridges(neighbours,input.session,3);
 
       const secondCircleRows = await Promise.all(
         rotatedBridges.map(bridge =>
@@ -1047,38 +1046,34 @@ export async function recommendLive(
           .map(normalized)
           .filter(Boolean),
       );
-      const secondHopArtists: Array<{
+      // Build the same bounded response pool, then choose up to 6 artists
+      // round-robin by *seed anchor* rather than allowing the first bridge
+      // to consume every slot. A path stays tied to its actual bridge.
+      const secondHopRows: Array<{
         anchor: string;
         bridge: string;
         name: string;
         firstHopMatch: number;
         match: number;
       }> = [];
-      const secondHopSeen = new Set<string>();
-
-      for (let rowIndex = 0; rowIndex < 8 && secondHopArtists.length < 6; rowIndex += 1) {
+      for (let rowIndex = 0; rowIndex < 8; rowIndex += 1) {
         for (let bridgeIndex = 0; bridgeIndex < rotatedBridges.length; bridgeIndex += 1) {
           const bridge = rotatedBridges[bridgeIndex];
           const row = secondCircleRows[bridgeIndex]?.similarartists?.artist?.[rowIndex];
           const name = row?.name?.trim();
-          const key = normalized(name || "");
-          if (!name || !key || excludedArtistKeys.has(key) || secondHopSeen.has(key)) {
-            continue;
-          }
-          secondHopSeen.add(key);
-          secondHopArtists.push({
+          if (!name) continue;
+          secondHopRows.push({
             anchor: bridge.anchor,
             bridge: bridge.name,
             name,
-            firstHopMatch: Math.max(
-              0,
-              Math.min(1, Number(bridge.match || 0)),
-            ),
-            match: Math.max(0, Math.min(1, Number(row?.match || 0))),
+            firstHopMatch: Math.max(0,Math.min(1,Number(bridge.match || 0))),
+            match: Math.max(0,Math.min(1,Number(row?.match || 0))),
           });
-          if (secondHopArtists.length >= 6) break;
         }
       }
+      const secondHopArtists = selectBalancedSecondHopArtists(
+        secondHopRows,[...excludedArtistKeys],6,
+      );
       catalogueDiagnostics.artistHopArtists = secondHopArtists.length;
 
       const secondHopCatalogues = await Promise.all(
@@ -1874,6 +1869,28 @@ export async function recommendLive(
     ),
   );
   retrievalDiagnostics.selected = retrievalStage(selected);
+  const expectedSeedParticipants = [...new Set([
+    ...seedParticipantNames,
+    ...artistNameParts(seed.artist),
+  ])];
+  retrievalDiagnostics.anchorCoverage = analyzeSeedAnchorCoverage(
+    expectedSeedParticipants,
+    catalogueDiagnostics.anchors,
+    generatedPoolForDiagnostics,
+    deepRanked,
+    selected,
+  );
+  if (input.direction === "Surprends-moi" && expectedSeedParticipants.length > 1) {
+    const unverified = retrievalDiagnostics.anchorCoverage
+      .filter(row => !row.verified)
+      .map(row => row.anchor);
+    if (unverified.length && catalogueDiagnostics.expansionTriggered) {
+      notes.push(
+        "Branche(s) non explorée(s) via Last.fm faute d'identité vérifiée : "+
+        unverified.join(", ")+". Aucun lien artiste n'a été inventé.",
+      );
+    }
+  }
   // Offline-only comparison; the live API calls recommendLive without this option.
   // Reuse identical enriched candidates and final audience metadata: no API calls.
   const shadowInput = {
