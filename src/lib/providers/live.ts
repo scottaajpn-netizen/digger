@@ -3,6 +3,7 @@ import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } fro
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { cleanLastFmArtistTags } from "../music/lastfm-context";
+import { auditMusicalContext } from "../music/context-evidence";
 import { singleVerifiedIsrc } from "../discovery/recording-identity";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
@@ -281,7 +282,7 @@ export function fromRecording(r: Recording): Track | null {
   const release = r.releases?.find(item => !normalized(item.title).startsWith(normalized(r.title))) || r.releases?.[0];
   const tags = (r.tags || []).filter(t => typeof t.name === "string").sort((a, b) => (b.count || 0) - (a.count || 0)).map(t => t.name).slice(0, 6);
   const isrc = singleVerifiedIsrc(r.isrcs);
-  return { id: r.id, title: r.title, artist, artistId: credits.find(c => c.role === "primary")?.sourceId, credits, country: rows[0]?.artist?.country, releaseId: release?.id, album: release?.title, scene: tags[0] || "MusicBrainz", label: "", tags, year: Number(r["first-release-date"]?.slice(0, 4)) || 0, obscurity: 50, colors: colors[hash(r.id) % colors.length], externalIds: { musicbrainz: r.id, ...(isrc ? { isrc } : {}) } };
+  return { id: r.id, title: r.title, artist, artistId: credits.find(c => c.role === "primary")?.sourceId, credits, country: rows[0]?.artist?.country, releaseId: release?.id, album: release?.title, scene: tags[0] || "MusicBrainz", label: "", tags, year: Number(r["first-release-date"]?.slice(0, 4)) || 0, obscurity: 50, colors: colors[hash(r.id) % colors.length], externalIds: { musicbrainz: r.id, ...(isrc ? { isrc } : {}) }, tagEvidence: tags.length ? [{source:"musicbrainz", scope:"recording", tags}] : [] };
 }
 export async function searchLive(query: string, signal: AbortSignal): Promise<Track[]> {
   const structured = structuredSearchParts(query);
@@ -581,6 +582,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   }));
 
   const artistTags = artistRows.flatMap(row => row?.tags || []).sort((a, b) => (b.count || 0) - (a.count || 0)).map(t => t.name);
+  if (artistTags.length) seed.tagEvidence = [...(seed.tagEvidence || []), {source:"musicbrainz",scope:"artist",tags:artistTags.slice(0,8)}];
   seed.tags = [...new Set([...seed.tags, ...artistTags])].slice(0, 8);
   seed.country = artistRows.find(row => row?.country)?.country || seed.country;
   seed.scene = artistRows.find(row => row?.area?.name)?.area?.name || seed.tags[0] || seed.scene || "Sources musicales";
@@ -607,13 +609,17 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
     .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
     .map(tag => tag.name!)
     .slice(0, 6);
-  if (extraLastFmTags.length) seed.tags = [...new Set([...seed.tags, ...extraLastFmTags])].slice(0, 8);
+  if (extraLastFmTags.length) {
+    seed.tagEvidence = [...(seed.tagEvidence || []), {source:"lastfm",scope:"recording",tags:extraLastFmTags}];
+    seed.tags = [...new Set([...seed.tags, ...extraLastFmTags])].slice(0, 8);
+  }
 
   const seedProfile = buildMusicalProfile(seed);
   seed.analysis = {
     genres: seedProfile.genres,
     subgenres: seedProfile.subgenres,
     traits: seedProfile.traits,
+    metadataEvidence: auditMusicalContext(seed),
   };
   const pool: Candidate[] = [];
   function addRelease(r: Release, label: string, relevance: number, origin: CandidateOrigin = "release") {
@@ -1437,6 +1443,14 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   const discogsResult = await discogsJob;
   pool.push(...discogsResult.candidates);
   notes.push(...discogsResult.notes);
+  if (discogsResult.seedRelease) {
+    seed.tagEvidence = [...(seed.tagEvidence || []), {
+      source:"discogs",scope:"release",tags:[
+        ...discogsResult.seedRelease.styles,...discogsResult.seedRelease.genres
+      ],
+    }];
+    if (seed.analysis) seed.analysis.metadataEvidence = auditMusicalContext(seed);
+  }
   const rankingSeedProfile = discogsResult.seedRelease
     ? buildMusicalProfile({
       ...seed,

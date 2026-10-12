@@ -1,4 +1,5 @@
 import { buildMusicalProfile, compareMusicalProfiles, type MusicalProfile } from "../music/profile";
+import { auditMusicalContext, describeMusicalOverlap } from "../music/context-evidence";
 import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
 import { assessCandidateEvidence } from "./evidence";
@@ -430,11 +431,12 @@ export function rankDiscoveryCandidates({
         seedProfile.traits.includes(value),
       );
 
-      let reason = track.reason;
-      if (sharedSubgenres.length)
-        reason = `Sous-genre commun : ${sharedSubgenres.slice(0, 2).join(" / ")}. ${reason}`;
-      else if (sharedTraits.length)
-        reason = `Traits musicaux communs : ${sharedTraits.slice(0, 2).join(" / ")}. ${reason}`;
+      const seedEvidence = auditMusicalContext(seed);
+      const candidateEvidence = auditMusicalContext(track);
+      const overlapDescription = sharedSubgenres.length
+        ? describeMusicalOverlap("subgenre",sharedSubgenres,seedEvidence,candidateEvidence)
+        : describeMusicalOverlap("traits",sharedTraits,seedEvidence,candidateEvidence);
+      const reason = overlapDescription ? `${overlapDescription} ${track.reason}` : track.reason;
 
       return {
         ...track,
@@ -447,6 +449,7 @@ export function rankDiscoveryCandidates({
           subgenres: candidateProfile.subgenres,
           traits: candidateProfile.traits,
           similarity: Math.round(comparison.musicalSimilarity * 100),
+          metadataEvidence: candidateEvidence,
         },
       };
     })

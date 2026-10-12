@@ -4,11 +4,26 @@ export type Direction = typeof directions[number];
 export const feedbackValues = ["love", "curious", "neutral", "known"] as const;
 export type Feedback = typeof feedbackValues[number];
 export type FeedbackMap = Record<string, Feedback>;
+export type MusicalTagScope = "recording" | "artist" | "release" | "context";
+export type MusicalTagSource = "musicbrainz" | "lastfm" | "listenbrainz" | "discogs";
+export interface MusicalTagEvidence {
+  source: MusicalTagSource;
+  scope: MusicalTagScope;
+  tags: string[];
+}
+export interface MusicalContextAudit {
+  recording: string[];
+  artist: string[];
+  release: string[];
+  context: string[];
+  unscoped: string[];
+}
 export interface MusicalAnalysis {
   genres: string[];
   subgenres: string[];
   traits: string[];
   similarity?: number;
+  metadataEvidence?: MusicalContextAudit;
 }
 export type CandidateEvidenceTier = "strong" | "credible" | "exploratory";
 export type CandidateEvidencePath = "structured" | "behavioral" | "catalogue" | "tag" | "none";
@@ -77,6 +92,7 @@ export interface Track {
   lastfmArtistListeners?: number;
   artistAudienceLookup?: "mbid" | "name" | "name-fallback" | "partial" | "failed" | "not-targeted";
   analysis?: MusicalAnalysis;
+  tagEvidence?: MusicalTagEvidence[];
   discoveryPath?: DiscoveryPath;
   retrieval?: TrackRetrievalProvenance;
   credits?: ArtistCredit[];

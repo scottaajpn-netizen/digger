@@ -68,3 +68,19 @@ or novel but musically incoherent.
 Before tuning coefficients, prefer a causal invariant and a regression test.
 Validate with typecheck, tests, build, then rerun representative seeds from the
 human benchmark. Keep main untouched until the feature branch is validated.
+
+
+## 6. Tag provenance without ranking changes
+
+Musical tags have a provider and a scope when this is known:
+MusicBrainz recording tags and Last.fm track.getTopTags describe recording
+**metadata**; MusicBrainz artist tags describe the **artist**; Discogs
+styles describe a **release**, which may be a multi-artist compilation.
+Artist-relation and retrieval context tags are not recording facts.
+Unattributed tags remain marked as such; no audio analysis is implied.
+
+The audit separates classified fine-grained musical clues by scope,
+without changing the existing scoring weights or candidate selection.
+The human-readable reasons no longer present compilation styles as
+demonstrated recording-level similarity. Regression tests preserve this
+boundary and the unchanged musical profile similarity formula.
