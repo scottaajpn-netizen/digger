@@ -84,3 +84,19 @@ without changing the existing scoring weights or candidate selection.
 The human-readable reasons no longer present compilation styles as
 demonstrated recording-level similarity. Regression tests preserve this
 boundary and the unchanged musical profile similarity formula.
+
+
+## 7. Shadow measurement for provenance-dependent ranking
+
+The discovery benchmark now records `metadataScopeCounts` and the percentage
+of recommendations whose shared fine-grained musical tags depend on
+release/compilation metadata. Categories are `recording`, `release-context`,
+`artist-context`, `unscoped`, `none` or `not-measured`.
+
+The pure ranker accepts internal `strategy: "scope-aware"` to test reducing
+only the similarity contribution from release-scoped subgenre/trait overlap by
+50%. Its default remains `"baseline"`; neither the live API nor the UI
+activates the experiment. Discogs editorial path relevance, direction
+bonuses and the evidence tier are unchanged. Automated tests verify both
+strategies and their score breakdown; an actual improvement in listening
+quality must still be measured with the human benchmark.

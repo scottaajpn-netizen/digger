@@ -57,3 +57,21 @@ test("metadata audit does not change existing similarity coefficients",()=>{
   const after=compareMusicalProfiles(buildMusicalProfile(seed),buildMusicalProfile(candidate)).musicalSimilarity;
   assert.equal(after,baseline);
 });
+
+
+test("overlap classification identifies recording, release, contextual, unscoped and no match",()=>{
+  const {classifyMusicalOverlap,cautiousReleaseSimilarity}=require("../src/lib/music/context-evidence") as typeof import("../src/lib/music/context-evidence");
+  const empty={recording:[],artist:[],release:[],context:[],unscoped:[]};
+  const recording={...empty,recording:["Boogie"]};
+  const release={...empty,release:["Boogie"]};
+  const artist={...empty,artist:["Boogie"]};
+  assert.equal(classifyMusicalOverlap(["Boogie"],recording,recording),"recording");
+  assert.equal(classifyMusicalOverlap(["Boogie"],recording,release),"release-context");
+  assert.equal(classifyMusicalOverlap(["Boogie"],artist,recording),"artist-context");
+  assert.equal(classifyMusicalOverlap(["Boogie"],empty,empty),"unscoped");
+  assert.equal(classifyMusicalOverlap([],empty,empty),"none");
+  const comparison={musicalSimilarity:0.5,subgenre:1,traits:0};
+  assert.ok(cautiousReleaseSimilarity(comparison,"release-context")<0.5);
+  assert.equal(cautiousReleaseSimilarity(comparison,"recording"),0.5);
+  assert.equal(cautiousReleaseSimilarity(comparison,"unscoped"),0.5);
+});

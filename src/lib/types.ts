@@ -18,7 +18,9 @@ export interface MusicalContextAudit {
   context: string[];
   unscoped: string[];
 }
+export type MusicalOverlapScope = "recording" | "release-context" | "artist-context" | "unscoped" | "none";
 export interface MusicalAnalysis {
+  overlapScope?: MusicalOverlapScope;
   genres: string[];
   subgenres: string[];
   traits: string[];

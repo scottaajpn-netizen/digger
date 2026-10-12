@@ -967,3 +967,44 @@ test("artist-anchored Discogs catalogue paths are weaker than direct editorial p
   assert.equal(editorialEvidence.path, "structured");
   assert.equal(editorialEvidence.tier, "credible");
 });
+
+
+test("shadow ranking discounts release-only similarity but preserves Discogs editorial paths",()=>{
+  const sourceSeed: Track = {...seed,tags:["boogie"],year:0,label:"",country:undefined,
+    tagEvidence:[{source:"musicbrainz",scope:"recording",tags:["boogie"]}]};
+  const release: Candidate = candidate("release-context",{
+    tags:[],year:0,label:"",country:undefined,
+    artist:"Release Artist",
+    relevance:60,origin:"discogs-compilation",
+    discogs:{
+      releaseId:321,title:"Mixed Grooves",artists:[],labels:[],genres:["Funk"],
+      styles:["Boogie"],compilation:true,
+      sourceUrl:"https://www.discogs.com/release/321",fetchedAt:"2026-10-12",
+      position:"A1",trackArtists:[],role:"compilation-track",path:[],audience:"unknown"
+    },
+  });
+  const direct: Candidate = candidate("recording-context",{
+    tags:["boogie"],year:0,label:"",country:undefined,
+    artist:"Recording Artist",
+    relevance:60,
+    tagEvidence:[{source:"lastfm",scope:"recording",tags:["boogie"]}],
+  });
+  const options={pool:[release,direct],seed:sourceSeed,
+    seedProfile:buildMusicalProfile(sourceSeed),input:request(),
+    seedParticipantKeys:new Set(["seed artist"])};
+  const baseline=rankDiscoveryCandidates(options);
+  const experiment=rankDiscoveryCandidates({...options,strategy:"scope-aware"});
+  const baselineRelease=baseline.find(row=>row.id===release.id)!;
+  const experimentRelease=experiment.find(row=>row.id===release.id)!;
+  const baselineDirect=baseline.find(row=>row.id===direct.id)!;
+  const experimentDirect=experiment.find(row=>row.id===direct.id)!;
+  assert.equal(experimentRelease.analysis?.overlapScope,"release-context");
+  assert.equal(experimentDirect.analysis?.overlapScope,"recording");
+  assert.ok(experimentRelease.score<baselineRelease.score);
+  assert.equal(experimentDirect.score,baselineDirect.score);
+  assert.equal(experimentRelease.scoreBreakdown.discogs,baselineRelease.scoreBreakdown.discogs);
+  assert.equal(experimentRelease.evidence?.path,baselineRelease.evidence?.path);
+  for(const row of experiment){
+    assert.ok(Math.abs(row.score-Object.values(row.scoreBreakdown).reduce((a,b)=>a+b,0))<1e-6);
+  }
+});

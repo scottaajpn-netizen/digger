@@ -1,4 +1,4 @@
-import type { MusicalContextAudit, MusicalTagEvidence, Track } from "../types";
+import type { MusicalContextAudit, MusicalOverlapScope, Track } from "../types";
 import { normalizeMusicTags } from "./taxonomy";
 
 type AuditableTrack = Pick<Track,"tags"|"tagEvidence"|"discogs"|"retrieval">;
@@ -54,4 +54,40 @@ export function describeMusicalOverlap(
   if (releaseMatches.length)
     return "Style associé à une sortie/compilation (indice, non confirmé sur les deux morceaux) : "+releaseMatches.slice(0,2).join(" / ")+".";
   return "Contexte musical commun dans les métadonnées (indice, pas analyse audio) : "+shared.slice(0,2).join(" / ")+".";
+}
+
+
+/**
+ * Mutually exclusive overlap categories for evaluating the provenance of
+ * shared fine musical tags. A release style is a clue, not a track fact.
+ * Unknown / unscoped tags cannot establish a recording-level match.
+ */
+export function classifyMusicalOverlap(
+  shared: readonly string[],
+  seed: MusicalContextAudit,
+  candidate: MusicalContextAudit,
+): MusicalOverlapScope {
+  if (!shared.length) return "none";
+  if (shared.some(tag => seed.recording.includes(tag) && candidate.recording.includes(tag)))
+    return "recording";
+  if (shared.some(tag => seed.release.includes(tag) || candidate.release.includes(tag)))
+    return "release-context";
+  if (shared.some(tag => seed.artist.includes(tag) || candidate.artist.includes(tag) ||
+    seed.context.includes(tag) || candidate.context.includes(tag)))
+    return "artist-context";
+  return "unscoped";
+}
+
+/**
+ * Optional scoring experiment; not enabled in production.
+ * Only discount the fine-tag share of the similarity when it relies on
+ * release context. Leave year/country/labels and all graph evidence alone.
+ */
+export function cautiousReleaseSimilarity(
+  comparison: { musicalSimilarity:number; subgenre:number; traits:number },
+  scope: MusicalOverlapScope,
+): number {
+  if (scope !== "release-context") return comparison.musicalSimilarity;
+  const releaseFineShare = comparison.subgenre * 0.42 + comparison.traits * 0.27;
+  return Math.max(0, comparison.musicalSimilarity - 0.5 * releaseFineShare);
 }

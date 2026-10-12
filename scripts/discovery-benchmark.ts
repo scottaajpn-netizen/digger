@@ -251,6 +251,12 @@ function measureTracks(
       tracks.length === 0 ? 0 : evidenceCount / tracks.length,
     strongEvidenceRatio:
       tracks.length === 0 ? 0 : strongEvidenceCount / tracks.length,
+    metadataScopeCounts: countBy(
+      tracks.map(track => track.analysis?.overlapScope || "not-measured"),
+    ),
+    releaseContextCount: tracks.filter(
+      track => track.analysis?.overlapScope === "release-context",
+    ).length,
     unknownAudienceCount,
     negativeScoreCount,
     negativeScoreRatio:
@@ -671,6 +677,8 @@ function compactTrack(track: RuntimeRecommendation) {
     genres: track.analysis?.genres,
     subgenres: track.analysis?.subgenres,
     traits: track.analysis?.traits,
+    metadataOverlapScope: track.analysis?.overlapScope,
+    metadataEvidence: track.analysis?.metadataEvidence,
     discogsGenres: track.discogs?.genres,
     discogsStyles: track.discogs?.styles,
     label: track.label,
@@ -795,6 +803,11 @@ function printRun(
   console.log(
     `tracks=${metrics.trackCount} | artistes=${metrics.uniqueArtistCount} | répétitions=${metrics.repeatedArtistSlots} | branches=${metrics.branchCount} | branche dominante=${(metrics.dominantBranchRatio * 100).toFixed(0)}% | preuve=${(metrics.evidenceCoverageRatio * 100).toFixed(0)}% | scores<0=${metrics.negativeScoreCount} | audience artiste inconnue=${metrics.artistAudienceUnknownCount}`,
   );
+  console.log(
+    "    métadonnées partagées: " +
+    formatOriginCounts(metrics.metadataScopeCounts) +
+    " | sortie/compilation: " + metrics.releaseContextCount + "/" + metrics.trackCount,
+  );
   if (metrics.artistAudienceUnknownCount > 0) {
     const lookup = metrics.artistAudienceLookupCounts;
     console.log(
@@ -811,7 +824,7 @@ function printRun(
       : "none";
 
     console.log(
-      `${String(index + 1).padStart(2, " ")}. ${track.artist} — ${track.title} | score=${formatNumber(track.score)} | branch=${branchKey(track)} | evidence=${evidence} | path=${path} | obsc=${formatNumber(track.obscurity)}`,
+      `${String(index + 1).padStart(2, " ")}. ${track.artist} — ${track.title} | score=${formatNumber(track.score)} | branch=${branchKey(track)} | evidence=${evidence} | path=${path} | obsc=${formatNumber(track.obscurity)} | tags=${track.analysis?.overlapScope || "not-measured"}`,
     );
 
     if (track.scoreBreakdown) {

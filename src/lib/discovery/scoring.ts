@@ -1,5 +1,5 @@
 import { buildMusicalProfile, compareMusicalProfiles, type MusicalProfile } from "../music/profile";
-import { auditMusicalContext, describeMusicalOverlap } from "../music/context-evidence";
+import { auditMusicalContext, classifyMusicalOverlap, cautiousReleaseSimilarity, describeMusicalOverlap } from "../music/context-evidence";
 import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
 import { assessCandidateEvidence } from "./evidence";
@@ -72,6 +72,8 @@ type RankDiscoveryInput = {
   seedProfile: MusicalProfile;
   input: DigRequest;
   seedParticipantKeys: Set<string>;
+  // Pure shadow experiment, never set by the production endpoint.
+  strategy?: "baseline" | "scope-aware";
 };
 
 export type CandidateEligibilityFailure =
@@ -120,6 +122,7 @@ export function rankDiscoveryCandidates({
   seedProfile,
   input,
   seedParticipantKeys,
+  strategy = "baseline",
 }: RankDiscoveryInput): RankedCandidate[] {
   const preferred = new Set(
     pool
@@ -163,13 +166,23 @@ export function rankDiscoveryCandidates({
         compareMusicalProfiles(seedProfile, contextualProfile);
       const evidence = assessCandidateEvidence(track, evidenceComparison);
       const shared = track.tags.filter(tag => seed.tags.includes(tag)).length;
+      const seedEvidence = auditMusicalContext(seed);
+      const candidateEvidence = auditMusicalContext(track);
+      const sharedFineTags = [
+        ...candidateProfile.subgenres.filter(tag => seedProfile.subgenres.includes(tag)),
+        ...candidateProfile.traits.filter(tag => seedProfile.traits.includes(tag)),
+      ];
+      const overlapScope = classifyMusicalOverlap(sharedFineTags,seedEvidence,candidateEvidence);
+      const scoringSimilarity = strategy === "scope-aware"
+        ? cautiousReleaseSimilarity(comparison,overlapScope)
+        : comparison.musicalSimilarity;
 
       const scoreBreakdown = {
         relevance:
           input.direction === "Surprends-moi"
             ? track.relevance * 0.2
             : track.relevance,
-        musicalSimilarity: comparison.musicalSimilarity * 55,
+        musicalSimilarity: scoringSimilarity * 55,
         sharedTags: shared * 3,
         preferredTags:
           track.tags.filter(tag => preferred.has(tag)).length * 4,
@@ -334,7 +347,7 @@ export function rankDiscoveryCandidates({
       }
 
       if (input.direction === "Même vibe") {
-        const vibeSimilarityBonus = comparison.musicalSimilarity * 35;
+        const vibeSimilarityBonus = scoringSimilarity * 35;
         score += vibeSimilarityBonus;
         scoreBreakdown.direction += vibeSimilarityBonus;
 
@@ -431,8 +444,6 @@ export function rankDiscoveryCandidates({
         seedProfile.traits.includes(value),
       );
 
-      const seedEvidence = auditMusicalContext(seed);
-      const candidateEvidence = auditMusicalContext(track);
       const overlapDescription = sharedSubgenres.length
         ? describeMusicalOverlap("subgenre",sharedSubgenres,seedEvidence,candidateEvidence)
         : describeMusicalOverlap("traits",sharedTraits,seedEvidence,candidateEvidence);
@@ -450,6 +461,7 @@ export function rankDiscoveryCandidates({
           traits: candidateProfile.traits,
           similarity: Math.round(comparison.musicalSimilarity * 100),
           metadataEvidence: candidateEvidence,
+          overlapScope,
         },
       };
     })
