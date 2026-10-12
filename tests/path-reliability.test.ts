@@ -32,10 +32,11 @@ test("artist similarity chain is not direct track-level listening evidence",()=>
   };
   const audit=auditDiscoveryPath(row);
   assert.equal(audit.relation,"artist-similarity-chain");
-  assert.ok(audit.flags.includes("artist-chain-mislabeled-listening"));
+  assert.equal(row.discoveryPath.evidence,"catalogue");
+  assert.ok(!audit.flags.includes("artist-chain-mislabeled-listening"));
   assert.ok(audit.flags.includes("long-path-no-recording-match"));
-  // Reveals a currently existing false-positive credible behavioral path.
-  assert.equal(row.evidence.path,"behavioral");
+  assert.equal(row.evidence.path,"artist-link");
+  assert.equal(row.evidence.musical,false);
   assert.equal(row.evidence.tier,"credible");
 });
 
@@ -83,4 +84,22 @@ test("scenes and unscoped tags expose subjective claims without scoring changes"
   const audit=auditDiscoveryPath(row);
   assert.ok(audit.flags.includes("scene-context-is-not-musical-proof"));
   assert.ok(audit.flags.includes("unscoped-tags-used-as-proof"));
+});
+
+
+test("legacy artist-hop marked listening is still classified as artist-link, with warning",()=>{
+  const old={...lastFmArtistHopPath(seed,"Mia","Bridge","Neighbour",candidate),evidence:"listening" as const};
+  const evidence=assessCandidateEvidence({discoveryPath:old},noOverlap);
+  assert.equal(evidence.path,"artist-link");
+  assert.equal(evidence.tier,"credible");
+  const audit=auditDiscoveryPath({...candidate,origin:"lastfm-artist-hop",discoveryPath:old,evidence});
+  assert.ok(audit.flags.includes("artist-chain-mislabeled-listening"));
+  assert.equal(audit.directTrackAssociations,0);
+});
+test("direct recording similarity remains behavioral, unlike artist-to-artist chains",()=>{
+  const direct=lastFmSimilarityPath(seed,candidate);
+  const evidence=assessCandidateEvidence({discoveryPath:direct},noOverlap);
+  assert.equal(evidence.path,"behavioral");
+  assert.equal(evidence.tier,"credible");
+  assert.equal(evidence.musical,false);
 });
