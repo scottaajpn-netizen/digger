@@ -312,3 +312,25 @@ Then read \`benchmark-results/latest-ranking.md\` and the corresponding
 \`runs[].rankingDecisionAudit\` or
 \`runs[].vibeShadow.rankingDecisionAudit\` in JSON. Experiments remain
 opt-in; the standard engine stays on the baseline strategy.
+
+
+## 17. Accurate Last.fm artist-hop evidence without deleting discoveries
+
+A two-hop Last.fm graph through artist.getSimilar and artist.getTopTracks
+is a legitimate candidate-finding association but does not establish
+track-to-track listening similarity. The discoveryPath evidence is now
+catalogue rather than the former misleading listening label. The UI
+explicitly displays "voisinage entre artistes" and explains its scope.
+
+The musical evidence kind for such routes is artist-link. A documented
+multi-hop artist association is still credible as an exploration route
+(and remains eligible for supported Surprends-moi discoveries), but it
+does not claim actual sonic or behavioral track similarity. New paths
+no longer generate the old artist-chain-mislabeled-listening warning;
+legacy paths retain that diagnostic. Long paths without recording-scope
+confirmation continue to be flagged.
+
+Previously saved path feedback under the old label is still honored as
+a fallback until a newer preference exists. This change adds no API
+requests or candidate retrieval. Listening tests are still needed to
+determine whether users prefer the changed ordering.
