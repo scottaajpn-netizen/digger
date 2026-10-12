@@ -678,7 +678,9 @@ export async function recommendLive(
       return row;
     });
   });
-  const allLastFmSimilarTracks = suspectLastFmIdentity
+  // A name-only artist collision must not silence verified *track-level*
+  // discovery (e.g. DÜK). Only an explicit MBID conflict invalidates it.
+  const allLastFmSimilarTracks = artistIdentity.conflictingMbid
     ? [] : lastFmSimilar?.similartracks?.track || [];
   const directLastFmOffset = input.obscurity >= 90 ? 12 : input.obscurity >= 75 ? 6 : 0;
   const lastFmSimilarTracks = allLastFmSimilarTracks.slice(directLastFmOffset);
