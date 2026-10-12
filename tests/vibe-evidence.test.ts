@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { indirectVibeAdjustment } from "../src/lib/discovery/vibe-evidence";
+import { calibrateIndirectVibe } from "../src/lib/discovery/vibe-evidence";
 import { compareVibeShadow } from "../src/lib/discovery/shadow-comparison";
 import { rankDiscoveryCandidates } from "../src/lib/discovery/scoring";
 import { buildMusicalProfile } from "../src/lib/music/profile";
@@ -31,33 +31,96 @@ const editorial=candidate("editorial","Mango Hill Find","discogs-compilation",[]
 const direct=candidate("direct","Direct Recording","lastfm-similar",[],67);
 const seedProfile=buildMusicalProfile(seed);
 
-test("vibe experiment discounts indirect artist connections only in Même vibe",()=>{
-  assert.equal(indirectVibeAdjustment("Même vibe","lastfm-crate","none"),-20);
-  assert.equal(indirectVibeAdjustment("Même vibe","lastfm-artist-hop","unscoped"),-20);
-  assert.equal(indirectVibeAdjustment("Même vibe","lastfm-tag-crate","artist-context"),-16);
-  assert.equal(indirectVibeAdjustment("Même vibe","lastfm-crate","recording"),0);
-  assert.equal(indirectVibeAdjustment("Même vibe","discogs-compilation","release-context"),0);
-  assert.equal(indirectVibeAdjustment("Même vibe","lastfm-similar","none"),0);
-  assert.equal(indirectVibeAdjustment("Surprends-moi","lastfm-crate","none"),0);
-  assert.equal(indirectVibeAdjustment("Rabbit hole","lastfm-crate","none"),0);
+test("vibe correction withdraws only unsupported artist and catalogue boosts",()=>{
+  const effect=(origin:Candidate["origin"],scope:"recording"|"none"|"artist-context",obscurity:number,match?:number)=>
+    calibrateIndirectVibe("Même vibe",origin,scope,obscurity,match);
+  assert.deepEqual(effect("lastfm-crate","none",80,1),{
+    origin:-24,discoveryPath:-6,direction:0,
+  });
+  assert.deepEqual(effect("lastfm-crate","artist-context",95,0.5),{
+    origin:-24,discoveryPath:-3,direction:0,
+  });
+  assert.deepEqual(effect("lastfm-crate","none",70,0.5),{
+    origin:0,discoveryPath:-3,direction:-8,
+  });
+  assert.deepEqual(effect("lastfm-artist-hop","none",80,0.75),{
+    origin:0,discoveryPath:-4.5,direction:-8,
+  });
+  assert.deepEqual(effect("lastfm-tag-crate","artist-context",80),{
+    origin:0,discoveryPath:0,direction:-12,
+  });
+  assert.deepEqual(effect("lastfm-crate","recording",80,1),{
+    origin:0,discoveryPath:0,direction:0,
+  });
+  assert.deepEqual(effect("discogs-compilation","none",80,1),{
+    origin:0,discoveryPath:0,direction:0,
+  });
+  assert.deepEqual(effect("lastfm-similar","none",80,1),{
+    origin:0,discoveryPath:0,direction:0,
+  });
+  assert.deepEqual(calibrateIndirectVibe("Surprends-moi","lastfm-crate","none",80,1),{
+    origin:0,discoveryPath:0,direction:0,
+  });
+  assert.deepEqual(calibrateIndirectVibe("Rabbit hole","lastfm-artist-hop","none",100,1),{
+    origin:0,discoveryPath:0,direction:0,
+  });
+  assert.deepEqual(calibrateIndirectVibe("Labels","lastfm-crate","none",80,1),{
+    origin:0,discoveryPath:0,direction:0,
+  });
 });
 
-test("shadow changes only direction component, preserves verified and Discogs candidate scores",()=>{
-  const options={
-    pool:[distant,coherent,editorial,direct],seed,seedProfile,input:request,
-    seedParticipantKeys:new Set(["mia"]),
+test("out-of-range or missing Last.fm similarity cannot inflate correction",()=>{
+  const score=(value:number|undefined)=>
+    calibrateIndirectVibe("Même vibe","lastfm-crate","none",80,value).discoveryPath;
+  assert.equal(score(undefined),0);
+  assert.equal(score(NaN),0);
+  assert.equal(score(Number.POSITIVE_INFINITY),0);
+  assert.equal(score(-3),0);
+  assert.equal(score(12),-6);
+});
+
+test("vibe shadow corrects precise components but preserves verified and Discogs scores",()=>{
+  const distantMatched={
+    ...distant,
+    retrieval:{
+      provider:"lastfm" as const,source:"live" as const,
+      artistRelation:{anchorArtist:"Mia",neighbourArtist:"Fake Neighbor",similarity:0.5},
+    },
   };
+  const unsupportedHop={
+    ...candidate("hop","Distant Two-Hop","lastfm-artist-hop",[],69),
+    retrieval:{
+      provider:"lastfm" as const,source:"live" as const,
+      artistRelation:{anchorArtist:"Bridge",neighbourArtist:"Distant Two-Hop",similarity:0.8},
+    },
+  };
+  const pool=[distantMatched,coherent,editorial,direct,unsupportedHop];
+  const options={pool,seed,seedProfile,input:request,seedParticipantKeys:new Set(["mia"])};
   const baseline=rankDiscoveryCandidates(options);
   const shadow=rankDiscoveryCandidates({...options,strategy:"vibe-aware"});
   const byId=new Map(baseline.map(track=>[track.id,track]));
-  for (const track of shadow) {
+  const expectedById:Record<string,{origin:number;discoveryPath:number;direction:number}>={
+    distant:{origin:-24,discoveryPath:-3,direction:0},
+    coherent:{origin:0,discoveryPath:0,direction:0},
+    editorial:{origin:0,discoveryPath:0,direction:0},
+    direct:{origin:0,discoveryPath:0,direction:0},
+    hop:{origin:0,discoveryPath:-4.8,direction:-8},
+  };
+  for(const track of shadow){
     const before=byId.get(track.id)!;
-    const expected=track.id==="distant"?20:0;
-    assert.equal(before.score-track.score,expected);
-    assert.equal(before.scoreBreakdown.direction-track.scoreBreakdown.direction,expected);
+    const expected=expectedById[track.id];
+    for(const component of ["origin","discoveryPath","direction"] as const){
+      const difference=track.scoreBreakdown[component]-before.scoreBreakdown[component];
+      assert.ok(Math.abs(difference-expected[component])<1e-8,track.id+" "+component);
+    }
+    assert.ok(Math.abs(
+      track.score-before.score-Object.values(expected).reduce((a,b)=>a+b,0),
+    )<1e-7,"total delta "+track.id);
     assert.equal(before.scoreBreakdown.musicalSimilarity,track.scoreBreakdown.musicalSimilarity);
     assert.equal(before.scoreBreakdown.discogs,track.scoreBreakdown.discogs);
     assert.deepEqual(before.evidence,track.evidence);
+    assert.ok(Math.abs(track.score-
+      Object.values(track.scoreBreakdown).reduce((a,b)=>a+b,0))<1e-7);
   }
   assert.equal(shadow.find(x=>x.id==="coherent")?.analysis?.overlapScope,"recording");
   assert.deepEqual(rankDiscoveryCandidates(options).map(x=>x.score),baseline.map(x=>x.score));
