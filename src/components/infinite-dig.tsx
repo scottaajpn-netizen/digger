@@ -49,6 +49,7 @@ export function InfiniteDig({ initial, feedback, onFeedback, onSoulseek, onExplo
   const feedbackRef = useRef(feedback);
   const voted = useRef<FeedbackMap>({});
   const sequence = useRef(0);
+  const prefetchAt = useRef(-1);
   feedbackRef.current = feedback;
 
   function publish(next: typeof queue) {
@@ -125,12 +126,16 @@ export function InfiniteDig({ initial, feedback, onFeedback, onSoulseek, onExplo
 
   useEffect(() => () => controller.current?.abort(), []);
 
-  // Prefetch once the buffered selection is low. No timer, polling, or
-  // automatic retries: one API call per low-buffer episode.
+  // Prefetch at most once per position in the listening journey.
+  // A tiny refill must not trigger an immediate chain of network requests.
   useEffect(() => {
-    if (queue.upcoming.length <= 2 && !loading && !error && !exhausted) void refill();
+    if (queue.upcoming.length <= 2 && !loading && !error && !exhausted &&
+        prefetchAt.current !== queue.explored) {
+      prefetchAt.current = queue.explored;
+      void refill();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queue.upcoming.length, loading, error, exhausted]);
+  }, [queue.explored, queue.upcoming.length, loading, error, exhausted]);
 
   function next(value?: Feedback) {
     const track = queueRef.current.current;
@@ -156,6 +161,7 @@ export function InfiniteDig({ initial, feedback, onFeedback, onSoulseek, onExplo
 
   function retry() {
     exhaustedRef.current = false;
+    prefetchAt.current = queueRef.current.explored;
     setExhausted(false);
     setError("");
     void refill();
