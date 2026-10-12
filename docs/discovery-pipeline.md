@@ -125,3 +125,38 @@ An experiment-only entrant may lack artist-audience metadata; inspect the
 shadow's unknown-audience metrics before interpreting a result. This is
 an offline diagnostic, not a claim of better recommendations. The
 production ranking continues to default to baseline.
+
+
+## 9. Path reliability audit (diagnostic, production ranking unchanged)
+
+The offline discovery benchmark measures what each selected path actually
+**demonstrates**, separately from its eligibility or numerical score.
+`pathRelationCounts` classifies direct track similarity, artist radio,
+artist-similarity chains, catalogue links, editorial context, tag context
+and unknown relations. `pathReliabilityFlags` counts structural warnings.
+
+Identified risk patterns:
+
+- `artist-chain-mislabeled-listening`: `artist.getSimilar` twice plus
+  `artist.getTopTracks` is currently labeled as a behavioral listening
+  relation. These are artist-level links, not direct similarity of recordings.
+- `release-tags-used-as-musical-proof`: a release or compilation style
+  contributed to the evidence tier as if it described the specific track.
+- `discogs-link-labeled-editorial`: the graph has real Discogs release/label
+  nodes but their metadata alone does not establish curator-verified sonic
+  similarity.
+- `scene-context-is-not-musical-proof`: style, country and year on two
+  releases establish an editorial search context, not an artistic scene.
+- `long-path-no-recording-match`: a >=3-edge path has no shared
+  recording-scoped fine-tag evidence; its length must not certify relevance.
+- `unscoped-tags-used-as-proof`: musical evidence is supported by tags whose
+  recording scope has not been established.
+- `discogs-structured-without-path`: a Discogs association could receive
+  structured evidence without a displayed chain of nodes.
+
+These flags are **review prompts, not verdicts**: a valid obscure discovery
+may come from a chain with weak metadata, and a perfectly documented label
+relationship might still sound unlike its seed. The audit adds no API
+requests, no inference cost, no new filtering and no score change.
+Human listening verdicts and the same-pool shadow comparison remain
+necessary before changing path weights or tiers.

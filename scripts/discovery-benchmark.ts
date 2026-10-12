@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { loadEnvFile } from "node:process";
 
 import { normalized } from "../src/lib/discovery/ranking";
+import { auditDiscoveryPath } from "../src/lib/discovery/path-reliability";
 import { findCredibleTrackMatch, recommendLive, searchLive } from "../src/lib/providers/live";
 import {
   directions,
@@ -204,6 +205,9 @@ function measureTracks(
   const strongEvidenceCount = tracks.filter(
     track => track.evidence?.tier === "strong",
   ).length;
+  const pathAudits = tracks.map(auditDiscoveryPath);
+  const pathRelationCounts = countBy(pathAudits.map(audit => audit.relation));
+  const pathReliabilityFlags = countBy(pathAudits.flatMap(audit => audit.flags));
   const unknownAudienceCount = tracks.filter(
     track =>
       track.lastfmListeners === undefined &&
@@ -257,6 +261,9 @@ function measureTracks(
       tracks.length === 0 ? 0 : evidenceCount / tracks.length,
     strongEvidenceRatio:
       tracks.length === 0 ? 0 : strongEvidenceCount / tracks.length,
+    pathRelationCounts,
+    pathReliabilityFlags,
+    flaggedPathCount: pathAudits.filter(audit => audit.flags.length > 0).length,
     metadataScopeCounts: countBy(
       tracks.map(track => track.analysis?.overlapScope || "not-measured"),
     ),
@@ -685,6 +692,7 @@ function compactTrack(track: RuntimeRecommendation) {
     traits: track.analysis?.traits,
     metadataOverlapScope: track.analysis?.overlapScope,
     metadataEvidence: track.analysis?.metadataEvidence,
+    pathAudit: auditDiscoveryPath(track),
     discogsGenres: track.discogs?.genres,
     discogsStyles: track.discogs?.styles,
     label: track.label,
@@ -813,6 +821,11 @@ function printRun(
     "    métadonnées partagées: " +
     formatOriginCounts(metrics.metadataScopeCounts) +
     " | sortie/compilation: " + metrics.releaseContextCount + "/" + metrics.trackCount,
+  );
+  console.log(
+    "    chemins: " + formatOriginCounts(metrics.pathRelationCounts) +
+    " | signaux à examiner: " + metrics.flaggedPathCount + "/" + metrics.trackCount +
+    " [" + formatOriginCounts(metrics.pathReliabilityFlags) + "]",
   );
   if (metrics.artistAudienceUnknownCount > 0) {
     const lookup = metrics.artistAudienceLookupCounts;
@@ -1133,6 +1146,20 @@ async function main() {
       (total, run) =>
         total + run.humanComparison.badReappearances.length,
       0,
+    ),
+    pathRelationCounts: countBy(
+      runs.flatMap(run =>
+        Object.entries(run.metrics.pathRelationCounts).flatMap(
+          ([relation, count]) => Array.from({length:count}, () => relation),
+        ),
+      ),
+    ),
+    pathReliabilityFlags: countBy(
+      runs.flatMap(run =>
+        Object.entries(run.metrics.pathReliabilityFlags).flatMap(
+          ([flag, count]) => Array.from({length:count}, () => flag),
+        ),
+      ),
     ),
     scopeShadowRuns: runs.filter(run => run.scopeShadow).length,
     scopeShadowEntered: runs.reduce((sum, run) => sum + (run.scopeShadow?.summary.entered.length || 0), 0),
