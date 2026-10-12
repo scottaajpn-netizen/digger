@@ -112,3 +112,101 @@ test("Last.fm structured lookup searches the title itself before broad variants"
   assert.equal(queries[0],"Stimulation (Original Mix)");
   assert.equal(result[0]?.artist,"Adam Chini");
 });
+
+
+test("search progress emits useful snapshots and preserves the original early stop",async()=>{
+  const updates:{suggestions:Suggestion[];warnings:string[]}[]=[];
+  const calls:string[]=[];
+  const wrong=track("Stimulation (Original Mix)","Maceo Plex","MusicBrainz");
+  const right=track("Stimulation (Original Mix)","Adam Chini","Last.fm");
+  const result=await suggest("Stimulation (Original Mix) — Adam Chini",new AbortController().signal,{
+    mb:async()=>{calls.push("mb");return [wrong];},
+    lastfm:async()=>{calls.push("lastfm");return [right];},
+    discogs:async()=>{calls.push("discogs");return [];},
+  },value=>updates.push(value));
+  assert.deepEqual(calls,["mb","lastfm"]);
+  assert.equal(updates.length,2);
+  assert.equal(updates[0].suggestions[0]?.artist,"Maceo Plex");
+  assert.equal(updates[1].suggestions[0]?.artist,"Adam Chini");
+  assert.deepEqual(updates[1],result);
+});
+
+test("controller displays partial results, prevents stale updates and only caches final results",async t=>{
+  t.mock.timers.enable({apis:["setTimeout"]});
+  const states:SearchState[]=[];
+  const pending:{
+    query:string;
+    signal:AbortSignal;
+    progress:(value:{suggestions:Suggestion[];warnings:string[]})=>void;
+    resolve:(value:{suggestions:Suggestion[];warnings:string[]})=>void;
+  }[]=[];
+  const controller=new SearchController(state=>states.push(state),(query,signal,progress)=>new Promise(resolve=>pending.push({query,signal,progress,resolve})));
+  controller.search("premier");t.mock.timers.tick(300);
+  const first=pending[0];
+  first.progress({suggestions:[track("Premier titre")],warnings:[]});
+  assert.equal(states.at(-1)?.status,"loading");
+  assert.equal(states.at(-1)?.suggestions[0]?.title,"Premier titre");
+
+  controller.search("deuxième");t.mock.timers.tick(300);
+  first.progress({suggestions:[track("Résultat périmé")],warnings:[]});
+  first.resolve({suggestions:[track("Résultat périmé")],warnings:[]});
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(states.at(-1)?.suggestions[0]?.title,undefined);
+
+  const second=pending[1];
+  const found={suggestions:[track("Bon résultat")],warnings:[]};
+  second.progress(found);
+  second.resolve(found);
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(states.at(-1)?.status,"done");
+  controller.search("deuxième");
+  assert.equal(states.at(-1)?.status,"done");
+  assert.equal(pending.length,2);
+  controller.cancel();
+});
+
+test("late streaming failures preserve usable partial suggestions",async t=>{
+  t.mock.timers.enable({apis:["setTimeout"]});
+  const states:SearchState[]=[];
+  const controller=new SearchController(state=>states.push(state),async(_q,_signal,progress)=>{
+    progress({suggestions:[track("Première réponse")],warnings:[]});
+    throw Error("Dernière source indisponible");
+  });
+  controller.search("artiste");t.mock.timers.tick(300);
+  for(let i=0;i<4;i++)await Promise.resolve();
+  assert.equal(states.at(-1)?.status,"done");
+  assert.equal(states.at(-1)?.suggestions[0]?.title,"Première réponse");
+  assert.ok(states.at(-1)?.warnings.includes("Dernière source indisponible"));
+  controller.cancel();
+});
+
+test("NDJSON stream decodes split UTF-8 boundaries and ignores intermediate completion",async()=>{
+  const {readSearchStream}=await import("../src/lib/search/stream");
+  const encode=new TextEncoder();
+  const partial={suggestions:[track("Été d'amour")],warnings:[]};
+  const final={suggestions:[track("Été d'amour"),track("Deuxième")],warnings:[]};
+  const streamText=JSON.stringify({type:"partial",value:partial})+"\n"+JSON.stringify({type:"done",value:final})+"\n";
+  const bytes=encode.encode(streamText);
+  const split=bytes.indexOf(0xc3)+1; // Split inside UTF-8 encoding of é
+  const body=new ReadableStream<Uint8Array>({start(controller){
+    controller.enqueue(bytes.slice(0,split));
+    controller.enqueue(bytes.slice(split,split+9));
+    controller.enqueue(bytes.slice(split+9));
+    controller.close();
+  }});
+  const updates:typeof partial[]=[];
+  const result=await readSearchStream(new Response(body),value=>updates.push(value));
+  assert.equal(updates[0].suggestions[0].title,"Été d'amour");
+  assert.equal(updates.length,1);
+  assert.deepEqual(result,final);
+});
+
+test("stream rejects truncated responses and explicit errors",async()=>{
+  const {readSearchStream}=await import("../src/lib/search/stream");
+  const encoder=new TextEncoder();
+  const make=(frames:string)=>new Response(new ReadableStream<Uint8Array>({
+    start(controller){controller.enqueue(encoder.encode(frames));controller.close();}
+  }));
+  await assert.rejects(readSearchStream(make(JSON.stringify({type:"partial",value:{suggestions:[],warnings:[]}})+"\n"),()=>{}),/interrompue/);
+  await assert.rejects(readSearchStream(make(JSON.stringify({type:"error",error:"Échec contrôlé"})+"\n"),()=>{}),/Échec contrôlé/);
+});

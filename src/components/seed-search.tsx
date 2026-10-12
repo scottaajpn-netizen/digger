@@ -2,6 +2,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { SearchController, moveSelection, type SearchState } from "@/lib/search/controller";
 import type { Suggestion } from "@/lib/search/matching";
+import { readSearchStream } from "@/lib/search/stream";
 
 export function SeedSearch({ value, disabled, onChange, onSelect }: {
   value: string; disabled: boolean; onChange: (value: string) => void; onSelect: (track: Suggestion) => void;
@@ -15,13 +16,12 @@ export function SeedSearch({ value, disabled, onChange, onSelect }: {
   const [active, setActive] = useState(-1);
 
   useEffect(() => {
-    const search = new SearchController(setState, async (q, signal) => {
-      const response = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
-        signal: AbortSignal.any([signal, AbortSignal.timeout(19000)]),
+    const search = new SearchController(setState, async (q, signal, onProgress) => {
+      const combined = AbortSignal.any([signal, AbortSignal.timeout(19000)]);
+      const response = await fetch(`/api/search?q=${encodeURIComponent(q)}&stream=1`, {
+        signal: combined,
       });
-      const data = await response.json();
-      if (!response.ok) throw Error(data.error || "Recherche indisponible.");
-      return data;
+      return readSearchStream(response, onProgress, combined);
     });
     controller.current = search;
     return () => { search.cancel(); controller.current = null; };
@@ -93,7 +93,10 @@ export function SeedSearch({ value, disabled, onChange, onSelect }: {
           <small>{track.sources.join(" + ")}</small>
         </li>)}
       </ul>
-      <p role="status">{state.status === "loading" ? "Recherche…"
+      <p role="status">{state.status === "loading"
+        ? state.suggestions.length
+          ? `${state.suggestions.length} résultat${state.suggestions.length > 1 ? "s" : ""} déjà trouvé${state.suggestions.length > 1 ? "s" : ""} · Recherche des autres sources…`
+          : "Recherche…"
         : state.status === "idle" ? "Saisis au moins 3 caractères."
         : state.status === "error" ? state.error
         : state.suggestions.length ? `${state.suggestions.length} résultat${state.suggestions.length > 1 ? "s" : ""} · ↑ ↓ puis Entrée pour explorer`
