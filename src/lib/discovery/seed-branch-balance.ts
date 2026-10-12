@@ -1,21 +1,6 @@
-import { normalized, trackIdentity } from "./ranking";
+import { normalized, trackIdentity, discoverySeedAnchor } from "./ranking";
 import type { Candidate } from "./ranking";
-
-/**
- * Strictly observational anchor extraction. Artist-hop/catalogue provenance
- * is produced only from approved Last.fm anchors, never an artist name guessed
- * from a genre tag or a compound string.
- */
-export function discoverySeedAnchor(
-  track: Pick<Candidate, "origin" | "retrieval">,
-): string | null {
-  const name = track.origin === "lastfm-artist-hop"
-    ? track.retrieval?.artistHop?.anchorArtist
-    : track.origin === "lastfm-crate"
-      ? track.retrieval?.artistRelation?.anchorArtist
-      : undefined;
-  return name?.trim() || null;
-}
+export { discoverySeedAnchor } from "./ranking";
 
 export type BridgeArtist = {
   anchor: string;
