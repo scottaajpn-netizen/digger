@@ -28,7 +28,7 @@ export interface MusicalAnalysis {
   metadataEvidence?: MusicalContextAudit;
 }
 export type CandidateEvidenceTier = "strong" | "credible" | "exploratory";
-export type CandidateEvidencePath = "structured" | "behavioral" | "catalogue" | "tag" | "none";
+export type CandidateEvidencePath = "structured" | "behavioral" | "artist-link" | "catalogue" | "tag" | "none";
 export interface CandidateEvidence {
   tier: CandidateEvidenceTier;
   musical: boolean;
