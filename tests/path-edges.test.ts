@@ -28,6 +28,7 @@ test("artist neighbours are not confused with direct track similarity",()=>{
     ["artist-anchor","artist-similarity","artist-catalogue-track"]);
   const hop=lastFmArtistHopPath(seed,"Source","Bridge","Neighbour",candidate);
   const audit=auditDiscoveryPath({discoveryPath:hop,origin:"lastfm-artist-hop"});
+  assert.equal(hop.evidence,"catalogue");
   assert.deepEqual(audit.edges.map(edge=>edge.relation),
     ["artist-anchor","artist-similarity","artist-similarity","artist-catalogue-track"]);
   assert.equal(audit.directTrackAssociations,0);

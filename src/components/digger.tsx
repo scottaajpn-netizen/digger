@@ -34,10 +34,12 @@ function DiscoveryPathView({ track }: { track: Track }) {
   const path = track.discoveryPath;
   if (!path?.nodes?.length) return null;
   const relation = track.retrieval?.artistRelation;
+  const artistChain = path.source === "lastfm" &&
+    path.nodes.filter(node => node.kind === "artist").length >= 3;
   return <div className="discovery-path" aria-label="Chemin de découverte">
     <div className="discovery-path-head">
       <span>POURQUOI CE MORCEAU ?</span>
-      <small>{pathSourceLabel(path.source)} · {pathEvidenceLabel(path.evidence)} · {path.distance} {path.distance > 1 ? "étapes" : "étape"}</small>
+      <small>{pathSourceLabel(path.source)} · {artistChain ? "voisinage entre artistes" : pathEvidenceLabel(path.evidence)} · {path.distance} {path.distance > 1 ? "étapes" : "étape"}</small>
     </div>
     <div className="discovery-path-nodes">
       {path.nodes.map((node, index) => <span className="discovery-path-step" key={`${node.kind}:${node.id || node.name}:${index}`}>
@@ -45,6 +47,9 @@ function DiscoveryPathView({ track }: { track: Track }) {
         {node.url ? <a href={node.url} target="_blank" rel="noreferrer" title={node.name}>{node.name}</a> : <b title={node.name}>{node.name}</b>}
       </span>)}
     </div>
+    {artistChain ? <p className="reason">
+      Découverte par connexions entre artistes et leurs catalogues ; aucune proximité d'écoute entre ces deux morceaux n'est établie.
+    </p> : null}
     {relation ? <p className="reason">
       Relation Last.fm : <strong>{relation.neighbourArtist}</strong> est un artiste voisin de <strong>{relation.anchorArtist}</strong>
       {relation.similarity !== undefined ? <> · voisinage : {lastFmNeighbourStrength(relation.similarity)} (score {relation.similarity.toFixed(2)})</> : null}

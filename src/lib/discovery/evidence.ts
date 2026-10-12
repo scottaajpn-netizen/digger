@@ -36,6 +36,15 @@ function evidencePathKind(
   if (path.evidence === "editorial" || path.evidence === "release") {
     return "structured";
   }
+  // Last.fm two-hop artist.getSimilar relationships lead to a top-track
+  // catalogue, NOT a recording-level listening association. Handle legacy
+  // paths previously mislabeled listening as well.
+  if (path.source === "lastfm" &&
+      path.nodes.filter(node => node.kind === "artist").length >= 3 &&
+      path.nodes[0]?.kind === "track" &&
+      path.nodes.at(-1)?.kind === "track") {
+    return "artist-link";
+  }
   if (path.evidence === "listening") return "behavioral";
   if (path.evidence === "catalogue") return "catalogue";
   if (path.evidence === "tag") return "tag";
@@ -63,7 +72,10 @@ export function assessCandidateEvidence(
 
   const musical = fineMusicalEvidence || contextualMusicalEvidence;
   const path = evidencePathKind(track);
-  const crediblePath = path === "structured" || path === "behavioral";
+  // A documented artist-link is credible for exploring music, but does
+  // not claim the recordings were listened to together.
+  const crediblePath = path === "structured" || path === "behavioral" ||
+    path === "artist-link";
 
   const tier: CandidateEvidence["tier"] =
     musical && crediblePath

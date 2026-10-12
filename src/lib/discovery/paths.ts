@@ -102,7 +102,9 @@ export function lastFmArtistHopPath(
   neighbourArtist: string,
   candidate: Pick<Track, "id" | "title" | "artist" | "externalIds">,
 ): DiscoveryPath {
-  return discoveryPath("lastfm", "listening", [
+  // An artist similarity chain is a catalogue association, not a direct
+  // track-to-track listening relationship.
+  return discoveryPath("lastfm", "catalogue", [
     trackNode(seed, "lastfm"),
     pathNode("artist", anchorArtist, "lastfm"),
     pathNode("artist", bridgeArtist, "lastfm"),
