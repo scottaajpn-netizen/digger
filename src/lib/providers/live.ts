@@ -1,6 +1,6 @@
 import { discoverDiscogs } from "./discogs";
 import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } from "../types";
-import { lastFmJson, musicJson, MusicServiceError } from "./http";
+import { lastFmJson, musicJson, MusicServiceError, LastFmApiError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { cleanLastFmArtistTags } from "../music/lastfm-context";
 import { auditMusicalContext } from "../music/context-evidence";
@@ -8,7 +8,7 @@ import { assessLastFmRecordingIdentity, singleVerifiedIsrc } from "../discovery/
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, lastFmTagArtistPath, listenBrainzPath } from "../discovery/paths";
-import { artistNameParts, assessLastFmArtistIdentity, resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
+import { artistNameParts, assessLastFmArtistIdentity, catalogueAnchorMbid, canExpandVerifiedArtistCatalogue, resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
 import { analyzeSeedAnchorCoverage, selectBalancedBridges, selectBalancedSecondHopArtists } from "../discovery/seed-branch-balance";
 import { loadCatalogueEntries, rememberCatalogueEntries, type CatalogueEntryInput } from "../discovery/catalogue";
 import { analyzeBranchDiagnostics } from "../discovery/branch-diagnostics";
@@ -459,7 +459,17 @@ export async function recommendLive(
   options: { compareScope?: boolean; comparePaths?: boolean; compareVibe?: boolean } = {},
 ): Promise<DigResponse> {
   const notes: string[] = [];
-  async function optional<T>(job: Promise<T>, message: string): Promise<T | null> { try { return await job; } catch { notes.push(message); return null; } }
+  async function optional<T>(job: Promise<T>, message: string): Promise<T | null> {
+    try { return await job; }
+    catch(error) {
+      // Optional Last.fm errors were previously all collapsed into
+      // "unavailable", hiding API responses such as unknown recordings.
+      // Record only the numeric code, never the key or full request URL.
+      notes.push(message + (error instanceof LastFmApiError
+        ? " [Last.fm API : code "+error.apiCode+"]" : ""));
+      return null;
+    }
+  }
 
   const reference = input.seedTrack;
   const referenceMbid = reference?.externalIds?.musicbrainz;
@@ -604,9 +614,15 @@ export async function recommendLive(
     namedAnchors,seedArtistIds,lastFmSeedInfo?.track?.artist?.mbid,
   );
   const lastFmArtistAnchors = artistIdentity.approved;
-  const lastFmSeedArtistVerified = lastFmArtistAnchors.some(
-    anchor => anchor.source === "lastfm-track" || Boolean(anchor.confirmedMbid),
+  const lastFmSeedArtistVerified = canExpandVerifiedArtistCatalogue(
+    lastFmArtistAnchors,seedArtistIds,
   );
+  if (lastFmSeedArtistVerified && !lastFmSeedInfo?.track) {
+    notes.push(
+      "Fiche du morceau Last.fm absente : exploration des artistes crédités"+
+      " à partir de leurs identités MusicBrainz vérifiées.",
+    );
+  }
   const recordingIdentity = assessLastFmRecordingIdentity({
     seedArtist:seed.artist,
     expectedRecordingMbid:seed.externalIds?.musicbrainz,
@@ -729,8 +745,10 @@ export async function recommendLive(
     const approvedAnchors = lastFmArtistAnchors.slice(0,3);
     const artistAnchors = approvedAnchors.map(anchor=>anchor.name);
     const confirmedAnchorIds = Object.fromEntries(
-      approvedAnchors.flatMap(anchor=>anchor.confirmedMbid
-        ? [[normalized(anchor.name),anchor.confirmedMbid]] : []),
+      approvedAnchors.flatMap(anchor=>{
+        const mbid=catalogueAnchorMbid(anchor,seedArtistIds);
+        return mbid ? [[normalized(anchor.name),mbid]] : [];
+      }),
     );
     catalogueDiagnostics.expansionTriggered = true;
     catalogueDiagnostics.anchors = artistAnchors;
@@ -858,8 +876,8 @@ export async function recommendLive(
         optional(
           lastFmJson<LastFmSimilarArtistsResponse>(
             "artist.getSimilar",
-            anchor.confirmedMbid
-              ? {mbid:anchor.confirmedMbid,limit:"12",autocorrect:"0"}
+            confirmedAnchorIds[normalized(anchor.name)]
+              ? {mbid:confirmedAnchorIds[normalized(anchor.name)],limit:"12",autocorrect:"0"}
               : {artist:anchor.name,limit:"12",autocorrect:"1"},
             signal,
           ),

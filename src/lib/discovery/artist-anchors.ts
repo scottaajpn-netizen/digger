@@ -220,3 +220,42 @@ export function assessLastFmArtistIdentity(
   }
   return {approved,blocked,conflictingMbid};
 }
+
+
+/**
+ * A MusicBrainz recording's primary/featured artist MBID is independent
+ * structured identity evidence. It can seed Last.fm artist.getSimilar by
+ * MBID even when Last.fm has no *track* entry for the recording.
+ *
+ * Never infer MBIDs from the seed artist string or untrusted Last.fm name
+ * autocorrection; only use trusted IDs from the verified recording credits.
+ * Call this on anchors that passed assessLastFmArtistIdentity, preserving
+ * its short-name and explicit conflict protections (Mia regression).
+ */
+export function catalogueAnchorMbid(
+  anchor: VerifiedArtistAnchor & {confirmedMbid?:string},
+  trustedArtistMbids: readonly string[],
+):string | undefined {
+  const trusted=new Set(
+    trustedArtistMbids.filter(id=>artistMbidPattern.test(id))
+      .map(id=>id.toLowerCase()),
+  );
+  if(anchor.confirmedMbid && trusted.has(anchor.confirmedMbid.toLowerCase()))
+    return anchor.confirmedMbid.toLowerCase();
+  if(anchor.source==="structured-credit" && anchor.sourceId &&
+    artistMbidPattern.test(anchor.sourceId) &&
+    trusted.has(anchor.sourceId.toLowerCase()))
+    return anchor.sourceId.toLowerCase();
+  return undefined;
+}
+
+/** Live track verification OR an independently trusted MusicBrainz artist ID. */
+export function canExpandVerifiedArtistCatalogue(
+  approvedAnchors: readonly (VerifiedArtistAnchor & {confirmedMbid?:string})[],
+  trustedArtistMbids: readonly string[],
+):boolean {
+  return approvedAnchors.some(anchor=>
+    anchor.source==="lastfm-track" ||
+    Boolean(catalogueAnchorMbid(anchor,trustedArtistMbids)),
+  );
+}
