@@ -72,7 +72,7 @@ function TrackCard({ track, index, feedback, onFeedback, onExplore, onSoulseek }
 }
 
 export function Digger({ initial }: { initial: DigResponse | null }) {
-  const [seed, setSeed] = useState("Ttabla — Taxi Kebab");
+  const [seed, setSeed] = useState("");
   const [direction, setDirection] = useState<Direction>("Même vibe");
   const [obscurity, setObscurity] = useState(65);
   const [result, setResult] = useState(initial);
