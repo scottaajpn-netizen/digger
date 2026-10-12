@@ -82,9 +82,12 @@ async function runMia(t: TestContext,reportedRecordingMbid?:string) {
     });
     if(method==="track.getSimilar"){
       similarCalls++;
-      return Response.json({similartracks:{track:[{
-        name:"Liebe ohne Ende",artist:{name:"2raumwohnung"},match:1,
-      }]}});
+      return Response.json({similartracks:{track:[
+        ...Array.from({length:8},(_,index)=>({
+          name:"Adjacent cut "+index,artist:{name:"Neighbour "+index},match:0.75,
+        })),
+        {name:"Liebe ohne Ende",artist:{name:"2raumwohnung"},match:0.65},
+      ]}});
     }
     if(method==="artist.getSimilar"){catalogueCalls++;return Response.json({similarartists:{artist:[]}});}
     if(method==="tag.getTopTracks")return Response.json({toptracks:{track:[]}});
