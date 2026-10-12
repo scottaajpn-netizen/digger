@@ -30,6 +30,10 @@ export interface VibeReviewTrack {
 export interface VibeReviewRun {
   caseId: string;
   direction: string;
+  obscurity?: number;
+  // Human ratings belong to a specific listening mode and obscurity.
+  historicalDirection?: "surprise" | "same-vibe";
+  historicalObscurity?: number;
   tracks: VibeReviewTrack[];
   vibeShadow?: { tracks: VibeReviewTrack[] };
 }
@@ -98,6 +102,10 @@ export function assessVibeRollout(
     run => run.direction === "Même vibe" && Array.isArray(run.tracks),
   );
   const reports: VibePerSeedDecision[] = [];
+  const historicallyComparable = runs.filter(run =>
+    run.historicalDirection === "same-vibe" &&
+    run.historicalObscurity === run.obscurity
+  );
   const reviewedSeeds = new Set<string>();
   let baselineReviewed = 0;
   let experimentalReviewed = 0;
@@ -107,7 +115,7 @@ export function assessVibeRollout(
   let regressedPairs = 0;
   let lostCoherentTracks = 0;
 
-  for (const run of runs) {
+  for (const run of historicallyComparable) {
     if (!run.vibeShadow || !Array.isArray(run.vibeShadow.tracks)) continue;
     const baseline = ratedTracks(run.tracks);
     const experiment = ratedTracks(run.vibeShadow.tracks);
@@ -150,7 +158,10 @@ export function assessVibeRollout(
   const errors = Math.max(snapshot.errorCount ?? 0, snapshot.errors?.length ?? 0);
 
   if (!comparedRuns)
-    reasons.push("Aucun benchmark Même vibe avec comparaison vibe-aware enregistrée.");
+    reasons.push("Aucun benchmark vibe-aware avec avis historiques du même mode et de la même obscurité.");
+  if (runs.length > historicallyComparable.length)
+    reasons.push((runs.length-historicallyComparable.length) +
+      " run(s) exclus : avis historiques d'un autre mode/obscurité, ou métadonnées manquantes.");
   if (missingSource)
     reasons.push("Sources musicales incomplètes : Last.fm et Discogs sont nécessaires pour cet arbitrage.");
   if (errors)
