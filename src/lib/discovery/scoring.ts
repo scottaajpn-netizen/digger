@@ -310,7 +310,17 @@ export function rankDiscoveryCandidates({
       );
 
       if (memoryKey) {
-        const memoryAdjustment = input.memory?.pathScores[memoryKey] || 0;
+        // Old feedback keys used the misleading "listening" label for
+        // two-hop artist catalogues. Keep those explicit user preferences.
+        const legacyHopKey = track.origin === "lastfm-artist-hop" &&
+          track.discoveryPath?.source === "lastfm"
+            ? discoveryPathPreferenceKey(
+                {...track.discoveryPath,evidence:"listening"},input.direction,
+              )
+            : null;
+        const memoryAdjustment =
+          input.memory?.pathScores[memoryKey] ??
+          (legacyHopKey ? input.memory?.pathScores[legacyHopKey] : undefined) ?? 0;
         score += memoryAdjustment;
         scoreBreakdown.memory += memoryAdjustment;
       }
