@@ -7,6 +7,7 @@ import { normalized } from "../src/lib/discovery/ranking";
 import { auditDiscoveryPath } from "../src/lib/discovery/path-reliability";
 import { comparePairedHumanOrdering, type HumanRatedTrack } from "../src/lib/evaluation/paired-human-ordering";
 import { auditRankingDecisions, type RankingAuditTrack, type RankingDecisionAudit } from "../src/lib/evaluation/ranking-decision-audit";
+import { assessVibeRollout, formatVibeDecisionMarkdown } from "../src/lib/evaluation/vibe-rollout-gate";
 import { findCredibleTrackMatch, recommendLive, searchLive } from "../src/lib/providers/live";
 import {
   directions,
@@ -76,6 +77,8 @@ type KnownReplaySummary = {
 type BenchmarkRun = {
   caseId: string;
   historicalOverall: DiscoveryBenchmarkCase["overall"];
+  historicalDirection: DiscoveryBenchmarkCase["direction"];
+  historicalObscurity: DiscoveryBenchmarkCase["obscurity"];
   historicalObservations: string[];
   seed: DiscoveryBenchmarkCase["seed"];
   seedResolution: {
@@ -1350,6 +1353,8 @@ async function main() {
         runs.push({
           caseId: benchmarkCase.id,
           historicalOverall: benchmarkCase.overall,
+          historicalDirection: benchmarkCase.direction,
+          historicalObscurity: benchmarkCase.obscurity,
           historicalObservations: benchmarkCase.observations,
           seed: benchmarkCase.seed,
           seedResolution: {
@@ -1492,14 +1497,29 @@ async function main() {
     `[audience-artiste] mbid=${lookup.mbid || 0} | name=${lookup.name || 0} | fallback=${lookup["name-fallback"] || 0} | partial=${lookup.partial || 0} | failed=${lookup.failed || 0} | non ciblé=${lookup["not-targeted"] || 0} | unset=${lookup.unset || 0}`,
   );
 
+  const sourceAvailability = {
+    lastfm: Boolean(process.env.LASTFM_API_KEY),
+    discogs: Boolean(process.env.DISCOGS_TOKEN),
+  };
+  // The opt-in experiment is evaluated only from the already retrieved
+  // same-pool A/B results; no second provider pass is allowed.
+  const vibeDecision = compareVibe
+    ? assessVibeRollout({ sourceAvailability, errorCount: errors.length, errors, runs })
+    : undefined;
+  if (vibeDecision) {
+    console.log("[vibe-decision] "+vibeDecision.status+
+      " | évaluations communes="+vibeDecision.sharedReviewed+
+      " | paires="+vibeDecision.comparablePairs+
+      " | progrès="+vibeDecision.improvedPairs+
+      " | régressions="+vibeDecision.regressedPairs);
+    vibeDecision.reasons.forEach(reason => console.log("  - "+reason));
+  }
   const output = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     generatedAt,
     profile: full ? "full" : "focused",
-    sourceAvailability: {
-      lastfm: Boolean(process.env.LASTFM_API_KEY),
-      discogs: Boolean(process.env.DISCOGS_TOKEN),
-    },
+    sourceAvailability,
+    ...(vibeDecision ? { vibeDecision } : {}),
     selectedCases: selectedCases.map(item => item.id),
     selectedDirections,
     runCount: runs.length,
@@ -1518,6 +1538,7 @@ async function main() {
   );
   const latestPath = join("benchmark-results", "latest.json");
   const readablePath = join("benchmark-results", "latest-ranking.md");
+  const decisionPath = join("benchmark-results", "latest-vibe-decision.md");
   const json = JSON.stringify(output, null, 2);
   const readable = formatRankingDecisionsMarkdown(runs);
 
@@ -1525,6 +1546,9 @@ async function main() {
     writeFile(timestampedPath, json, "utf8"),
     writeFile(latestPath, json, "utf8"),
     writeFile(readablePath, readable, "utf8"),
+    ...(vibeDecision
+      ? [writeFile(decisionPath, formatVibeDecisionMarkdown(vibeDecision), "utf8")]
+      : []),
   ]);
 
   console.log(
@@ -1533,6 +1557,7 @@ async function main() {
   console.log(`[benchmark] JSON: ${timestampedPath}`);
   console.log(`[benchmark] Dernier run: ${latestPath}`);
   console.log(`[benchmark] Rapport lisible: ${readablePath}`);
+  if (vibeDecision) console.log(`[benchmark] Décision expérimentale: ${decisionPath}`);
 
   if (!runs.length) process.exitCode = 1;
 }
