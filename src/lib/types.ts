@@ -82,7 +82,7 @@ export interface Track {
   credits?: ArtistCredit[];
   obscurityKnown?: boolean;
   discogs?: DiscogsEvidence;
-  externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string };
+  externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string; isrc?: string };
 }
 export interface Recommendation extends Track {
   reason: string;

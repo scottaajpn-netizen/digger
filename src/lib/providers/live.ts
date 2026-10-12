@@ -3,6 +3,7 @@ import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } fro
 import { lastFmJson, musicJson, MusicServiceError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { cleanLastFmArtistTags } from "../music/lastfm-context";
+import { singleVerifiedIsrc } from "../discovery/recording-identity";
 import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, lastFmTagArtistPath, listenBrainzPath } from "../discovery/paths";
@@ -13,7 +14,7 @@ export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscuri
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Credit = { name?: string; joinphrase?: string; artist?: { id?: string; name?: string; country?: string } };
-interface Recording { id: string; title: string; score?: number; disambiguation?: string; "artist-credit"?: Credit[]; tags?: { name: string; count?: number }[]; "first-release-date"?: string; releases?: Release[] }
+interface Recording { id: string; title: string; score?: number; disambiguation?: string; "artist-credit"?: Credit[]; tags?: { name: string; count?: number }[]; "first-release-date"?: string; releases?: Release[]; isrcs?: string[] }
 interface Release { id: string; title: string; date?: string; "label-info"?: { label?: { id: string; name: string } }[]; media?: { tracks?: { recording?: Recording }[] }[] }
 interface Metadata { artist?: { name?: string; artists?: { name: string; artist_mbid: string; area?: string }[] }; recording?: { name?: string; first_release_date?: string }; release?: { name?: string; mbid?: string; year?: number }; tag?: Record<string, { tag?: string; count?: number }[]> }
 type MusicBrainzArtistMetadata = {
@@ -279,7 +280,8 @@ export function fromRecording(r: Recording): Track | null {
   const credits = musicBrainzCredits(rows);
   const release = r.releases?.find(item => !normalized(item.title).startsWith(normalized(r.title))) || r.releases?.[0];
   const tags = (r.tags || []).filter(t => typeof t.name === "string").sort((a, b) => (b.count || 0) - (a.count || 0)).map(t => t.name).slice(0, 6);
-  return { id: r.id, title: r.title, artist, artistId: credits.find(c => c.role === "primary")?.sourceId, credits, country: rows[0]?.artist?.country, releaseId: release?.id, album: release?.title, scene: tags[0] || "MusicBrainz", label: "", tags, year: Number(r["first-release-date"]?.slice(0, 4)) || 0, obscurity: 50, colors: colors[hash(r.id) % colors.length], externalIds: { musicbrainz: r.id } };
+  const isrc = singleVerifiedIsrc(r.isrcs);
+  return { id: r.id, title: r.title, artist, artistId: credits.find(c => c.role === "primary")?.sourceId, credits, country: rows[0]?.artist?.country, releaseId: release?.id, album: release?.title, scene: tags[0] || "MusicBrainz", label: "", tags, year: Number(r["first-release-date"]?.slice(0, 4)) || 0, obscurity: 50, colors: colors[hash(r.id) % colors.length], externalIds: { musicbrainz: r.id, ...(isrc ? { isrc } : {}) } };
 }
 export async function searchLive(query: string, signal: AbortSignal): Promise<Track[]> {
   const structured = structuredSearchParts(query);
@@ -463,7 +465,7 @@ export async function recommendLive(input: DigRequest, signal: AbortSignal): Pro
   let seed: Track | null = null;
   if (requestedMbid) {
     try {
-      const recording = await musicJson<Recording>("mb", `recording/${requestedMbid}`, { inc: "artists+releases+tags" }, signal);
+      const recording = await musicJson<Recording>("mb", `recording/${requestedMbid}`, { inc: "artists+releases+tags+isrcs" }, signal);
       seed = fromRecording(recording);
     } catch (error) {
       if (!reference) throw error;
