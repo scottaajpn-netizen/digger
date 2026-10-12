@@ -142,8 +142,10 @@ function summarizeBenchmark() {
 test("benchmark baseline summarizes human verdicts", () => {
     const baseline = summarizeBenchmark();
 
-    assert.equal(baseline.cases, 11);
-    assert.equal(baseline.recommendations, 66);
+    // Preserve the 11 original cases and include the five additional
+    // hand-reviewed Mia tracks from Même vibe at 80% obscurity.
+    assert.equal(baseline.cases, 12);
+    assert.equal(baseline.recommendations, 71);
 
     console.log("[BENCHMARK BASELINE]", baseline);
 });

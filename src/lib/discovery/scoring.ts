@@ -4,6 +4,7 @@ import { profileFromDiscogsRelease } from "../providers/discogs";
 import type { DigRequest, DiscoveryPath, Direction, Track } from "../types";
 import { assessCandidateEvidence } from "./evidence";
 import { cautiousPathIncentive } from "./path-reliability";
+import { indirectVibeAdjustment } from "./vibe-evidence";
 import { discoveryPathPreferenceKey } from "./paths";
 import { containsArtistParticipant } from "./artist-anchors";
 import {
@@ -74,7 +75,7 @@ type RankDiscoveryInput = {
   input: DigRequest;
   seedParticipantKeys: Set<string>;
   // Pure shadow experiment, never set by the production endpoint.
-  strategy?: "baseline" | "scope-aware" | "path-aware";
+  strategy?: "baseline" | "scope-aware" | "path-aware" | "vibe-aware";
 };
 
 export type CandidateEligibilityFailure =
@@ -350,6 +351,16 @@ export function rankDiscoveryCandidates({
       }
 
       if (input.direction === "Même vibe") {
+        // Same-pool shadow only: preserve every candidate, its existing
+        // evidence tier and all other modes. Artist links are not proof that
+        // the recordings share a sound; verified recording tags exempt them.
+        if (strategy === "vibe-aware") {
+          const contextAdjustment = indirectVibeAdjustment(
+            input.direction,track.origin,overlapScope,
+          );
+          score += contextAdjustment;
+          scoreBreakdown.direction += contextAdjustment;
+        }
         const vibeSimilarityBonus = scoringSimilarity * 35;
         score += vibeSimilarityBonus;
         scoreBreakdown.direction += vibeSimilarityBonus;

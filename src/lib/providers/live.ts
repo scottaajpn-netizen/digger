@@ -11,7 +11,7 @@ import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilar
 import { assessLastFmArtistIdentity, resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
 import { loadCatalogueEntries, rememberCatalogueEntries, type CatalogueEntryInput } from "../discovery/catalogue";
 import { analyzeBranchDiagnostics } from "../discovery/branch-diagnostics";
-import { comparePathShadow, compareScopeShadow } from "../discovery/shadow-comparison";
+import { comparePathShadow, compareScopeShadow, compareVibeShadow } from "../discovery/shadow-comparison";
 export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -455,7 +455,7 @@ export async function searchLive(query: string, signal: AbortSignal): Promise<Tr
 }
 export async function recommendLive(
   input: DigRequest, signal: AbortSignal,
-  options: { compareScope?: boolean; comparePaths?: boolean } = {},
+  options: { compareScope?: boolean; comparePaths?: boolean; compareVibe?: boolean } = {},
 ): Promise<DigResponse> {
   const notes: string[] = [];
   async function optional<T>(job: Promise<T>, message: string): Promise<T | null> { try { return await job; } catch { notes.push(message); return null; } }
@@ -1884,6 +1884,8 @@ export async function recommendLive(
     ? compareScopeShadow(shadowInput) : undefined;
   const shadowPathComparison = options.comparePaths
     ? comparePathShadow(shadowInput) : undefined;
+  const shadowVibeComparison = options.compareVibe
+    ? compareVibeShadow(shadowInput) : undefined;
   if (selected.length < 10) notes.push(`Seulement ${selected.length} pistes exploitables avec ces données et tes exclusions. Aucun morceau inventé n’a été ajouté.`);
   if (input.obscurity >= 90) notes.push("Digging strict : les audiences trop élevées ou non vérifiées sont écartées, même si cela réduit la sélection. Digger croise l’audience du morceau et, quand elle est disponible, celle des artistes crédités.");
   if (!selected.some(t => t.popularity !== undefined || t.lastfmListeners !== undefined)) notes.push("Popularité indisponible pour cette sélection : le curseur agit sur l’ouverture de la radio, sans indice d’obscurité individuel.");
@@ -1898,5 +1900,6 @@ export async function recommendLive(
     retrievalDiagnostics,
     ...(shadowComparison ? { shadowComparison } : {}),
     ...(shadowPathComparison ? { shadowPathComparison } : {}),
+    ...(shadowVibeComparison ? { shadowVibeComparison } : {}),
   };
 }
