@@ -160,3 +160,24 @@ relationship might still sound unlike its seed. The audit adds no API
 requests, no inference cost, no new filtering and no score change.
 Human listening verdicts and the same-pool shadow comparison remain
 necessary before changing path weights or tiers.
+
+
+## 10. Per-link path anatomy
+
+`inspectPathEdges` now breaks every documented discovery path into directed
+adjacent links. Each link records its two nodes, relation and one support kind:
+
+- `provider-association`: a relation the provider reports (e.g. Last.fm
+  track similarity or artist.getSimilar). An artist association is NOT a
+  verified similarity of the resulting recordings.
+- `catalogue-fact`: release membership, artist catalogue track, label or
+  release-credit relation. These are membership facts, not acoustic evidence.
+- `contextual`: artist anchor, tag context or search-style/year/country
+  relation. Not a verified per-track sonic connection.
+- `unclassified`: an edge not supported by a known path constructor.
+  Such edges are flagged for inspection; no invented proof is added.
+
+Benchmark metrics now include `pathEdgeSupport`, `pathEdgeRelations`,
+direct track-level associations, contextual steps, and unclassified steps,
+with full per-link details in each compact track's `pathAudit.edges`.
+This changes no score, selection, provider calls, memory or production UI.

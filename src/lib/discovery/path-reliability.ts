@@ -1,4 +1,5 @@
 import type { Recommendation } from "../types";
+import { inspectPathEdges, type PathEdge } from "./path-edges";
 
 /**
  * An audit of what a discovery path actually demonstrates. The path can be
@@ -28,12 +29,17 @@ export type PathReliabilityFlag =
   | "scene-context-is-not-musical-proof"
   | "long-path-no-recording-match"
   | "unscoped-tags-used-as-proof"
-  | "discogs-structured-without-path";
+  | "discogs-structured-without-path"
+  | "unclassified-path-step";
 
 export type PathReliabilityAudit = {
   relation: PathRelationKind;
   pathLength: number;
   flags: PathReliabilityFlag[];
+  edges: PathEdge[];
+  directTrackAssociations: number;
+  contextualSteps: number;
+  unclassifiedSteps: number;
 };
 
 export function auditDiscoveryPath(track: AuditedTrack): PathReliabilityAudit {
@@ -56,7 +62,11 @@ export function auditDiscoveryPath(track: AuditedTrack): PathReliabilityAudit {
     relation = "track-similarity";
   }
 
+  const edges = inspectPathEdges(path, origin);
   const flags: PathReliabilityFlag[] = [];
+  if (edges.some(edge=>edge.support==="unclassified")) {
+    flags.push("unclassified-path-step");
+  }
   if (origin === "lastfm-artist-hop" && path?.evidence === "listening") {
     // Two artist.getSimilar traversals + artist.getTopTracks are not evidence
     // that the seed and result tracks were directly listened to together.
@@ -85,5 +95,12 @@ export function auditDiscoveryPath(track: AuditedTrack): PathReliabilityAudit {
   if (track.discogs && !path && track.evidence?.path === "structured") {
     flags.push("discogs-structured-without-path");
   }
-  return {relation,pathLength,flags};
+  return {
+    relation,pathLength,flags,edges,
+    directTrackAssociations: edges.filter(edge=>
+      edge.relation==="track-similarity" || edge.relation==="radio-association"
+    ).length,
+    contextualSteps: edges.filter(edge=>edge.support==="contextual").length,
+    unclassifiedSteps: edges.filter(edge=>edge.support==="unclassified").length,
+  };
 }

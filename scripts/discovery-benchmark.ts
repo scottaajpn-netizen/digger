@@ -208,6 +208,8 @@ function measureTracks(
   const pathAudits = tracks.map(auditDiscoveryPath);
   const pathRelationCounts = countBy(pathAudits.map(audit => audit.relation));
   const pathReliabilityFlags = countBy(pathAudits.flatMap(audit => audit.flags));
+  const pathEdgeRelations = countBy(pathAudits.flatMap(audit => audit.edges.map(edge=>edge.relation)));
+  const pathEdgeSupport = countBy(pathAudits.flatMap(audit => audit.edges.map(edge=>edge.support)));
   const unknownAudienceCount = tracks.filter(
     track =>
       track.lastfmListeners === undefined &&
@@ -263,6 +265,11 @@ function measureTracks(
       tracks.length === 0 ? 0 : strongEvidenceCount / tracks.length,
     pathRelationCounts,
     pathReliabilityFlags,
+    pathEdgeRelations,
+    pathEdgeSupport,
+    directTrackAssociationCount: pathAudits.reduce((sum,audit)=>sum+audit.directTrackAssociations,0),
+    contextualStepCount: pathAudits.reduce((sum,audit)=>sum+audit.contextualSteps,0),
+    unclassifiedStepCount: pathAudits.reduce((sum,audit)=>sum+audit.unclassifiedSteps,0),
     flaggedPathCount: pathAudits.filter(audit => audit.flags.length > 0).length,
     metadataScopeCounts: countBy(
       tracks.map(track => track.analysis?.overlapScope || "not-measured"),
@@ -825,7 +832,8 @@ function printRun(
   console.log(
     "    chemins: " + formatOriginCounts(metrics.pathRelationCounts) +
     " | signaux à examiner: " + metrics.flaggedPathCount + "/" + metrics.trackCount +
-    " [" + formatOriginCounts(metrics.pathReliabilityFlags) + "]",
+    " [" + formatOriginCounts(metrics.pathReliabilityFlags) + "]" +
+    " | maillons: " + formatOriginCounts(metrics.pathEdgeSupport),
   );
   if (metrics.artistAudienceUnknownCount > 0) {
     const lookup = metrics.artistAudienceLookupCounts;
@@ -1160,6 +1168,16 @@ async function main() {
           ([flag, count]) => Array.from({length:count}, () => flag),
         ),
       ),
+    ),
+    pathEdgeSupport: countBy(
+      runs.flatMap(run => Object.entries(run.metrics.pathEdgeSupport).flatMap(
+        ([support,count])=>Array.from({length:count},()=>support),
+      )),
+    ),
+    pathEdgeRelations: countBy(
+      runs.flatMap(run => Object.entries(run.metrics.pathEdgeRelations).flatMap(
+        ([relation,count])=>Array.from({length:count},()=>relation),
+      )),
     ),
     scopeShadowRuns: runs.filter(run => run.scopeShadow).length,
     scopeShadowEntered: runs.reduce((sum, run) => sum + (run.scopeShadow?.summary.entered.length || 0), 0),
