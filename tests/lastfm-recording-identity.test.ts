@@ -52,7 +52,7 @@ const input:DigRequest={
 
 async function runMia(t: TestContext,reportedRecordingMbid?:string) {
   const previous=process.env.LASTFM_API_KEY;
-  process.env.LASTFM_API_KEY="recording-identity-fixture";
+  process.env.LASTFM_API_KEY="recording-identity-fixture-"+(reportedRecordingMbid||"missing");
   t.after(()=>{
     if(previous===undefined)delete process.env.LASTFM_API_KEY;
     else process.env.LASTFM_API_KEY=previous;
