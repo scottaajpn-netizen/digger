@@ -135,7 +135,7 @@ test("missing provider source or incomplete benchmark blocks promotion even with
   const missing=assessVibeRollout({sourceAvailability:{lastfm:true,discogs:false},runs});
   assert.equal(missing.status,"insufficient-evidence");
   assert.ok(missing.reasons.some(reason=>reason.includes("Sources musicales incomplètes")));
-  const errors=assessVibeRollout({sourceAvailability:sources,runCount:4,errorCount:1,runs});
+  const errors=assessVibeRollout({sourceAvailability:sources,errorCount:1,runs});
   assert.equal(errors.status,"insufficient-evidence");
   assert.ok(errors.reasons.some(reason=>reason.includes("erreur(s)")));
 });
