@@ -6,6 +6,7 @@ import { loadEnvFile } from "node:process";
 import { normalized } from "../src/lib/discovery/ranking";
 import { auditDiscoveryPath } from "../src/lib/discovery/path-reliability";
 import { comparePairedHumanOrdering, type HumanRatedTrack } from "../src/lib/evaluation/paired-human-ordering";
+import { auditRankingDecisions, type RankingAuditTrack, type RankingDecisionAudit } from "../src/lib/evaluation/ranking-decision-audit";
 import { findCredibleTrackMatch, recommendLive, searchLive } from "../src/lib/providers/live";
 import {
   directions,
@@ -95,11 +96,13 @@ type BenchmarkRun = {
   retrievalDiagnostics?: DigResponse["retrievalDiagnostics"];
   metrics: ReturnType<typeof measureTracks>;
   humanComparison: ReturnType<typeof measureHumanComparison>;
+  rankingDecisionAudit: RankingDecisionAudit;
   vibeShadow?: {
     summary: Omit<NonNullable<DigResponse["shadowVibeComparison"]>, "experimentTracks">;
     metrics: ReturnType<typeof measureTracks>;
     humanComparison: ReturnType<typeof measureHumanComparison>;
     pairedHumanOrdering: ReturnType<typeof comparePairedHumanOrdering>;
+    rankingDecisionAudit: RankingDecisionAudit;
     tracks: BenchmarkRunTrack[];
   };
   pathShadow?: {
@@ -107,6 +110,7 @@ type BenchmarkRun = {
     metrics: ReturnType<typeof measureTracks>;
     humanComparison: ReturnType<typeof measureHumanComparison>;
     pairedHumanOrdering: ReturnType<typeof comparePairedHumanOrdering>;
+    rankingDecisionAudit: RankingDecisionAudit;
     tracks: BenchmarkRunTrack[];
   };
   scopeShadow?: {
@@ -114,6 +118,7 @@ type BenchmarkRun = {
     metrics: ReturnType<typeof measureTracks>;
     humanComparison: ReturnType<typeof measureHumanComparison>;
     pairedHumanOrdering: ReturnType<typeof comparePairedHumanOrdering>;
+    rankingDecisionAudit: RankingDecisionAudit;
     tracks: BenchmarkRunTrack[];
   };
   knownReplay?: KnownReplaySummary;
@@ -482,6 +487,30 @@ function measureHumanComparison(
 
 function identityKey(track: Pick<Track, "artist" | "title">) {
   return `${normalized(track.artist)}\u0000${normalized(track.title)}`;
+}
+
+/** Artist-only comments do not certify a recording's musical coherence. */
+function reviewedRankingTracks(
+  benchmarkCase: DiscoveryBenchmarkCase,
+  tracks: RuntimeRecommendation[],
+): RankingAuditTrack[] {
+  return tracks.map(track=>({
+    ...track,
+    human:matchHistoricalVerdict(benchmarkCase,track),
+  }));
+}
+
+function printRankingAudit(label:string,audit:RankingDecisionAudit) {
+  console.log(
+    `    ${label} score-audit: morceaux=${audit.evaluatedCount}, annotés=${audit.exactHumanCoherenceCount}, inversions=${audit.ratedInversionCount}/${audit.comparableHumanPairs} paires, avertissements chemins=${audit.pathWarningCount}`,
+  );
+  for(const pair of audit.inversions.slice(0,2)){
+    const advantages=pair.advantageousComponents.slice(0,3)
+      .map(x=>`${x.component}:+${x.points.toFixed(1)}`).join(" ");
+    console.log(
+      `      ⚠ ${pair.currentlyAhead.artist} — ${pair.currentlyAhead.title} (#${pair.currentlyAhead.position}) devant ${pair.shouldBeAhead.artist} — ${pair.shouldBeAhead.title} (#${pair.shouldBeAhead.position}); avantages de score: ${advantages||"non établis"}${pair.selectionMayExplainInversion?" (sélection/diversité possible)":""}`,
+    );
+  }
 }
 
 function measurePairedHumanOrdering(
@@ -1031,8 +1060,10 @@ async function main() {
           benchmarkCase,
           tracks,
         );
+        const rankingDecisionAudit=auditRankingDecisions(reviewedRankingTracks(benchmarkCase,tracks));
 
         printRun(benchmarkCase, direction, tracks, metrics);
+        printRankingAudit("baseline",rankingDecisionAudit);
         printRetrievalDiagnostics(response.retrievalDiagnostics);
         const shadow = response.shadowComparison;
         const scopeShadow = shadow ? (() => {
@@ -1040,6 +1071,11 @@ async function main() {
           const experiment = experimentTracks as RuntimeRecommendation[];
           const shadowMetrics = measureTracks(experiment, benchmarkCase.obscurity);
           const shadowHuman = measureHumanComparison(benchmarkCase, experiment);
+          const rankingDecisionAudit=auditRankingDecisions(
+            reviewedRankingTracks(benchmarkCase,experiment),
+            reviewedRankingTracks(benchmarkCase,tracks),
+          );
+          printRankingAudit("scope-shadow",rankingDecisionAudit);
           const pairedHumanOrdering=measurePairedHumanOrdering(benchmarkCase,tracks,experiment);
           printPairedHumanOrdering("scope-shadow",pairedHumanOrdering);
           console.log(
@@ -1058,7 +1094,7 @@ async function main() {
           }
           return {
             summary,metrics:shadowMetrics,humanComparison:shadowHuman,
-            pairedHumanOrdering,
+            pairedHumanOrdering,rankingDecisionAudit,
             tracks:experiment.map(track => ({
               ...compactTrack(track),
               humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
@@ -1071,6 +1107,11 @@ async function main() {
           const experiment = experimentTracks as RuntimeRecommendation[];
           const shadowMetrics = measureTracks(experiment,benchmarkCase.obscurity);
           const shadowHuman = measureHumanComparison(benchmarkCase,experiment);
+          const rankingDecisionAudit=auditRankingDecisions(
+            reviewedRankingTracks(benchmarkCase,experiment),
+            reviewedRankingTracks(benchmarkCase,tracks),
+          );
+          printRankingAudit("path-shadow",rankingDecisionAudit);
           const pairedHumanOrdering=measurePairedHumanOrdering(benchmarkCase,tracks,experiment);
           printPairedHumanOrdering("path-shadow",pairedHumanOrdering);
           console.log(
@@ -1089,7 +1130,7 @@ async function main() {
           }
           return {
             summary,metrics:shadowMetrics,humanComparison:shadowHuman,
-            pairedHumanOrdering,
+            pairedHumanOrdering,rankingDecisionAudit,
             tracks:experiment.map(track=>({
               ...compactTrack(track),
               humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
@@ -1102,6 +1143,11 @@ async function main() {
           const experiment=experimentTracks as RuntimeRecommendation[];
           const metrics=measureTracks(experiment,benchmarkCase.obscurity);
           const compared=measureHumanComparison(benchmarkCase,experiment);
+          const rankingDecisionAudit=auditRankingDecisions(
+            reviewedRankingTracks(benchmarkCase,experiment),
+            reviewedRankingTracks(benchmarkCase,tracks),
+          );
+          printRankingAudit("vibe-shadow",rankingDecisionAudit);
           const pairedHumanOrdering=measurePairedHumanOrdering(benchmarkCase,tracks,experiment);
           printPairedHumanOrdering("vibe-shadow",pairedHumanOrdering);
           console.log(
@@ -1112,7 +1158,7 @@ async function main() {
           );
           return {
             summary,metrics,humanComparison:compared,
-            pairedHumanOrdering,
+            pairedHumanOrdering,rankingDecisionAudit,
             tracks:experiment.map(track=>({
               ...compactTrack(track),
               humanVerdict:matchHistoricalVerdict(benchmarkCase,track),
@@ -1234,6 +1280,7 @@ async function main() {
           retrievalDiagnostics: response.retrievalDiagnostics,
           metrics,
           humanComparison,
+          rankingDecisionAudit,
           ...(scopeShadow ? { scopeShadow } : {}),
           ...(pathShadow ? { pathShadow } : {}),
           ...(vibeShadow ? { vibeShadow } : {}),
@@ -1356,7 +1403,7 @@ async function main() {
   );
 
   const output = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     generatedAt,
     profile: full ? "full" : "focused",
     sourceAvailability: {
