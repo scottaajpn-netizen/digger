@@ -436,3 +436,33 @@ tell apart (a) Jungle Jack identity not verified, (b) no candidate
 generated, (c) eliminated by audience/obscurity, and (d) generated and
 eligible but not picked by ranking. This diagnostic is actionable without
 guessing musical similarity from an artist chain.
+
+## 21. Last.fm seed lookup failure does not erase trusted MusicBrainz artist credits
+
+A recording can be correctly identified by MusicBrainz even when Last.fm
+has no corresponding track.getInfo, track.getTopTags or track.getSimilar
+entry under its artist-title spelling. Previously, artist catalogue
+expansion required a successful Last.fm seed track identity and was
+silently skipped even for independently credited MusicBrainz artists.
+
+When MusicBrainz recording credits contain verified artist MBIDs,
+catalogue exploration can now use those **exact MBIDs** via
+Last.fm artist.getSimilar. Each participant must first pass the
+existing identity guard: contradictory Last.fm artist MBIDs and
+uncorroborated short names (notably Mia) remain blocked. No artist
+identity is guessed from a compound credit string or an artist alias.
+
+User-visible source notes include the numeric Last.fm API error code
+(when returned) but never API keys or request URLs. This helps distinguish
+invalid/unrecognized seed recordings from provider outages or rate limits.
+The seed not being found still does **not** grant authority to use its
+unverified Last.fm tags or direct recording similarities.
+
+If Last.fm is truly unavailable for artist lookups too, those branches
+will still have no neighbours. This fallback cannot bypass the strict
+obscurity/audience gate, and does not change candidate scores or add
+more than the existing bounded Last.fm artist-request budget.
+
+Use the UI 'Branches Last.fm du morceau' on Pleine Forêt to check
+whether both credited artists were independently verified and whether
+any candidates passed the final strict gate.
