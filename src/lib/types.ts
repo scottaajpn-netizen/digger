@@ -1,16 +1,293 @@
+import type { DiscogsEvidence } from "./providers/discogs";
 export const directions = ["Même vibe", "Même scène", "Labels", "Rabbit hole", "Surprends-moi"] as const;
 export type Direction = typeof directions[number];
 export const feedbackValues = ["love", "curious", "neutral", "known"] as const;
 export type Feedback = typeof feedbackValues[number];
 export type FeedbackMap = Record<string, Feedback>;
+export type MusicalTagScope = "recording" | "artist" | "release" | "context";
+export type MusicalTagSource = "musicbrainz" | "lastfm" | "listenbrainz" | "discogs";
+export interface MusicalTagEvidence {
+  source: MusicalTagSource;
+  scope: MusicalTagScope;
+  tags: string[];
+}
+export interface MusicalContextAudit {
+  recording: string[];
+  artist: string[];
+  release: string[];
+  context: string[];
+  unscoped: string[];
+}
+export type MusicalOverlapScope = "recording" | "release-context" | "artist-context" | "unscoped" | "none";
+export interface MusicalAnalysis {
+  overlapScope?: MusicalOverlapScope;
+  genres: string[];
+  subgenres: string[];
+  traits: string[];
+  similarity?: number;
+  metadataEvidence?: MusicalContextAudit;
+}
+export type CandidateEvidenceTier = "strong" | "credible" | "exploratory";
+export type CandidateEvidencePath = "structured" | "behavioral" | "artist-link" | "catalogue" | "tag" | "none";
+export interface CandidateEvidence {
+  tier: CandidateEvidenceTier;
+  musical: boolean;
+  path: CandidateEvidencePath;
+  retrievalDepth: number;
+}
+export type DiscoveryPathSource = "discogs" | "lastfm" | "listenbrainz" | "musicbrainz";
+export type DiscoveryPathEvidence =
+  | "editorial"
+  | "listening"
+  | "catalogue"
+  | "tag"
+  | "release";
+export interface DiscoveryPathNode {
+  kind: "track" | "artist" | "release" | "label" | "context";
+  name: string;
+  source: DiscoveryPathSource;
+  id?: string;
+  url?: string;
+}
+export interface DiscoveryPath {
+  source: DiscoveryPathSource;
+  evidence: DiscoveryPathEvidence;
+  nodes: DiscoveryPathNode[];
+  distance: number;
+}
+export type ArtistRole = "primary" | "featured" | "remixer" | "producer";
+export type ArtistSource = "musicbrainz" | "discogs" | "lastfm";
+export interface ArtistCredit {
+  name: string;
+  role: ArtistRole;
+  source: ArtistSource;
+  sourceId?: string;
+  joinPhrase?: string;
+}
+export interface ArtistRelationProvenance {
+  anchorArtist: string;
+  neighbourArtist: string;
+  similarity?: number;
+  tags?: string[];
+}
+export interface ArtistHopProvenance {
+  anchorArtist: string;
+  bridgeArtist: string;
+  neighbourArtist: string;
+  firstHopMatch: number;
+  secondHopMatch: number;
+  pathStrength: number;
+}
+export interface TrackRetrievalProvenance {
+  provider: DiscoveryPathSource;
+  source: "live" | "local-catalogue";
+  storedAt?: string;
+  artistRelation?: ArtistRelationProvenance;
+  artistHop?: ArtistHopProvenance;
+  contextTags?: string[];
+}
 export interface Track {
   id: string; title: string; artist: string; scene: string; label: string;
   tags: string[]; obscurity: number; year: number; colors: [string, string];
   artistId?: string; releaseId?: string; country?: string; album?: string;
-  popularity?: number; listenCount?: number;
-  externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string };
+  popularity?: number; listenCount?: number; lastfmListeners?: number;
+  lastfmArtistListeners?: number;
+  artistAudienceLookup?: "mbid" | "name" | "name-fallback" | "partial" | "failed" | "not-targeted";
+  analysis?: MusicalAnalysis;
+  tagEvidence?: MusicalTagEvidence[];
+  discoveryPath?: DiscoveryPath;
+  retrieval?: TrackRetrievalProvenance;
+  credits?: ArtistCredit[];
+  obscurityKnown?: boolean;
+  discogs?: DiscogsEvidence;
+  externalIds?: { musicbrainz?: string; listenbrainz?: string; lastfm?: string; discogs?: string; isrc?: string };
 }
-export interface Recommendation extends Track { reason: string }
-export interface DigRequest { seed: string; seedId?: string; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number }
-export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[] }
+export interface Recommendation extends Track {
+  reason: string;
+  score?: number;
+  evidence?: CandidateEvidence;
+  scoreBreakdown?: {
+    relevance: number;
+    musicalSimilarity: number;
+    sharedTags: number;
+    preferredTags: number;
+    popularityObscurity: number;
+    audience: number;
+    artistAudience: number;
+    origin: number;
+    discoveryPath: number;
+    memory: number;
+    discogs: number;
+    direction: number;
+    jitter: number;
+  };
+}
+export type SeedSource = "musicbrainz" | "lastfm" | "discogs" | "mixed";
+export interface SeedReference {
+  id: string;
+  title: string;
+  artist: string;
+  scene?: string;
+  label?: string;
+  tags?: string[];
+  year?: number;
+  artistId?: string;
+  releaseId?: string;
+  country?: string;
+  album?: string;
+  externalIds?: Track["externalIds"];
+  credits?: ArtistCredit[];
+  source?: SeedSource;
+}
+export interface DiscoveryMemorySnapshot {
+  pathScores: Record<string, number>;
+  knownTracks: string[];
+  /** Cautious, aggregate affinities imported from an external listening history. */
+  tasteTags?: Record<string, number>;
+  updatedAt?: string;
+}
+export interface DigRequest { seed: string; seedId?: string; seedTrack?: SeedReference; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number; memory?: DiscoveryMemorySnapshot }
+export interface RetrievalStageDiagnostics {
+  total: number;
+  byOrigin: Record<string, number>;
+  withTrackAudience?: number;
+  withoutTrackAudience?: number;
+}
+export interface RetrievalRejectionDiagnostics {
+  total: number;
+  byReason: Record<string, number>;
+  byOrigin: Record<string, number>;
+}
+export interface BranchOverlapDiagnostics {
+  left: string;
+  right: string;
+  sharedTracks: number;
+  unionTracks: number;
+  trackJaccard: number;
+  sharedArtists: number;
+  unionArtists: number;
+  artistJaccard: number;
+}
+export interface BranchSurvivalDiagnostics {
+  origin: string;
+  generated: number;
+  kept: number;
+  survivalRate: number;
+}
+export interface BranchDiversityDiagnostics {
+  providerCounts: Record<string, number>;
+  topologyCounts: Record<string, number>;
+  providerCount: number;
+  topologyCount: number;
+}
+export interface BranchDiagnostics {
+  survival: BranchSurvivalDiagnostics[];
+  overlaps: BranchOverlapDiagnostics[];
+  maxTrackJaccard: number;
+  maxArtistJaccard: number;
+  diversity: BranchDiversityDiagnostics;
+}
+export interface DiscogsRetrievalDiagnostics {
+  status:
+    | "disabled"
+    | "search-empty"
+    | "identity-unconfirmed"
+    | "identity-ambiguous"
+    | "confirmed-no-candidates"
+    | "artist-anchor-no-candidates"
+    | "artist-anchor-ok"
+    | "ok"
+    | "provider-error";
+  calls: number;
+  primarySearchRows: number;
+  fallbackSearchUsed: boolean;
+  fallbackSearchRows: number;
+  artistAnchorUsed: boolean;
+  artistAnchorCount: number;
+  artistAnchorReleases: number;
+  inspectedReleases: number;
+  bestMatchScore: number;
+  matchedReleases: number;
+  matchedTracks: number;
+  candidateCount: number;
+  byOrigin: Record<string, number>;
+}
+export interface CatalogueRetrievalDiagnostics {
+  expansionTriggered: boolean;
+  anchors: string[];
+  cacheCandidates: number;
+  neighbours: number;
+  liveCandidates: number;
+  storedCandidates: number;
+  artistHopArtists?: number;
+  artistHopCandidates?: number;
+  tagContextArtists?: number;
+  tagContextCandidates?: number;
+}
+export interface RetrievalDiagnostics {
+  discogs: DiscogsRetrievalDiagnostics;
+  catalogue?: CatalogueRetrievalDiagnostics;
+  mergedPool: RetrievalStageDiagnostics;
+  trackAudienceTargets: RetrievalStageDiagnostics;
+  afterTrackAudience: RetrievalStageDiagnostics;
+  preRankRejected: RetrievalRejectionDiagnostics;
+  ranked: RetrievalStageDiagnostics;
+  strictGateKept: RetrievalStageDiagnostics;
+  strictGateRejected: RetrievalStageDiagnostics;
+  selected: RetrievalStageDiagnostics;
+  surpriseSelection?: {
+    requested: number;
+    eligible: number;
+    supportedEligible: number;
+    exploratoryEligible: number;
+    supportedSelected: number;
+    exploratorySelected: number;
+    exploratoryLimit: number;
+    adaptiveAdded: number;
+    nominalQuotaBlocked: number;
+    exploratoryDeferred: number;
+    rejected: {
+      artistRepresented: number;
+      otherGuard: number;
+      mmrCapacity: number;
+      exploratoryEvidence: number;
+      exploratoryQuota: number;
+    };
+  };
+  branchAnalysis?: BranchDiagnostics;
+  /** Last.fm second-circle coverage by verified seed participant. Missing
+   *  verification is explicit; no guessed artist anchor is searched. */
+  anchorCoverage?: Array<{
+    anchor: string;
+    verified: boolean;
+    generated: number;
+    eligible: number;
+    selected: number;
+  }>;
+}
+export type ShadowSelectionTrack = {
+  id: string; artist: string; title: string; position: number; score: number;
+  overlapScope?: MusicalOverlapScope;
+};
+export type ShadowSelectionMove = {
+  id: string; artist: string; title: string; baselinePosition: number;
+  experimentPosition: number; baselineScore: number; experimentScore: number;
+  overlapScope?: MusicalOverlapScope;
+};
+export interface ScopeShadowComparison {
+  strategy: "scope-aware" | "path-aware" | "vibe-aware";
+  // Exactly the same enriched candidate pool, API calls and audience lookups.
+  rankedCandidateCount: number;
+  baselineEligibleCount: number;
+  experimentEligibleCount: number;
+  baselineCount: number;
+  experimentCount: number;
+  sharedCount: number;
+  entered: ShadowSelectionTrack[];
+  dropped: ShadowSelectionTrack[];
+  moved: ShadowSelectionMove[];
+  // Full rows are used only for offline human-verdict comparison.
+  experimentTracks: Recommendation[];
+}
+export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics; shadowComparison?: ScopeShadowComparison; shadowPathComparison?: ScopeShadowComparison; shadowVibeComparison?: ScopeShadowComparison; recordingEnrichment?: Awaited<ReturnType<typeof import("./discovery/recording-enrichment-experiment").compareRecordingEnrichment>> }
 export interface MusicProvider { id: string; search(query: string): Promise<Track[]>; candidates(seed: Track): Promise<Track[]> }

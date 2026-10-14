@@ -1,0 +1,15 @@
+{
+  "format": "gzip-base64-parts-v1",
+  "uncompressedSha256": "830570284eca7bc94628950b23df1c2b19555cb2ef5028112b1c64170010ddd9",
+  "uncompressedBytes": 460416,
+  "compressedBytes": 41949,
+  "parts": [
+    "holdout-a-2026-09-20.parts/part-01.txt",
+    "holdout-a-2026-09-20.parts/part-02.txt",
+    "holdout-a-2026-09-20.parts/part-03.txt",
+    "holdout-a-2026-09-20.parts/part-04.txt",
+    "holdout-a-2026-09-20.parts/part-05.txt",
+    "holdout-a-2026-09-20.parts/part-06.txt",
+    "holdout-a-2026-09-20.parts/part-07.txt"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.test.json",
+  "compilerOptions": {
+    "outDir": ".benchmark-build"
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "tests/fixtures/**/*.ts",
+    "src/lib/**/*.ts"
+  ]
+}
