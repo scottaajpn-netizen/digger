@@ -1,5 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 
 import type { Track } from "../types";
 import { normalized, trackIdentity } from "./ranking";
@@ -38,7 +40,23 @@ type CatalogueOptions = {
 
 let writeQueue: Promise<unknown> = Promise.resolve();
 
-function defaultCataloguePath() {
+export function catalogueRuntimeScope(): "test" | "benchmark" | "live" {
+  if (process.env.NODE_TEST_CONTEXT || process.execArgv.includes("--test") ||
+      /[\\/]\.test-build[\\/]/.test(__filename)) return "test";
+  if (/[\\/]\.benchmark-build[\\/]/.test(__filename) ||
+      process.argv.some(arg => /(?:^|[\\/])discovery-benchmark\.[jt]s$/.test(arg))) return "benchmark";
+  return "live";
+}
+
+export function defaultCataloguePath(scope = catalogueRuntimeScope()) {
+  // Test/provider mocks must never read or write the live cache, even if a
+  // developer shell has inherited DIGGER_CATALOGUE_PATH from production.
+  if (scope === "test") {
+    const namespace = createHash("sha256").update(process.env.DIGGER_CATALOGUE_PATH || "default").digest("hex").slice(0, 16);
+    return join(tmpdir(), `digger-test-catalogue-${process.pid}`, namespace + ".json");
+  }
+  if (scope === "benchmark")
+    return join(process.cwd(), ".benchmark-build", "discovery-catalogue.json");
   return (
     process.env.DIGGER_CATALOGUE_PATH ||
     join(process.cwd(), ".digger", "discovery-catalogue.json")

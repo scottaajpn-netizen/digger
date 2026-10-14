@@ -7,7 +7,7 @@ import {
   selectBalancedSecondHopArtists,
   discoverySeedAnchor,
 } from "../src/lib/discovery/seed-branch-balance";
-import { selectMmrRecommendations, type RankedCandidate } from "../src/lib/discovery/ranking";
+import { explainSurpriseSelection, selectModeRecommendations, passesDeepAudienceGate, selectMmrRecommendations, type RankedCandidate } from "../src/lib/discovery/ranking";
 
 const anchorA="Léon Phal",anchorB="Jungle Jack";
 
@@ -112,4 +112,73 @@ test("Surprise MMR keeps ordinary valid tracks and does not fabricate missing ro
   assert.equal(balanced.length,5);
   assert.equal(new Set(balanced.map(item=>item.id)).size,5);
   assert.ok(balanced.every(item=>multiRoot.includes(item)));
+});
+
+test("Surprise diagnostics explain a short list without confusing eligibility with selection",()=>{
+  const supported=Array.from({length:5},(_,i)=>candidate("a"+i,anchorA,true));
+  const exploratory=Array.from({length:8},(_,i)=>({
+    ...candidate("b"+i,anchorB,true),
+    evidence:{tier:"exploratory" as const,path:"artist-link" as const,retrievalDepth:3,musical:false},
+  }));
+  const result=explainSurpriseSelection(
+    [...supported,...exploratory],
+    "Léon Phal & Jungle Jack",
+    10,
+  );
+  assert.equal(result.selected.length,10);
+  assert.deepEqual(result.diagnostics,{
+    requested:10,
+    eligible:13,
+    supportedEligible:5,
+    exploratoryEligible:8,
+    supportedSelected:5,
+    exploratorySelected:5,
+    exploratoryLimit:2,
+    adaptiveAdded:3,
+    nominalQuotaBlocked:6,
+    exploratoryDeferred:8,
+    rejected:{artistRepresented:0,otherGuard:0,mmrCapacity:3,exploratoryEvidence:0,exploratoryQuota:0},
+  });
+});
+
+test("adaptive Surprise preserves a full core and fills seven supported artists to ten",()=>{
+  const strong=Array.from({length:10},(_,i)=>candidate("a"+i,anchorA,true));
+  const exploratory=Array.from({length:5},(_,i)=>({
+    ...candidate("b"+i,anchorB),
+    evidence:{tier:"exploratory" as const,path:"artist-link" as const,retrievalDepth:2,musical:false},
+  }));
+  const full=explainSurpriseSelection([...strong,...exploratory],"Seed");
+  assert.deepEqual(full.selected,selectMmrRecommendations(strong,"Seed"));
+  assert.equal(full.diagnostics.adaptiveAdded,0);
+  assert.equal(full.diagnostics.exploratorySelected,0);
+  const filled=explainSurpriseSelection([...strong.slice(0,7),...exploratory],"Seed");
+  assert.equal(filled.selected.length,10);
+  assert.equal(filled.diagnostics.supportedSelected,7);
+  assert.equal(filled.diagnostics.exploratorySelected,3);
+  assert.equal(filled.diagnostics.adaptiveAdded,1);
+});
+
+test("adaptive Surprise exhausts guards without repeating artists or inventing tracks",()=>{
+  const first=candidate("a1",anchorA);
+  const duplicate={...candidate("b2",anchorB),artist:first.artist,
+    evidence:{tier:"exploratory" as const,path:"artist-link" as const,retrievalDepth:2,musical:false}};
+  const seed={...duplicate,id:"seed",artist:"Seed"};
+  const result=explainSurpriseSelection([first,duplicate,seed],"Seed");
+  assert.deepEqual(result.selected,[first]);
+  assert.equal(result.diagnostics.rejected.artistRepresented,1);
+  assert.equal(result.diagnostics.rejected.otherGuard,1);
+  assert.equal(result.diagnostics.nominalQuotaBlocked,0);
+  assert.deepEqual(explainSurpriseSelection([],"Seed").selected,[]);
+});
+
+test("adaptive fill only consumes post-gate candidates; other modes keep their source caps",()=>{
+  const pool=Array.from({length:12},(_,i)=>({...candidate("a"+i,anchorA),
+    lastfmListeners:500, evidence:{tier:"exploratory" as const,path:"artist-link" as const,retrievalDepth:2,musical:false}}));
+  assert.equal(selectModeRecommendations(pool,"Seed","Surprends-moi").length,10);
+  for(const mode of ["Même vibe","Labels","Même scène"] as const)
+    assert.equal(selectModeRecommendations(pool,"Seed",mode).length,6);
+  assert.equal(selectModeRecommendations(pool,"Seed","Rabbit hole").length,5);
+  const invalid=pool.map((row,i)=>({...row,lastfmListeners:i%2?undefined:10001}));
+  const eligible=invalid.filter(row=>passesDeepAudienceGate(row,100));
+  assert.deepEqual(explainSurpriseSelection(eligible,"Seed").selected,[]);
 });

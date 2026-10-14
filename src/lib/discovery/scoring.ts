@@ -187,7 +187,9 @@ export function rankDiscoveryCandidates({
         musicalSimilarity: scoringSimilarity * 55,
         sharedTags: shared * 3,
         preferredTags:
-          track.tags.filter(tag => preferred.has(tag)).length * 4,
+          track.tags.filter(tag => preferred.has(tag)).length * 4 +
+          Math.min(3, track.tags.reduce((sum, tag) =>
+            sum + (input.memory?.tasteTags?.[normalized(tag)] || 0), 0)),
         popularityObscurity: 0,
         audience: 0,
         artistAudience: 0,

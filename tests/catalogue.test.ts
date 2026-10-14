@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,7 +8,51 @@ import {
   CATALOGUE_TTL_MS,
   loadCatalogueEntries,
   rememberCatalogueEntries,
+  defaultCataloguePath,
+  catalogueRuntimeScope,
 } from "../src/lib/discovery/catalogue";
+
+test("provider mocks cannot read or overwrite an inherited live catalogue; benchmark has a separate store", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "digger-isolation-"));
+  const livePath = join(directory, "live.json");
+  const original = JSON.stringify({schemaVersion:1,entries:[]});
+  await writeFile(livePath, original);
+  const previous = process.env.DIGGER_CATALOGUE_PATH;
+  process.env.DIGGER_CATALOGUE_PATH = livePath;
+  t.after(async () => {
+    if(previous === undefined) delete process.env.DIGGER_CATALOGUE_PATH;
+    else process.env.DIGGER_CATALOGUE_PATH = previous;
+    await rm(directory,{recursive:true,force:true});
+  });
+  assert.equal(catalogueRuntimeScope(), "test");
+  assert.equal(defaultCataloguePath("live"), livePath);
+  assert.notEqual(defaultCataloguePath(), livePath);
+  assert.notEqual(defaultCataloguePath("benchmark"), livePath);
+  assert.notEqual(defaultCataloguePath("benchmark"), defaultCataloguePath());
+  await rememberCatalogueEntries([{anchorArtist:"Fixture Anchor",neighbourArtist:"Fixture Artist",
+    neighbourRank:0,trackRank:0,track:{id:"fixture",artist:"Fixture Artist",title:"Fixture cut"}}]);
+  assert.equal((await loadCatalogueEntries(["Fixture Anchor"])).length,1);
+  assert.equal(await readFile(livePath,"utf8"),original);
+});
+
+test("fixture quarantine is exact, recoverable and idempotent; legitimate lookalikes survive", async t => {
+  const { quarantine } = require(join(process.cwd(),"scripts/quarantine-catalogue-fixtures.cjs"));
+  const directory=await mkdtemp(join(tmpdir(),"digger-quarantine-"));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const filePath=join(directory,"catalogue.json");
+  const fixture={anchorArtist:"Léon Phal",anchorArtistMbid:"8b8b8b8b-1111-4111-8111-111111111111",
+    neighbourArtist:"Jazz Root",neighbourRank:0,trackRank:0,similarity:0.9,artistTags:[],savedAt:"2026-10-12T12:00:00Z",
+    track:{id:"lastfm-crate:1418421032",artist:"Jazz Root",title:"Jazz Root cut 1",lastfmListeners:60,externalIds:{}}};
+  const legitimate={...fixture,anchorArtistMbid:"real-provider-id"};
+  const original=JSON.stringify({schemaVersion:1,entries:[fixture,legitimate]});
+  await writeFile(filePath,original);
+  const result=quarantine(filePath);
+  assert.equal(result.removed,1);
+  assert.equal(result.preserved,1);
+  assert.equal(await readFile(result.backup,"utf8"),original);
+  assert.deepEqual(JSON.parse(await readFile(filePath,"utf8")).entries,[legitimate]);
+  assert.equal(quarantine(filePath).removed,0);
+});
 
 test("catalogue survives a fresh read and expires after seven days", async t => {
   const directory = await mkdtemp(join(tmpdir(), "digger-catalogue-"));

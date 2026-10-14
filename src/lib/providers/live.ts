@@ -5,7 +5,7 @@ import { buildMusicalProfile, discoveryTags } from "../music/profile";
 import { cleanLastFmArtistTags } from "../music/lastfm-context";
 import { auditMusicalContext } from "../music/context-evidence";
 import { assessLastFmRecordingIdentity, singleVerifiedIsrc } from "../discovery/recording-identity";
-import { deduplicate, mergeDiscoveryCandidates, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
+import { deduplicate, explainSurpriseSelection, mergeDiscoveryCandidates, modeSelectionAdjustment, normalized, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations, trackIdentity, type Candidate, type CandidateOrigin } from "../discovery/ranking";
 import { candidateEligibilityFailure, rankDiscoveryCandidates } from "../discovery/scoring";
 import { lastFmArtistHopPath, lastFmCataloguePath, lastFmDeepPath, lastFmSimilarityPath, lastFmTagArtistPath, listenBrainzPath } from "../discovery/paths";
 import { artistNameParts, assessLastFmArtistIdentity, catalogueAnchorMbid, canExpandVerifiedArtistCatalogue, resolveVerifiedArtistAnchors, selectBalancedArtistNeighbours, shouldExpandArtistCatalogue } from "../discovery/artist-anchors";
@@ -13,6 +13,7 @@ import { analyzeSeedAnchorCoverage, selectBalancedBridges, selectBalancedSecondH
 import { loadCatalogueEntries, rememberCatalogueEntries, type CatalogueEntryInput } from "../discovery/catalogue";
 import { analyzeBranchDiagnostics } from "../discovery/branch-diagnostics";
 import { comparePathShadow, compareScopeShadow, compareVibeShadow } from "../discovery/shadow-comparison";
+import { compareRecordingEnrichment } from "../discovery/recording-enrichment-experiment";
 export { deduplicate, mergeDiscoveryCandidates, modeSelectionAdjustment, obscurityFromLastFmListeners, passesDeepAudienceGate, selectDiverseRecommendations, selectModeAwareArtistCandidates, selectModeRecommendations, selectSurpriseRecommendations } from "../discovery/ranking";
 
 export const mbidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -456,7 +457,7 @@ export async function searchLive(query: string, signal: AbortSignal): Promise<Tr
 }
 export async function recommendLive(
   input: DigRequest, signal: AbortSignal,
-  options: { compareScope?: boolean; comparePaths?: boolean; compareVibe?: boolean } = {},
+  options: { compareScope?: boolean; comparePaths?: boolean; compareVibe?: boolean; compareRecording?: boolean } = {},
 ): Promise<DigResponse> {
   const notes: string[] = [];
   async function optional<T>(job: Promise<T>, message: string): Promise<T | null> {
@@ -830,7 +831,7 @@ export async function recommendLive(
               ? ` · contexte artiste : ${artistTags.slice(0, 3).join(" / ")}`
               : "";
           return entry.source === "local-catalogue"
-            ? `Catalogue local vérifié : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} »${similarity}${tags}.`
+            ? `Catalogue local (réponse Last.fm mémorisée, non revérifiée pendant ce dig) : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} »${similarity}${tags}.`
             : `Catalogue : ${entry.anchorArtist} → artiste voisin ${entry.neighbourArtist} → « ${entry.track.title} »${similarity}${tags}.`;
         })(),
         relevance:
@@ -867,7 +868,7 @@ export async function recommendLive(
     catalogueDiagnostics.cacheCandidates = cachedCatalogue?.length || 0;
     if (cachedCatalogue?.length) {
       notes.push(
-        `Catalogue local Digger : ${cachedCatalogue.length} chemin(s) Last.fm vérifié(s) réutilisé(s).`,
+        `Catalogue local Digger : ${cachedCatalogue.length} chemin(s) précédemment reçus de Last.fm réutilisé(s), depuis des ancres artistes validées. Les morceaux et les liens du cache ne sont pas revérifiés auprès du fournisseur à chaque dig.`,
       );
     }
 
@@ -1875,18 +1876,28 @@ export async function recommendLive(
     deepRanked,
   );
 
-  const selected = selectModeRecommendations(
+  const knownArtistKeys = new Set(
+    (input.memory?.knownTracks || [])
+      .map(identity => identity.split("\u0000")[0])
+      .filter(Boolean),
+  );
+  const surpriseSelection = input.direction === "Surprends-moi"
+    ? explainSurpriseSelection(deepRanked, seed.artist, 10, {
+        scoreAdjustment: track => modeSelectionAdjustment(track, input.direction),
+        knownArtistKeys,
+        preferNovelArtists: Boolean(knownArtistKeys.size),
+      })
+    : undefined;
+  const selected = surpriseSelection?.selected || selectModeRecommendations(
     deepRanked,
     seed.artist,
     input.direction,
     10,
-    new Set(
-      (input.memory?.knownTracks || [])
-        .map(identity => identity.split("\u0000")[0])
-        .filter(Boolean),
-    ),
+    knownArtistKeys,
   );
   retrievalDiagnostics.selected = retrievalStage(selected);
+  if (surpriseSelection)
+    retrievalDiagnostics.surpriseSelection = surpriseSelection.diagnostics;
   const expectedSeedParticipants = [...new Set([
     ...seedParticipantNames,
     ...artistNameParts(seed.artist),
@@ -1915,13 +1926,28 @@ export async function recommendLive(
     pool, seed, seedProfile: rankingSeedProfile, input, seedParticipantKeys,
     baselineRanked: ranked, baselineSelected: selected,
   };
+  const recordingEnrichment = options.compareRecording && input.direction === "Surprends-moi"
+    ? await compareRecordingEnrichment(shadowInput,retrievalDiagnostics.trackAudienceTargets.total,signal)
+    : undefined;
   const shadowComparison = options.compareScope
     ? compareScopeShadow(shadowInput) : undefined;
   const shadowPathComparison = options.comparePaths
     ? comparePathShadow(shadowInput) : undefined;
   const shadowVibeComparison = options.compareVibe
     ? compareVibeShadow(shadowInput) : undefined;
-  if (selected.length < 10) notes.push(`Seulement ${selected.length} pistes exploitables avec ces données et tes exclusions. Aucun morceau inventé n’a été ajouté.`);
+  if (selected.length < 10) {
+    const diagnostic = retrievalDiagnostics.surpriseSelection;
+    notes.push(diagnostic
+      ? `Seulement ${selected.length} pistes retenues après épuisement des candidats compatibles avec la règle d’un titre par artiste. Aucun morceau inventé n’a été ajouté.`
+      : `Seulement ${selected.length} pistes exploitables avec ces données et tes exclusions. Aucun morceau inventé n’a été ajouté.`);
+  }
+  if (retrievalDiagnostics.surpriseSelection) {
+    const d = retrievalDiagnostics.surpriseSelection;
+    notes.push(`Sélection : ${d.supportedSelected} recommandations à preuve forte ou crédible et ${d.exploratorySelected} exploratoires, dont ${d.adaptiveAdded} ajoutée(s) pour compléter la sélection au-delà du plafond nominal de 2. Après filtres : ${d.rejected.artistRepresented} écartée(s) pour artiste déjà représenté, ${d.rejected.otherGuard} par une autre garde et ${d.rejected.mmrCapacity} restée(s) hors sélection une fois la cible atteinte.`);
+  }
+  if (input.direction === "Surprends-moi" && selected.length > 1) {
+    notes.push("L’ordre Surprends-moi suit la diversification MMR : le score brut peut donc monter ou descendre d’un rang à l’autre quand une piste réduit la redondance.");
+  }
   if (input.obscurity >= 90) notes.push("Digging strict : les audiences trop élevées ou non vérifiées sont écartées, même si cela réduit la sélection. Digger croise l’audience du morceau et, quand elle est disponible, celle des artistes crédités.");
   if (!selected.some(t => t.popularity !== undefined || t.lastfmListeners !== undefined)) notes.push("Popularité indisponible pour cette sélection : le curseur agit sur l’ouverture de la radio, sans indice d’obscurité individuel.");
   return {
@@ -1933,6 +1959,7 @@ export async function recommendLive(
     obscurity: input.obscurity,
     notes: [...new Set(notes)],
     retrievalDiagnostics,
+    ...(recordingEnrichment ? {recordingEnrichment} : {}),
     ...(shadowComparison ? { shadowComparison } : {}),
     ...(shadowPathComparison ? { shadowPathComparison } : {}),
     ...(shadowVibeComparison ? { shadowVibeComparison } : {}),

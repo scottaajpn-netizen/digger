@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { discoveryPathPreferenceKey } from "./paths";
 import { normalized, trackIdentity } from "./ranking";
+import { loadTasteImport, tasteImportFile } from "./taste-import";
 import type {
   Direction,
   DiscoveryMemorySnapshot,
@@ -214,6 +215,9 @@ export function pathMemoryScore(row: Pick<PathMemoryRow, "love" | "curious" | "n
 
 export async function loadDiscoveryMemorySnapshot(
   file = discoveryMemoryFile(),
+  importedFile = file === discoveryMemoryFile()
+    ? tasteImportFile()
+    : path.join(path.dirname(file), "youtube-music-taste.v1.json"),
 ): Promise<DiscoveryMemorySnapshot> {
   await writeQueue;
   const store = await readStore(file);
@@ -224,11 +228,14 @@ export async function loadDiscoveryMemorySnapshot(
   const knownTracks = Object.entries(store.tracks)
     .filter(([, row]) => row.feedback === "known")
     .map(([identity]) => identity);
+  const imported = await loadTasteImport(importedFile);
+  const importedKnown = imported?.tracks.map(track => trackIdentity(track)) || [];
 
   return {
     pathScores,
-    knownTracks,
-    updatedAt: store.updatedAt,
+    knownTracks: [...new Set([...knownTracks, ...importedKnown])],
+    tasteTags: imported?.tasteTags || {},
+    updatedAt: imported && imported.importedAt > store.updatedAt ? imported.importedAt : store.updatedAt,
   };
 }
 

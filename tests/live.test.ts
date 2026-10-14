@@ -222,7 +222,7 @@ test("deep discovery favors second-circle sources", () => {
 });
 
 
-test("Surprends-moi selection prefers evidence-backed unique artists and caps wildcards", () => {
+test("Surprends-moi preserves its supported core and fills remaining slots with unique wildcards", () => {
   const make = (
     id: string,
     artist: string,
@@ -262,10 +262,10 @@ test("Surprends-moi selection prefers evidence-backed unique artists and caps wi
 
   assert.deepEqual(
     selected.map(track => track.id),
-    ["supported-a1", "supported-b", "wild-1", "wild-2"],
+    ["supported-a1", "supported-b", "wild-1", "wild-2", "wild-3"],
   );
   assert.equal(new Set(selected.map(track => track.artist)).size, selected.length);
-  assert.equal(selected.filter(track => track.evidence?.tier === "exploratory").length, 2);
+  assert.equal(selected.filter(track => track.evidence?.tier === "exploratory").length, 3);
 });
 
 test("Surprends-moi selection does not fill the list with repeated supported artists", () => {

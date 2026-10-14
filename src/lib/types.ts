@@ -142,6 +142,8 @@ export interface SeedReference {
 export interface DiscoveryMemorySnapshot {
   pathScores: Record<string, number>;
   knownTracks: string[];
+  /** Cautious, aggregate affinities imported from an external listening history. */
+  tasteTags?: Record<string, number>;
   updatedAt?: string;
 }
 export interface DigRequest { seed: string; seedId?: string; seedTrack?: SeedReference; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number; memory?: DiscoveryMemorySnapshot }
@@ -233,6 +235,25 @@ export interface RetrievalDiagnostics {
   strictGateKept: RetrievalStageDiagnostics;
   strictGateRejected: RetrievalStageDiagnostics;
   selected: RetrievalStageDiagnostics;
+  surpriseSelection?: {
+    requested: number;
+    eligible: number;
+    supportedEligible: number;
+    exploratoryEligible: number;
+    supportedSelected: number;
+    exploratorySelected: number;
+    exploratoryLimit: number;
+    adaptiveAdded: number;
+    nominalQuotaBlocked: number;
+    exploratoryDeferred: number;
+    rejected: {
+      artistRepresented: number;
+      otherGuard: number;
+      mmrCapacity: number;
+      exploratoryEvidence: number;
+      exploratoryQuota: number;
+    };
+  };
   branchAnalysis?: BranchDiagnostics;
   /** Last.fm second-circle coverage by verified seed participant. Missing
    *  verification is explicit; no guessed artist anchor is searched. */
@@ -268,5 +289,5 @@ export interface ScopeShadowComparison {
   // Full rows are used only for offline human-verdict comparison.
   experimentTracks: Recommendation[];
 }
-export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics; shadowComparison?: ScopeShadowComparison; shadowPathComparison?: ScopeShadowComparison; shadowVibeComparison?: ScopeShadowComparison }
+export interface DigResponse { tracks: Recommendation[]; seed: Track; fallback: boolean; source: "mock" | "live"; direction: Direction; obscurity: number; notes?: string[]; retrievalDiagnostics?: RetrievalDiagnostics; shadowComparison?: ScopeShadowComparison; shadowPathComparison?: ScopeShadowComparison; shadowVibeComparison?: ScopeShadowComparison; recordingEnrichment?: Awaited<ReturnType<typeof import("./discovery/recording-enrichment-experiment").compareRecordingEnrichment>> }
 export interface MusicProvider { id: string; search(query: string): Promise<Track[]>; candidates(seed: Track): Promise<Track[]> }

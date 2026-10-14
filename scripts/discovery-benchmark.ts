@@ -97,6 +97,7 @@ type BenchmarkRun = {
   obscurity: number;
   notes?: string[];
   retrievalDiagnostics?: DigResponse["retrievalDiagnostics"];
+  recordingEnrichment?: DigResponse["recordingEnrichment"];
   metrics: ReturnType<typeof measureTracks>;
   humanComparison: ReturnType<typeof measureHumanComparison>;
   rankingDecisionAudit: RankingDecisionAudit;
@@ -1048,6 +1049,7 @@ async function main() {
   const knownReplayEnabled = process.argv.includes("--known-replay");
   const knownProbeEnabled = process.argv.includes("--known-probe");
   const compareScope = process.argv.includes("--compare-scope");
+  const compareRecording = process.argv.includes("--compare-recording");
   const comparePaths = process.argv.includes("--compare-paths");
   const compareVibe = process.argv.includes("--compare-vibe");
   const requestedCaseIds = optionValues("--case");
@@ -1145,7 +1147,7 @@ async function main() {
         const response = await recommendLive(
           input,
           AbortSignal.timeout(50_000),
-          { compareScope, comparePaths, compareVibe },
+          { compareScope, comparePaths, compareVibe, compareRecording },
         );
         const tracks = response.tracks as RuntimeRecommendation[];
         const metrics = measureTracks(tracks, benchmarkCase.obscurity);
@@ -1373,6 +1375,7 @@ async function main() {
           obscurity: benchmarkCase.obscurity,
           notes: response.notes,
           retrievalDiagnostics: response.retrievalDiagnostics,
+          recordingEnrichment: response.recordingEnrichment,
           metrics,
           humanComparison,
           rankingDecisionAudit,

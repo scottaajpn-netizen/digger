@@ -522,7 +522,11 @@ type MmrSelectionOptions = Pick<
   "scoreAdjustment" | "knownArtistKeys" | "preferNovelArtists"
 > & {
   lambda?: number;
+  represented?: RankedCandidate[];
+  observe?: (selected: RankedCandidate[], remaining: Record<SelectionRejection, number>) => void;
 };
+
+type SelectionRejection = "artistRepresented" | "otherGuard" | "mmrCapacity";
 
 export function selectMmrRecommendations(
   ranked: RankedCandidate[],
@@ -530,7 +534,6 @@ export function selectMmrRecommendations(
   limit = 10,
   options: MmrSelectionOptions = {},
 ) {
-  if (!ranked.length || limit <= 0) return [];
 
   const selectionScore = (track: RankedCandidate) =>
     track.score + (options.scoreAdjustment?.(track) || 0);
@@ -568,6 +571,24 @@ export function selectMmrRecommendations(
     });
 
   const selected: RankedCandidate[] = [];
+  const rejection = (track: RankedCandidate): SelectionRejection | null => {
+    if (normalized(track.artist) === seedArtistKey) return "otherGuard";
+    const represented = [...(options.represented || []), ...selected];
+    if (represented.some(chosen => chosen.id === track.id || editionKey(chosen) === editionKey(track)))
+      return "otherGuard";
+    if (represented.some(chosen => setJaccard(mmrArtistKeys(chosen), mmrArtistKeys(track)) > 0))
+      return "artistRepresented";
+    return null;
+  };
+  const observe = () => {
+    if (!options.observe) return;
+    const counts = { artistRepresented: 0, otherGuard: 0, mmrCapacity: 0 };
+    for (const track of ordered) {
+      if (selected.includes(track)) continue;
+      counts[rejection(track) || "mmrCapacity"]++;
+    }
+    options.observe(selected, counts);
+  };
   const lambda = Math.max(0, Math.min(1, options.lambda ?? 0.68));
   // Only rebalance branches if two independently verified roots have
   // survived the same obscurity/evidence gates. Never invent a second
@@ -587,20 +608,7 @@ export function selectMmrRecommendations(
   };
 
   while (selected.length < limit) {
-    let available = ordered.filter(track => {
-      if (normalized(track.artist) === seedArtistKey) return false;
-      if (
-        selected.some(
-          chosen =>
-            chosen.id === track.id ||
-            editionKey(chosen) === editionKey(track) ||
-            setJaccard(mmrArtistKeys(chosen), mmrArtistKeys(track)) > 0,
-        )
-      ) {
-        return false;
-      }
-      return true;
-    });
+    let available = ordered.filter(track => !rejection(track));
 
     if (!available.length) break;
 
@@ -637,17 +645,32 @@ export function selectMmrRecommendations(
 
     if (!next) break;
     selected.push(next);
+    observe();
   }
 
+  observe();
   return selected;
 }
 
 /**
  * Surprise mode is intentionally conservative about evidence quality.
  * Credible/strong candidates get the main list; unsupported retrievals may
- * appear only as a small wildcard quota. Repeated artists never fill slots.
+ * start with a nominal quota of two, then fill vacant slots adaptively.
+ * Repeated artists never fill slots. Input has already passed upstream gates.
  */
 export function selectSurpriseRecommendations(
+  ranked: RankedCandidate[],
+  seedArtist: string,
+  limit = 10,
+  options: Pick<
+    SelectionOptions,
+    "scoreAdjustment" | "knownArtistKeys" | "preferNovelArtists"
+  > = {},
+) {
+  return explainSurpriseSelection(ranked, seedArtist, limit, options).selected;
+}
+
+export function explainSurpriseSelection(
   ranked: RankedCandidate[],
   seedArtist: string,
   limit = 10,
@@ -659,36 +682,55 @@ export function selectSurpriseRecommendations(
   const supported = ranked.filter(
     track => track.evidence?.tier !== "exploratory",
   );
+  let primaryRemaining = { artistRepresented: 0, otherGuard: 0, mmrCapacity: 0 };
   const primary = selectMmrRecommendations(
     supported,
     seedArtist,
     limit,
-    options,
+    { ...options, observe: (_, counts) => { primaryRemaining = counts; } },
   );
-
-  if (primary.length >= limit) return primary;
-
-  const usedIds = new Set(primary.map(track => track.id));
-  const usedArtistKeys = new Set(
-    primary.flatMap(track => [...mmrArtistKeys(track)]),
-  );
-  const wildcardLimit = Math.min(2, limit - primary.length);
-
-  const exploratory = ranked.filter(
-    track =>
-      track.evidence?.tier === "exploratory" &&
-      !usedIds.has(track.id) &&
-      ![...mmrArtistKeys(track)].some(key => usedArtistKeys.has(key)),
-  );
-
+  const wildcardLimit = Math.max(0, Math.min(2, limit - primary.length));
+  const exploratory = ranked.filter(track => track.evidence?.tier === "exploratory");
+  let exploratoryRemaining = { artistRepresented: 0, otherGuard: 0, mmrCapacity: 0 };
+  let nominalQuotaBlocked = 0;
   const wildcards = selectMmrRecommendations(
     exploratory,
     seedArtist,
-    wildcardLimit,
-    options,
+    Math.max(0, limit - primary.length),
+    {
+      ...options,
+      represented: primary,
+      observe: (chosen, counts) => {
+        exploratoryRemaining = counts;
+        if (chosen.length === wildcardLimit && primary.length + chosen.length < limit)
+          nominalQuotaBlocked = counts.mmrCapacity;
+      },
+    },
   );
 
-  return [...primary, ...wildcards];
+  return {
+    selected: [...primary, ...wildcards],
+    diagnostics: {
+      requested: limit,
+      eligible: ranked.length,
+      supportedEligible: supported.length,
+      exploratoryEligible: ranked.length - supported.length,
+      supportedSelected: primary.length,
+      exploratorySelected: wildcards.length,
+      exploratoryLimit: wildcardLimit,
+      adaptiveAdded: Math.max(0, wildcards.length - wildcardLimit),
+      nominalQuotaBlocked,
+      // Stage count: deferred from the core, not a final rejection.
+      exploratoryDeferred: exploratory.length,
+      rejected: {
+        artistRepresented: primaryRemaining.artistRepresented + exploratoryRemaining.artistRepresented,
+        otherGuard: primaryRemaining.otherGuard + exploratoryRemaining.otherGuard,
+        mmrCapacity: primaryRemaining.mmrCapacity + exploratoryRemaining.mmrCapacity,
+        exploratoryEvidence: 0,
+        exploratoryQuota: 0,
+      },
+    },
+  };
 }
 
 export function selectModeAwareArtistCandidates(

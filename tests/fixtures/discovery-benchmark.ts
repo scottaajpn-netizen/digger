@@ -44,6 +44,13 @@ export type BenchmarkPoolObservation = {
 export type BenchmarkFollowUpRun = {
     label: string;
     examples: BenchmarkExample[];
+    /** Partial reviews must not fabricate a legacy overall verdict. Kept run-scoped. */
+    partialReviews?: Array<Omit<BenchmarkExample, "verdict"> & {
+        position: number;
+        rawFeedback: string;
+        reportedScoreSign?: "negative";
+        reportedEvidenceTier?: "exploratory";
+    }>;
     observations: string[];
 };
 
@@ -786,6 +793,29 @@ export const discoveryBenchmark: DiscoveryBenchmarkCase[] = [
                     "Le known-probe trouve deux nouveaux artistes appréciés humainement.",
                     "La valeur de découverte est positive même quand la cohérence perçue avec la seed est faible.",
                     "Surprends-moi doit préserver une part de sérendipité sans présenter ces sauts comme une forte similarité musicale.",
+                ],
+            },
+            {
+                label: "dig-7-human-review-recorded-2026-10-13",
+                examples: [],
+                partialReviews: [
+                    {position:1,artist:"Rémi Panossian Trio",title:"L'horizon Des Evènements",rawFeedback:"moyen",taste:"neutral"},
+                    {position:2,artist:"Huntrill",title:"Gucci EN 2010",rawFeedback:"déjà connu",known:true},
+                    {position:3,artist:"Ashley Henry",title:"Star child",rawFeedback:"moyen",taste:"neutral"},
+                    {position:4,artist:"Blue Lab Beats",title:"Dat It",rawFeedback:"aime beaucoup",taste:"love",reportedScoreSign:"negative"},
+                    {position:5,artist:"Veust",title:"Un sbire et un A.C.E",rawFeedback:"moyen",taste:"neutral"},
+                    {position:6,artist:"Gwenno Morgan",title:"sglefrio",rawFeedback:"moyen",taste:"neutral"},
+                    {position:7,artist:"Waan",title:"Bang",rawFeedback:"hors sujet",coherence:"none",reportedEvidenceTier:"exploratory"},
+                    {position:8,artist:"Emile Londonien",title:"As One",rawFeedback:"aime bien",taste:"like"},
+                    {position:9,artist:"Peace Flag Ensemble",title:"I Am Not The Gauguin I Used To Be",rawFeedback:"non évalué"},
+                    {position:10,artist:"Alina Bzhezhinska",title:"Following a Lovely Sky Boat",rawFeedback:"hors sujet",coherence:"none",reportedEvidenceTier:"exploratory"},
+                ],
+                observations: [
+                    "Dig 7 déclaré par l’utilisateur ; date du dig, commit, session, pool enrichi et breakdowns non fournis. Date du label = enregistrement du retour.",
+                    "Surprends-moi, obscurité 100 ; 10 recommandations, branche Léon Phal 8, branche Jungle Jack 2 selon le retour utilisateur.",
+                    "Aucune affinité morceau mesurée ; preuves presque exclusivement Last.fm, sans décompte exact par fournisseur.",
+                    "Moyen est codé comme goût neutre, sans inférer la cohérence. Hors sujet n’implique pas un rejet de goût. Non marqué connu n’implique pas nouveau.",
+                    "Ne pas fusionner ces évaluations partielles avec les anciens avis du même artiste ou titre ; aucun verdict global fabriqué pour le matcher historique.",
                 ],
             },
         ],

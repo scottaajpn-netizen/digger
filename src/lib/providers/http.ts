@@ -59,7 +59,7 @@ export async function musicJson<T>(base: "mb" | "lb", path: string, params: Reco
 }
 
 
-export async function lastFmJson<T>(method: string, params: Record<string, string>, signal: AbortSignal): Promise<T | null> {
+export async function lastFmJson<T>(method: string, params: Record<string, string>, signal: AbortSignal, observe?: (event: "cache-hit" | "request") => void, options?: { retry: false }): Promise<T | null> {
   const apiKey = process.env.LASTFM_API_KEY;
   if (!apiKey) return null;
 
@@ -71,12 +71,17 @@ export async function lastFmJson<T>(method: string, params: Record<string, strin
 
   const key = url.toString();
   const hit = cache.get(key);
-  if (hit && hit.expires > Date.now()) return hit.data as T;
+  if (hit && hit.expires > Date.now()) {
+    observe?.("cache-hit");
+    return hit.data as T;
+  }
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const attempts = options?.retry === false ? 1 : 3;
+  for (let attempt = 0; attempt < attempts; attempt++) {
     signal.throwIfAborted();
     let response: Response;
     try {
+      observe?.("request");
       response = await fetch(url, {
         headers: {
           Accept: "application/json",
@@ -89,7 +94,7 @@ export async function lastFmJson<T>(method: string, params: Record<string, strin
       throw new MusicServiceError("Last.fm ne répond pas. Les autres sources restent disponibles.", 503);
     }
 
-    if ([429, 502, 503, 504].includes(response.status) && attempt < 2) {
+    if ([429, 502, 503, 504].includes(response.status) && attempt < attempts - 1) {
       const retry = Number(response.headers.get("retry-after"));
       await delay(Number.isFinite(retry) && retry > 0 ? Math.min(retry * 1000, 4000) : 1300 * (attempt + 1), signal);
       continue;

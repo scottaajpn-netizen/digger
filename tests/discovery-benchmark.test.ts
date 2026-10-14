@@ -2,6 +2,32 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { discoveryBenchmark } from "./fixtures/discovery-benchmark";
+import { comparePairedHumanOrdering } from "../src/lib/evaluation/paired-human-ordering";
+
+test("Dig 7 records partial human axes without importing earlier opinions or fabricating scores",()=>{
+    const run=discoveryBenchmark.find(c=>c.id==="leon-phal-jungle-jack-pleine-foret")!
+        .followUpRuns!.find(r=>r.label==="dig-7-human-review-recorded-2026-10-13")!;
+    const rows=run.partialReviews!;
+    assert.equal(rows.length,10);
+    assert.deepEqual(rows.map(r=>r.position),[1,2,3,4,5,6,7,8,9,10]);
+    assert.equal(rows.filter(r=>r.taste!==undefined).length,6);
+    assert.equal(rows.filter(r=>r.taste==="love"||r.taste==="like").length,2);
+    assert.equal(rows.filter(r=>r.coherence==="none").length,2);
+    assert.equal(rows.filter(r=>r.known===true).length,1);
+    assert.equal(rows.filter(r=>r.known===false).length,0);
+    assert.equal(rows[3].coherence,undefined);
+    assert.equal(rows[1].taste,undefined);
+    assert.equal(rows[1].coherence,undefined);
+    assert.equal(rows[8].taste,undefined);
+    assert.equal(rows[8].coherence,undefined);
+    assert.equal(rows[3].reportedScoreSign,"negative");
+    assert.deepEqual(run.examples,[]);
+    const rated=rows.map(r=>({key:r.artist+"\u0000"+r.title,taste:r.taste,coherence:r.coherence}));
+    const metrics=comparePairedHumanOrdering(rated,rated);
+    assert.equal(metrics.sharedReviewedCount,8);
+    assert.equal(metrics.comparablePairs,0);
+    assert.equal(metrics.baselinePairAccuracy,null);
+});
 
 function measureCandidatePool(
     candidates: Array<{
