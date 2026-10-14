@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { loadEnvFile } from "node:process";
 
 import { normalized } from "../src/lib/discovery/ranking";
+import { loadTasteImport } from "../src/lib/discovery/taste-import";
 import { auditDiscoveryPath } from "../src/lib/discovery/path-reliability";
 import { comparePairedHumanOrdering, type HumanRatedTrack } from "../src/lib/evaluation/paired-human-ordering";
 import { auditRankingDecisions, type RankingAuditTrack, type RankingDecisionAudit } from "../src/lib/evaluation/ranking-decision-audit";
@@ -1048,6 +1049,9 @@ async function main() {
   const full = process.argv.includes("--full");
   const knownReplayEnabled = process.argv.includes("--known-replay");
   const knownProbeEnabled = process.argv.includes("--known-probe");
+  const compareTaste = process.argv.includes("--compare-taste");
+  const tasteImport = compareTaste ? await loadTasteImport() : undefined;
+  if (compareTaste && !tasteImport) throw new Error("Import de goûts introuvable : .digger/youtube-music-taste.v1.json");
   const compareScope = process.argv.includes("--compare-scope");
   const compareRecording = process.argv.includes("--compare-recording");
   const comparePaths = process.argv.includes("--compare-paths");
@@ -1158,6 +1162,36 @@ async function main() {
         const rankingDecisionAudit=auditRankingDecisions(reviewedRankingTracks(benchmarkCase,tracks));
 
         printRun(benchmarkCase, direction, tracks, metrics);
+        if (compareTaste && tasteImport) {
+          const importedKnown = new Set(tasteImport.tracks.map(track => identityKey(track)));
+          const tasteResponse = await recommendLive(
+            { ...input, memory: {
+              pathScores: {},
+              knownTracks: [...importedKnown],
+              tasteTags: tasteImport.tasteTags,
+            } },
+            AbortSignal.timeout(50_000),
+            { compareScope: false, comparePaths: false, compareVibe: false, compareRecording: false },
+          );
+          const tasteTracks = tasteResponse.tracks as RuntimeRecommendation[];
+          const baselineIds = new Set(tracks.map(identityKey));
+          const tasteIds = new Set(tasteTracks.map(identityKey));
+          const removed = tracks.filter(track => !tasteIds.has(identityKey(track)));
+          const added = tasteTracks.filter(track => !baselineIds.has(identityKey(track)));
+          const baselineKnown = tracks.filter(track => importedKnown.has(identityKey(track)));
+          const leaked = tasteTracks.filter(track => importedKnown.has(identityKey(track)));
+          const tasteMetrics = measureTracks(tasteTracks, benchmarkCase.obscurity);
+          console.log(
+            `    [taste] connus visibles avant=${baselineKnown.length}, après=${leaked.length}; communs=${tracks.filter(track => tasteIds.has(identityKey(track))).length}; sortis=${removed.length}; entrés=${added.length}`,
+          );
+          console.log(
+            `    [taste] artistes distincts=${metrics.uniqueArtistCount}→${tasteMetrics.uniqueArtistCount}; branches=${metrics.branchCount}→${tasteMetrics.branchCount}; domination branche=${metrics.dominantBranchRatio.toFixed(2)}→${tasteMetrics.dominantBranchRatio.toFixed(2)}`,
+          );
+          for (const track of added) console.log(`      + ${track.artist} — ${track.title}`);
+          for (const track of removed) console.log(`      - ${track.artist} — ${track.title}`);
+          if (leaked.length) console.warn("    [taste] ATTENTION : des morceaux importés sont encore recommandés");
+          console.log("    [taste] Comparaison indicative : deux appels réseau, candidats susceptibles de varier.");
+        }
         printRankingAudit("baseline",rankingDecisionAudit);
         printRetrievalDiagnostics(response.retrievalDiagnostics);
         const shadow = response.shadowComparison;
