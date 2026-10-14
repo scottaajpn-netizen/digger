@@ -85,7 +85,7 @@ export function SeedSearch({ value, disabled, onChange, onSelect }: {
     <p id={`${id}-help`} className="search-help">Titre ou artiste, dans l’ordre que tu veux. Suggestions dès 3 caractères.</p>
     {visible && <div className="suggestion-panel">
       <ul id={id} role="listbox" aria-label="Suggestions de morceaux" aria-busy={state.status === "loading"}>
-        {state.suggestions.map((track, i) => <li key={track.id} id={`${id}-${i}`} role="option"
+        {state.suggestions.map((track, i) => <li key={`${track.id}-${i}`} id={`${id}-${i}`} role="option"
           aria-selected={i === active} onMouseDown={e => e.preventDefault()}
           onClick={() => select(track)}>
           <strong>{track.title}</strong>
