@@ -1,7 +1,7 @@
 import type { DiscogsEvidence } from "./providers/discogs";
 export const directions = ["Même vibe", "Même scène", "Labels", "Rabbit hole", "Surprends-moi"] as const;
 export type Direction = typeof directions[number];
-export const feedbackValues = ["love", "curious", "neutral", "known"] as const;
+export const feedbackValues = ["love", "curious", "sample", "neutral", "known"] as const;
 export type Feedback = typeof feedbackValues[number];
 export type FeedbackMap = Record<string, Feedback>;
 export type MusicalTagScope = "recording" | "artist" | "release" | "context";
@@ -116,6 +116,7 @@ export interface Recommendation extends Track {
     artistAudience: number;
     origin: number;
     discoveryPath: number;
+    evidenceQuality?: number;
     memory: number;
     discogs: number;
     direction: number;

@@ -31,6 +31,7 @@ export type ScoreBreakdown = {
   artistAudience: number;
   origin: number;
   discoveryPath: number;
+  evidenceQuality?: number;
   memory: number;
   discogs: number;
   direction: number;
@@ -103,6 +104,13 @@ export const normalized = (value: string) =>
 export const trackIdentity = (track: Pick<Track, "artist" | "title">) =>
   `${normalized(track.artist)}\u0000${normalized(track.title)}`;
 
+/** A verified ISRC can reconcile display-credit variants of the same title.
+ * Title remains part of the key because catalogue ISRC reuse does occur. */
+export const recordingIdentityKey = (track: Pick<Track, "artist" | "title" | "externalIds">) => {
+  const isrc = normalizeIsrc(track.externalIds?.isrc);
+  return isrc ? `isrc:${isrc}\u0000${normalized(track.title)}` : `text:${trackIdentity(track)}`;
+};
+
 export function deduplicate<T extends Track>(tracks: T[]): T[] {
   // Preserve original order while preventing merges across contradictory ISRCs.
   const ids = new Set<string>();
@@ -145,7 +153,14 @@ export function mergeDiscoveryCandidates(pool: Candidate[]): Candidate[] {
     const key = trackIdentity(track);
     groups.set(key, [...(groups.get(key) || []), track]);
   }
-  return [...groups.values()].flatMap(partitionByRecordingIdentity).map(group => {
+  const textPartitions = [...groups.values()].flatMap(partitionByRecordingIdentity);
+  const recordingGroups = new Map<string, Candidate[]>();
+  textPartitions.forEach((partition, index) => {
+    const verified = partition.find(track => normalizeIsrc(track.externalIds?.isrc));
+    const key = verified ? recordingIdentityKey(verified) : `unverified:${index}`;
+    recordingGroups.set(key, [...(recordingGroups.get(key) || []), ...partition]);
+  });
+  return [...recordingGroups.values()].map(group => {
     const ordered = [...group].sort((a, b) => b.relevance - a.relevance);
     const base =
       ordered.find(track => !track.discogs && track.externalIds?.musicbrainz) ||

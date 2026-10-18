@@ -2,6 +2,7 @@ node_modules/
 .pnpm-store/
 .next/
 .test-build/
+.tmp-tests/
 .benchmark-build/
 benchmark-results/
 .env*

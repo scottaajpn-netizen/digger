@@ -16,6 +16,7 @@ type Props = {
 const votes: { value: Feedback; label: string; symbol: string }[] = [
   { value: "love", label: "J’aime", symbol: "♥" },
   { value: "curious", label: "À écouter", symbol: "◉" },
+  { value: "sample", label: "À sampler", symbol: "✂" },
   { value: "neutral", label: "Pas pour moi", symbol: "−" },
   { value: "known", label: "Déjà connu", symbol: "✓" },
 ];

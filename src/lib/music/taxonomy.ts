@@ -57,6 +57,9 @@ const MAP: Record<string, GenreNode> = {
   "alternative hip hop": { genre: "Hip-Hop", subgenre: "Alternative Hip-Hop" },
   "cloud rap": { genre: "Hip-Hop", subgenre: "Cloud Rap", traits: ["atmospheric"] },
   "trap": { genre: "Hip-Hop", subgenre: "Trap" },
+  "chillhop": { genre: "Hip-Hop", subgenre: "Chillhop", traits: ["lo-fi"] },
+  "lo-fi hip hop": { genre: "Hip-Hop", subgenre: "Lo-Fi Hip-Hop", traits: ["lo-fi"] },
+  "lofi hip hop": { genre: "Hip-Hop", subgenre: "Lo-Fi Hip-Hop", traits: ["lo-fi"] },
   "soul": { genre: "Soul" },
   "neo soul": { genre: "Soul", subgenre: "Neo Soul" },
   "neo-soul": { genre: "Soul", subgenre: "Neo Soul" },
@@ -78,6 +81,10 @@ const MAP: Record<string, GenreNode> = {
   "lofi": { traits: ["lo-fi"] },
   "instrumental": { traits: ["instrumental"] },
   "vocal": { traits: ["vocal"] },
+  "bossa nova": { genre: "Brazilian", subgenre: "Bossa Nova" },
+  "chanson française": { genre: "Pop", subgenre: "Chanson Française" },
+  "chanson francaise": { genre: "Pop", subgenre: "Chanson Française" },
+  "french pop": { genre: "Pop", subgenre: "French Pop" },
 };
 
 export function cleanMusicTag(tag: string) {

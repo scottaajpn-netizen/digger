@@ -626,6 +626,10 @@ export async function recommendLive(
   }
   const recordingIdentity = assessLastFmRecordingIdentity({
     seedArtist:seed.artist,
+    seedTitle:seed.title,
+    seedCredits:seed.credits,
+    returnedArtist:lastFmSeedInfo?.track?.artist?.name,
+    returnedTitle:lastFmSeedInfo?.track?.name,
     expectedRecordingMbid:seed.externalIds?.musicbrainz,
     returnedRecordingMbid:lastFmSeedInfo?.track?.mbid,
     artistMbidConflicts:artistIdentity.conflictingMbid,

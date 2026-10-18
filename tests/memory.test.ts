@@ -86,3 +86,20 @@ test("discovery memory survives corrupt JSON by starting fresh", async () => {
   assert.deepEqual(snapshot.knownTracks, []);
   await assert.rejects(readFile(file, "utf8"));
 });
+
+test("sampling utility remains weaker than listening preference", async () => {
+  const lovedFile = await tempMemoryFile();
+  const sampledFile = await tempMemoryFile();
+  const discoveryPath = lastFmDeepPath(seed, { artist: "Bridge Artist", title: "Bridge" }, candidate);
+  await recordDiscoveryFeedback(candidateWithPath(discoveryPath), "love", "Rabbit hole", lovedFile);
+  await recordDiscoveryFeedback(candidateWithPath(discoveryPath), "sample", "Rabbit hole", sampledFile);
+  const key = discoveryPathPreferenceKey(discoveryPath, "Rabbit hole")!;
+  const loved = await loadDiscoveryMemorySnapshot(lovedFile);
+  const sampled = await loadDiscoveryMemorySnapshot(sampledFile);
+  assert.ok(sampled.pathScores[key] > 0);
+  assert.ok(loved.pathScores[key] > sampled.pathScores[key]);
+});
+
+function candidateWithPath(discoveryPath: Track["discoveryPath"]) {
+  return { artist: candidate.artist, title: candidate.title, discoveryPath };
+}

@@ -14,7 +14,7 @@ const emptyScoreBreakdown = () => ({
   audience: 0,
   artistAudience: 0,
   origin: 0,
-  discoveryPath: 0,
+  discoveryPath: 0, evidenceQuality: 0,
   memory: 0,
   discogs: 0,
   direction: 0,

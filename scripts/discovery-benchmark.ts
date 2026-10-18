@@ -989,8 +989,8 @@ function formatRankingDecisionsMarkdown(runs:readonly BenchmarkRun[]):string {
         audit.ratedInversionCount+"/"+audit.comparableHumanPairs+" paires humainement mal ordonnées, "+
         audit.pathWarningCount+" pistes avec avertissement de provenance.",
         "",
-        "| # | Morceau | Score | Position avant | Principaux bonus | Signal musical | Chemin / avertissements | Avis humain |",
-        "| ---: | --- | ---: | ---: | --- | --- | --- | --- |",
+        "| # | Morceau | Score | Rang score brut | Effet MMR/sélection | Position avant | Principaux bonus | Signal musical | Chemin / avertissements | Avis humain |",
+        "| ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |",
       );
       for(const item of audit.tracks){
         const pathInfo=[
@@ -1006,6 +1006,8 @@ function formatRankingDecisionsMarkdown(runs:readonly BenchmarkRun[]):string {
           "| "+item.position+
           " | "+clean(item.artist+" — "+item.title)+
           " | "+score(item.score)+
+          " | "+item.rawScoreRank+
+          " | "+(item.selectionRankDelta>0?"+":"")+item.selectionRankDelta+
           " | "+position+
           " | "+clean(factors(item.positiveDrivers))+
           " | "+clean(item.metadataOverlapScope||"non établie")+

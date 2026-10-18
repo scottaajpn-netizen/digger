@@ -85,6 +85,10 @@ test("raw score contradicting displayed position warns about selection constrain
   assert.equal(report.inversions[0].rawScoreGap,-60);
   assert.equal(report.inversions[0].selectionMayExplainInversion,true);
   assert.equal(report.inversions[0].advantageousComponents.length,0);
+  assert.equal(report.tracks[0].rawScoreRank,2);
+  assert.equal(report.tracks[0].selectionRankDelta,1);
+  assert.equal(report.tracks[1].rawScoreRank,1);
+  assert.equal(report.tracks[1].selectionRankDelta,-1);
 });
 
 test("unrated discoveries, artist-only opinions and missing breakdowns never invent judgments",()=>{

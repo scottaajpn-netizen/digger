@@ -8,7 +8,7 @@ export type ScoreComponent = keyof ScoreBreakdown;
 const COMPONENTS:readonly ScoreComponent[]=[
   "relevance","musicalSimilarity","sharedTags","preferredTags",
   "popularityObscurity","audience","artistAudience","origin",
-  "discoveryPath","memory","discogs","direction","jitter",
+  "discoveryPath","evidenceQuality","memory","discogs","direction","jitter",
 ];
 const COHERENCE:Record<HumanCoherence,number>={
   none:0,weak:1,moderate:2,strong:3,
@@ -30,6 +30,8 @@ export type RankingTrackAudit={
   artist:string;
   title:string;
   position:number;
+  rawScoreRank:number;
+  selectionRankDelta:number; // Positive = MMR/diversity promoted the track.
   baselinePosition:number|null;
   positionChange:number|null; // Positive = climbed to a better position.
   score:number|null;
@@ -77,7 +79,7 @@ const finiteScore=(value:number|undefined)=>
 const contributions=(row:ScoreBreakdown|undefined):ComponentContribution[]=>
   row?COMPONENTS.flatMap(component=>{
     const points=row[component];
-    return Number.isFinite(points)?[{component,points}]:[];
+    return Number.isFinite(points)?[{component,points:points ?? 0}]:[];
   }):[];
 const strongest=(rows:ComponentContribution[],positive:boolean,limit=4)=>
   rows.filter(row=>positive?row.points>0:row.points<0)
@@ -85,7 +87,7 @@ const strongest=(rows:ComponentContribution[],positive:boolean,limit=4)=>
     .slice(0,limit);
 const differences=(a:ScoreBreakdown|undefined,b:ScoreBreakdown|undefined)=>
   a&&b?COMPONENTS.map(component=>({
-    component,points:a[component]-b[component],
+    component,points:(a[component] ?? 0)-(b[component] ?? 0),
   })).filter(row=>Number.isFinite(row.points)&&Math.abs(row.points)>1e-8):[];
 
 /**
@@ -103,6 +105,10 @@ export function auditRankingDecisions(
   const baselineMap=new Map(
     (baseline||[]).map((track,index)=>[identity(track),{track,position:index+1}]),
   );
+  const rawScoreRanks=new Map(
+    [...tracks].sort((a,b)=>(finiteScore(b.score)??-Infinity)-(finiteScore(a.score)??-Infinity))
+      .map((track,index)=>[identity(track),index+1]),
+  );
   const audited=tracks.map((track,index):RankingTrackAudit=>{
     const prior=baselineMap.get(identity(track));
     const path=auditDiscoveryPath(track);
@@ -114,6 +120,8 @@ export function auditRankingDecisions(
     return {
       id:track.id,artist:track.artist,title:track.title,
       position:index+1,
+      rawScoreRank:rawScoreRanks.get(identity(track)) ?? index+1,
+      selectionRankDelta:(rawScoreRanks.get(identity(track)) ?? index+1)-(index+1),
       baselinePosition:prior?.position||null,
       positionChange:prior?prior.position-(index+1):null,
       score,baselineScore:priorScore,

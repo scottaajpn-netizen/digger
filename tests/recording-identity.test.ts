@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fromRecording } from "../src/lib/providers/live";
 import { deduplicate, mergeDiscoveryCandidates, type Candidate } from "../src/lib/discovery/ranking";
-import { normalizeIsrc, partitionByRecordingIdentity, singleVerifiedIsrc } from "../src/lib/discovery/recording-identity";
+import { assessLastFmRecordingIdentity, normalizeIsrc, partitionByRecordingIdentity, singleVerifiedIsrc } from "../src/lib/discovery/recording-identity";
 
 const firstIsrc = "GBUM71029604", otherIsrc = "USRC17607839";
 const song = (id: string, isrc?: string) => ({
@@ -70,4 +70,38 @@ test("named remix titles stay distinct even if they carry the same ISRC", () => 
     candidate("original", firstIsrc),
     { ...candidate("remix", firstIsrc), title: "Love Me Right (Dub Remix)" },
   ]).length, 2);
+});
+
+test("verified ISRC merges display-credit variants without merging different titles", () => {
+  const collaboration = { ...candidate("collab", firstIsrc), artist: "Curren$y feat. Mac Miller", title: "Money Shot" };
+  const abbreviated = { ...candidate("short-credit", firstIsrc), artist: "Curren$y", title: "Money Shot" };
+  const otherTitle = { ...candidate("other-title", firstIsrc), artist: "Curren$y", title: "Another Cut" };
+  const merged = mergeDiscoveryCandidates([collaboration, abbreviated, otherTitle]);
+  assert.equal(merged.length, 2);
+  assert.ok(merged.some(track => track.title === "Money Shot"));
+  assert.ok(merged.some(track => track.title === "Another Cut"));
+});
+
+test("seed identity blocks swapped fields, lost sessions and incompatible collaboration credits", () => {
+  const base = {
+    seedArtist: "Saboteur",
+    seedTitle: "Grünt #53",
+    artistMbidConflicts: false,
+    confirmedArtistMbid: false,
+  };
+  assert.equal(assessLastFmRecordingIdentity({
+    ...base, returnedArtist: "Grünt #53", returnedTitle: "Saboteur",
+  }).reason, "artist-title-swapped");
+  assert.equal(assessLastFmRecordingIdentity({
+    ...base, returnedArtist: "Saboteur", returnedTitle: "Freestyle",
+  }).reason, "session-title-conflict");
+  assert.equal(assessLastFmRecordingIdentity({
+    seedArtist: "Curren$y feat. Mac Miller", seedTitle: "Money Shot",
+    seedCredits: [
+      { name: "Curren$y", role: "primary", source: "musicbrainz" },
+      { name: "Mac Miller", role: "featured", source: "musicbrainz" },
+    ],
+    returnedArtist: "Unrelated Artist", returnedTitle: "Money Shot",
+    artistMbidConflicts: false, confirmedArtistMbid: false,
+  }).reason, "credited-artist-conflict");
 });

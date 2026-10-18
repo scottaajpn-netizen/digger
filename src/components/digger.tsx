@@ -9,7 +9,7 @@ import { directions, feedbackValues, type Direction, type DigResponse, type Feed
 import { SeedSearch } from "./seed-search";
 import { InfiniteDig } from "./infinite-dig";
 
-const reactions: { value: Feedback; icon: string; label: string }[] = [{ value: "love", icon: "❤️", label: "J’aime" }, { value: "curious", icon: "👀", label: "À écouter" }, { value: "neutral", icon: "😐", label: "Pas pour moi" }, { value: "known", icon: "✓", label: "Déjà connu" }];
+const reactions: { value: Feedback; icon: string; label: string }[] = [{ value: "love", icon: "❤️", label: "J’aime" }, { value: "curious", icon: "👀", label: "À écouter" }, { value: "sample", icon: "✂️", label: "À sampler" }, { value: "neutral", icon: "😐", label: "Pas pour moi" }, { value: "known", icon: "✓", label: "Déjà connu" }];
 const directionIcons = ["≈", "◎", "▤", "↳", "✳"];
 const storageKey = "digger.profile.v2";
 const creditRoleLabel = (role: NonNullable<Track["credits"]>[number]["role"]) =>

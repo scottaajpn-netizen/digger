@@ -99,6 +99,36 @@ test("scoring preserves Même vibe preference for musically close tracks", () =>
   assert.ok((ranked[0].analysis?.similarity || 0) > (ranked[1].analysis?.similarity || 0));
 });
 
+test("evidence quality penalizes generic rap and known subgenre drift", () => {
+  const boomBapSeed = { ...seed, tags: ["hip hop", "boom bap"], country: undefined, year: 0 };
+  const pool = [
+    candidate("boom-bap", { tags: ["hip hop", "boom bap"], country: undefined, year: 0, relevance: 60 }),
+    candidate("generic-rap", { tags: ["hip hop", "rap"], country: undefined, year: 0, relevance: 60 }),
+    candidate("chillhop", { tags: ["hip hop", "chillhop"], country: undefined, year: 0, relevance: 60 }),
+  ];
+  const ranked = rankDiscoveryCandidates({
+    pool, seed: boomBapSeed, seedProfile: buildMusicalProfile(boomBapSeed),
+    input: request({ direction: "Surprends-moi" }), seedParticipantKeys: new Set(["seed artist"]),
+  });
+  assert.equal(ranked[0].id, "boom-bap");
+  assert.ok((ranked.find(row => row.id === "generic-rap")?.scoreBreakdown.evidenceQuality || 0) < 0);
+  assert.ok((ranked.find(row => row.id === "chillhop")?.scoreBreakdown.evidenceQuality || 0) <= -18);
+});
+
+test("release-level genre country and year cannot stand in for title-level similarity", () => {
+  const generic = candidate("discogs-generic", {
+    tags: ["electronic"], origin: "discogs-compilation", year: seed.year, country: seed.country,
+    discogs: {
+      releaseId: 77, title: "Various Electronic", artists: [], labels: [], genres: ["Electronic"],
+      styles: [], compilation: true, role: "compilation-track", path: [], audience: "unknown",
+      position: "A1", trackArtists: [], fetchedAt: "2026-10-18T00:00:00.000Z",
+      sourceUrl: "https://www.discogs.com/release/77",
+    },
+  });
+  const [ranked] = rank([generic], request({ direction: "Surprends-moi" }));
+  assert.ok((ranked.scoreBreakdown.evidenceQuality || 0) <= -11);
+});
+
 test("scoring preserves Labels bonus for the seed label", () => {
   const shared = candidate("shared", { label: "Shared Label", relevance: 60 });
   const other = candidate("other", { label: "Other Label", relevance: 60 });

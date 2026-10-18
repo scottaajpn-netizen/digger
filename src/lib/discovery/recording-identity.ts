@@ -1,4 +1,4 @@
-import type { Track } from "../types";
+import type { ArtistCredit, Track } from "../types";
 
 // An ISRC identifies a recording, not its release. Catalogues can contain
 // missing, duplicated or incorrectly reused ISRCs.
@@ -52,6 +52,10 @@ const validMbid=(id:string|undefined)=>id&&mbidPattern.test(id)?id.toLowerCase()
  */
 export function assessLastFmRecordingIdentity(input:{
   seedArtist:string;
+  seedTitle?:string;
+  seedCredits?:ArtistCredit[];
+  returnedArtist?:string;
+  returnedTitle?:string;
   expectedRecordingMbid?:string;
   returnedRecordingMbid?:string;
   artistMbidConflicts:boolean;
@@ -65,8 +69,26 @@ export function assessLastFmRecordingIdentity(input:{
     .replace(/[\u0300-\u036f]/g,"").replace(/[^\p{L}\p{N}]+/gu,"");
   const shortArtist=compactArtist.length>0&&compactArtist.length<=4;
   const insufficientIdentity=Boolean(expected&&shortArtist&&!confirmedRecording&&!input.confirmedArtistMbid);
+  const textKey=(value:string|undefined)=>(value||"").normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim();
+  const seedArtistKey=textKey(input.seedArtist);
+  const seedTitleKey=textKey(input.seedTitle);
+  const returnedArtistKey=textKey(input.returnedArtist);
+  const returnedTitleKey=textKey(input.returnedTitle);
+  const swapped=Boolean(seedArtistKey&&seedTitleKey&&returnedArtistKey&&returnedTitleKey&&
+    returnedArtistKey===seedTitleKey&&returnedTitleKey===seedArtistKey);
+  const sessionOrMix=/\b(session|mix|mixtape|live|freestyle|cypher|grünt|grunt)\b/i.test(input.seedTitle||"");
+  const losesSessionIdentity=Boolean(sessionOrMix&&seedTitleKey&&returnedTitleKey&&seedTitleKey!==returnedTitleKey);
+  const creditedArtists=(input.seedCredits||[])
+    .filter(credit=>credit.role==="primary"||credit.role==="featured")
+    .map(credit=>textKey(credit.name)).filter(Boolean);
+  const conflictsCredits=Boolean(!confirmedRecording&&returnedArtistKey&&creditedArtists.length&&
+    !creditedArtists.some(artist=>returnedArtistKey.includes(artist)||artist.includes(returnedArtistKey)));
   const reason=input.artistMbidConflicts?"artist-mbid-conflict" as const:
     contradictsRecording?"recording-mbid-conflict" as const:
+    swapped?"artist-title-swapped" as const:
+    losesSessionIdentity?"session-title-conflict" as const:
+    conflictsCredits?"credited-artist-conflict" as const:
     insufficientIdentity?"uncorroborated-short-name" as const:
     "allowed" as const;
   return {

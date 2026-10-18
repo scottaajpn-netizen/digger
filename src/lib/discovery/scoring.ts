@@ -18,6 +18,56 @@ import {
 const hash = (value: string) =>
   [...value].reduce((number, character) => (number * 31 + character.charCodeAt(0)) >>> 0, 7);
 
+const broadMusicalTerms = new Set([
+  "music", "pop", "rock", "jazz", "electronic", "electronica", "hip hop", "rap",
+  "soul", "funk", "dance", "world", "alternative",
+]);
+
+const genericLabelTerms = new Set(["records", "recordings", "music", "entertainment", "productions"]);
+
+/** Score only what the metadata can actually establish. This keeps catalogue,
+ * country and year links useful for exploration without presenting them as
+ * title-level sonic evidence. */
+export function semanticEvidenceQualityAdjustment(input: {
+  track: Candidate;
+  seedProfile: MusicalProfile;
+  candidateProfile: MusicalProfile;
+  comparison: ReturnType<typeof compareMusicalProfiles>;
+  overlapScope: ReturnType<typeof classifyMusicalOverlap>;
+}) {
+  const { track, seedProfile, candidateProfile, comparison, overlapScope } = input;
+  const tags = track.tags.map(normalized).filter(Boolean);
+  const onlyBroadTags = tags.length > 0 && tags.every(tag => broadMusicalTerms.has(tag));
+  const seedSubgenres = new Set(seedProfile.subgenres.map(normalized));
+  const candidateSubgenres = new Set(candidateProfile.subgenres.map(normalized));
+  let adjustment = 0;
+
+  if (onlyBroadTags && comparison.subgenre === 0) adjustment -= 10;
+  if (track.origin === "lastfm-artist-hop" && overlapScope !== "recording") adjustment -= 7;
+
+  if (track.discogs && comparison.subgenre === 0) {
+    // Genre + country + year is release context, not proof that two tracks sound alike.
+    if (comparison.genre > 0 && (comparison.country > 0 || comparison.year > 0)) adjustment -= 8;
+    if (track.discogs.compilation) adjustment -= 3;
+  }
+
+  const driftsFromBoomBap = seedSubgenres.has("boom bap") &&
+    (candidateSubgenres.has("lo fi hip hop") || candidateSubgenres.has("chillhop"));
+  const driftsFromBossa = seedSubgenres.has("bossa nova") &&
+    (candidateSubgenres.has("chanson francaise") || candidateSubgenres.has("french pop"));
+  if (driftsFromBoomBap || driftsFromBossa) adjustment -= 18;
+
+  const hasLabelHop = track.discoveryPath?.nodes.some(node => node.kind === "label") === true;
+  if (hasLabelHop) {
+    const label = normalized(track.label || "");
+    const genericLabel = !label || genericLabelTerms.has(label);
+    if (genericLabel && comparison.subgenre === 0) adjustment -= 5;
+    else if (!genericLabel && comparison.subgenre > 0 && overlapScope === "recording") adjustment += 5;
+  }
+
+  return adjustment;
+}
+
 export function discoveryPathScoreAdjustment(
   path: DiscoveryPath | undefined,
   direction: Direction,
@@ -195,6 +245,7 @@ export function rankDiscoveryCandidates({
         artistAudience: 0,
         origin: 0,
         discoveryPath: 0,
+        evidenceQuality: 0,
         memory: 0,
         discogs: 0,
         direction: 0,
@@ -206,6 +257,12 @@ export function rankDiscoveryCandidates({
         scoreBreakdown.musicalSimilarity +
         scoreBreakdown.sharedTags +
         scoreBreakdown.preferredTags;
+
+      const evidenceQualityAdjustment = semanticEvidenceQualityAdjustment({
+        track, seedProfile, candidateProfile, comparison, overlapScope,
+      });
+      score += evidenceQualityAdjustment;
+      scoreBreakdown.evidenceQuality += evidenceQualityAdjustment;
 
       if (track.popularity !== undefined) {
         const obscurityPenalty =

@@ -19,6 +19,7 @@ type PathMemoryRow = {
   distance: number;
   love: number;
   curious: number;
+  sample: number;
   neutral: number;
   known: number;
   lastSeenAt: string;
@@ -80,6 +81,7 @@ const parseStore = (value: unknown): DiscoveryMemoryStore => {
         distance: safeCount(row.distance),
         love: safeCount(row.love),
         curious: safeCount(row.curious),
+        sample: safeCount(row.sample),
         neutral: safeCount(row.neutral),
         known: safeCount(row.known),
         lastSeenAt: typeof row.lastSeenAt === "string" ? row.lastSeenAt : store.updatedAt,
@@ -170,6 +172,7 @@ export async function recordDiscoveryFeedback(
           distance: track.discoveryPath.distance,
           love: 0,
           curious: 0,
+          sample: 0,
           neutral: 0,
           known: 0,
           lastSeenAt: now,
@@ -205,9 +208,11 @@ export async function recordDiscoveryFeedback(
   return writeQueue;
 }
 
-export function pathMemoryScore(row: Pick<PathMemoryRow, "love" | "curious" | "neutral">) {
-  const weighted = row.love * 1 + row.curious * 0.45 - row.neutral * 0.8;
-  const observations = row.love + row.curious + row.neutral;
+export function pathMemoryScore(row: Pick<PathMemoryRow, "love" | "curious" | "sample" | "neutral">) {
+  // Listening preference, curiosity and sampling utility are separate signals.
+  // A sample-worthy path is useful, but must not masquerade as a liked sound.
+  const weighted = row.love * 1 + row.curious * 0.35 + row.sample * 0.2 - row.neutral * 0.8;
+  const observations = row.love + row.curious + row.sample + row.neutral;
   if (!observations) return 0;
   const confidence = Math.min(1, observations / 6);
   return Math.max(-10, Math.min(10, weighted * 2.2 * confidence));
