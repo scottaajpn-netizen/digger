@@ -2,8 +2,14 @@ node_modules/
 .pnpm-store/
 .next/
 .test-build/
+.tmp-tests/
+.benchmark-build/
+benchmark-results/
 .env*
 !.env.example
 *.tsbuildinfo
 verification/
 *.log
+.digger/
+
+graphify-out/

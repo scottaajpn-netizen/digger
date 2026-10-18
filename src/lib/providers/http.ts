@@ -1,5 +1,13 @@
+import { discogsJson as strictDiscogsJson } from "./discogs-http";
 export class MusicServiceError extends Error {
   constructor(message: string, public status = 502) { super(message); }
+}
+/** Preserve only the Last.fm numeric API code in user-facing diagnostics.
+ * Avoid printing API keys, URLs or arbitrary upstream error messages. */
+export class LastFmApiError extends MusicServiceError {
+  constructor(public readonly apiCode: number, message: string) {
+    super(message,503);
+  }
 }
 const cache = new Map<string, { data: unknown; expires: number }>();
 let nextMusicBrainzRequest = 0;
@@ -35,6 +43,9 @@ export async function musicJson<T>(base: "mb" | "lb", path: string, params: Reco
     }
     if ([429, 502, 503, 504].includes(response.status) && attempt < 2) {
       const retry = Number(response.headers.get("retry-after"));
+      if (base === "mb" && Number.isFinite(retry) && retry > 4) {
+        throw new MusicServiceError("MusicBrainz demande de patienter avant une nouvelle requête. Réessaie dans quelques secondes.", 429);
+      }
       await delay(Number.isFinite(retry) && retry > 0 ? Math.min(retry * 1000, 4000) : 1300 * (attempt + 1), signal);
       continue;
     }
@@ -45,4 +56,66 @@ export async function musicJson<T>(base: "mb" | "lb", path: string, params: Reco
     return data as T;
   }
   throw new MusicServiceError("La source musicale est occupée. Réessaie.", 503);
+}
+
+
+export async function lastFmJson<T>(method: string, params: Record<string, string>, signal: AbortSignal, observe?: (event: "cache-hit" | "request") => void, options?: { retry: false }): Promise<T | null> {
+  const apiKey = process.env.LASTFM_API_KEY;
+  if (!apiKey) return null;
+
+  const url = new URL("https://ws.audioscrobbler.com/2.0/");
+  url.searchParams.set("method", method);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("format", "json");
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+
+  const key = url.toString();
+  const hit = cache.get(key);
+  if (hit && hit.expires > Date.now()) {
+    observe?.("cache-hit");
+    return hit.data as T;
+  }
+
+  const attempts = options?.retry === false ? 1 : 3;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    signal.throwIfAborted();
+    let response: Response;
+    try {
+      observe?.("request");
+      response = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": process.env.MUSICBRAINZ_USER_AGENT || "Digger/0.3 (personal local music discovery)",
+        },
+        signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
+        cache: "no-store",
+      });
+    } catch {
+      throw new MusicServiceError("Last.fm ne répond pas. Les autres sources restent disponibles.", 503);
+    }
+
+    if ([429, 502, 503, 504].includes(response.status) && attempt < attempts - 1) {
+      const retry = Number(response.headers.get("retry-after"));
+      await delay(Number.isFinite(retry) && retry > 0 ? Math.min(retry * 1000, 4000) : 1300 * (attempt + 1), signal);
+      continue;
+    }
+
+    if (!response.ok) throw new MusicServiceError(`Last.fm est momentanément indisponible (${response.status}).`, 503);
+    const data = await response.json() as { error?: number; message?: string } & T;
+    if (data && typeof data === "object" && "error" in data && data.error) {
+      throw new LastFmApiError(Number(data.error),data.message || "Last.fm a refusé la requête.");
+    }
+
+    if (cache.size >= 300) cache.delete(cache.keys().next().value!);
+    cache.set(key, { data, expires: Date.now() + 60 * 60 * 1000 });
+    return data as T;
+  }
+
+  return null;
+}
+
+
+export async function discogsJson<T>(path: string, params: Record<string, string>, signal: AbortSignal): Promise<T | null> {
+  if (!process.env.DISCOGS_TOKEN?.trim()) return null;
+  return strictDiscogsJson<T>(path, params, signal);
 }
