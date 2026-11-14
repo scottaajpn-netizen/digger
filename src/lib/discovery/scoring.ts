@@ -1,3 +1,4 @@
+import { tasteScore } from "./taste-profile";
 import { buildMusicalProfile, compareMusicalProfiles, type MusicalProfile } from "../music/profile";
 import { auditMusicalContext, classifyMusicalOverlap, cautiousReleaseSimilarity, describeMusicalOverlap } from "../music/context-evidence";
 import { profileFromDiscogsRelease } from "../providers/discogs";
@@ -238,14 +239,15 @@ export function rankDiscoveryCandidates({
         sharedTags: shared * 3,
         preferredTags:
           track.tags.filter(tag => preferred.has(tag)).length * 4 +
-          Math.min(3, track.tags.reduce((sum, tag) =>
-            sum + (input.memory?.tasteTags?.[normalized(tag)] || 0), 0)),
+          (input.memory?.tasteProfile ? 0 : Math.min(3, track.tags.reduce((sum, tag) =>
+            sum + (input.memory?.tasteTags?.[normalized(tag)] || 0), 0))),
         popularityObscurity: 0,
         audience: 0,
         artistAudience: 0,
         origin: 0,
         discoveryPath: 0,
         evidenceQuality: 0,
+        taste: tasteScore(track, input.memory?.tasteProfile),
         memory: 0,
         discogs: 0,
         direction: 0,
@@ -256,7 +258,7 @@ export function rankDiscoveryCandidates({
         scoreBreakdown.relevance +
         scoreBreakdown.musicalSimilarity +
         scoreBreakdown.sharedTags +
-        scoreBreakdown.preferredTags;
+        scoreBreakdown.preferredTags + scoreBreakdown.taste;
 
       const evidenceQualityAdjustment = semanticEvidenceQualityAdjustment({
         track, seedProfile, candidateProfile, comparison, overlapScope,

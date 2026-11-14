@@ -1,6 +1,8 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { buildTasteProfile, parseTasteFeatures, tasteFeatures } from "./taste-profile";
+import { feedbackValues } from "../types";
 import { discoveryPathPreferenceKey } from "./paths";
 import { normalized, trackIdentity } from "./ranking";
 import { loadTasteImport, tasteImportFile } from "./taste-import";
@@ -9,6 +11,7 @@ import type {
   DiscoveryMemorySnapshot,
   Feedback,
   Recommendation,
+  TasteFeatures,
 } from "../types";
 
 type PathMemoryRow = {
@@ -29,6 +32,7 @@ type TrackMemoryRow = {
   artist: string;
   title: string;
   feedback: Feedback;
+  features?: TasteFeatures;
   pathKey?: string;
   discoveryPath?: Recommendation["discoveryPath"];
   lastSeenAt: string;
@@ -96,12 +100,13 @@ const parseStore = (value: unknown): DiscoveryMemoryStore => {
       if (
         typeof row.artist !== "string" ||
         typeof row.title !== "string" ||
-        !["love", "curious", "neutral", "known"].includes(String(row.feedback))
+        !feedbackValues.includes(row.feedback as Feedback)
       ) continue;
       store.tracks[key] = {
         artist: row.artist.slice(0, 300),
         title: row.title.slice(0, 300),
         feedback: row.feedback as Feedback,
+        features: row.features ? parseTasteFeatures(row.features) : undefined,
         pathKey: typeof row.pathKey === "string" ? row.pathKey.slice(0, 300) : undefined,
         discoveryPath: row.discoveryPath && typeof row.discoveryPath === "object" ? row.discoveryPath as Recommendation["discoveryPath"] : undefined,
         lastSeenAt: typeof row.lastSeenAt === "string" ? row.lastSeenAt : store.updatedAt,
@@ -141,7 +146,7 @@ const adjust = (row: PathMemoryRow | undefined, feedback: Feedback, amount: 1 | 
 let writeQueue: Promise<void> = Promise.resolve();
 
 export async function recordDiscoveryFeedback(
-  track: Pick<Recommendation, "artist" | "title" | "discoveryPath">,
+  track: Pick<Recommendation, "artist" | "title" | "discoveryPath"> & Partial<Recommendation> & { features?: TasteFeatures },
   feedback: Feedback | null,
   direction: Direction,
   file = discoveryMemoryFile(),
@@ -185,6 +190,7 @@ export async function recordDiscoveryFeedback(
         artist: track.artist.slice(0, 300),
         title: track.title.slice(0, 300),
         feedback,
+        features: track.features ? parseTasteFeatures(track.features) : tasteFeatures(track),
         pathKey,
         discoveryPath: track.discoveryPath,
         lastSeenAt: now,
@@ -240,6 +246,7 @@ export async function loadDiscoveryMemorySnapshot(
     pathScores,
     knownTracks: [...new Set([...knownTracks, ...importedKnown])],
     tasteTags: imported?.tasteTags || {},
+    tasteProfile: buildTasteProfile(Object.values(store.tracks), imported),
     updatedAt: imported && imported.importedAt > store.updatedAt ? imported.importedAt : store.updatedAt,
   };
 }

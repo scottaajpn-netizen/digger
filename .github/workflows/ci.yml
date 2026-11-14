@@ -33,6 +33,9 @@ jobs:
       - name: Tests
         run: pnpm test
 
+      - name: Offline source-pilot tests
+        run: python3 -m unittest discover -s tests -p '*_test.py'
+
       - name: Holdout report
         run: pnpm run report:holdout
 

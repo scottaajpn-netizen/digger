@@ -8,7 +8,7 @@ export type ScoreComponent = keyof ScoreBreakdown;
 const COMPONENTS:readonly ScoreComponent[]=[
   "relevance","musicalSimilarity","sharedTags","preferredTags",
   "popularityObscurity","audience","artistAudience","origin",
-  "discoveryPath","evidenceQuality","memory","discogs","direction","jitter",
+  "discoveryPath","evidenceQuality","taste","memory","discogs","direction","jitter",
 ];
 const COHERENCE:Record<HumanCoherence,number>={
   none:0,weak:1,moderate:2,strong:3,

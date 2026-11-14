@@ -1,3 +1,4 @@
+import { tasteFeatures } from "@/lib/discovery/taste-profile";
 import { clearDiscoveryMemory, recordDiscoveryFeedback } from "@/lib/discovery/memory";
 import {
   directions,
@@ -100,6 +101,7 @@ export async function POST(request: Request) {
         artist: body.artist.trim(),
         title: body.title.trim(),
         discoveryPath: parsePath(body.discoveryPath),
+        features: tasteFeatures(body),
       },
       body.feedback as Feedback | null,
       body.direction as Direction,

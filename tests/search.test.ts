@@ -12,7 +12,7 @@ test("autocomplete accepts order, split artist, accents, transposition and title
   assert.ok(typoQueries("your no gro").includes("yoru no gro"));
 });
 test("merge keeps MusicBrainz identity, source badges and distinct remixes",()=>{
-  const mb={...track(),id:"mb",externalIds:{musicbrainz:"mb"}};
+  const mb={...track(),id:"mb",externalIds:{musicbrainz:"11111111-1111-4111-8111-111111111111"},credits:[{name:"JeanJass",role:"primary" as const,source:"musicbrainz" as const,sourceId:"22222222-2222-4222-8222-222222222222"}]};
   const lf={...track("Mes jambes","Jean Jass","Last.fm"),id:"lf",externalIds:{lastfm:"https://www.last.fm/music/test"}};
   const merged=mergeSuggestions("mes jambes jeanjass",[lf,mb]);
   assert.equal(merged.length,1);assert.equal(merged[0].id,"mb");assert.equal(merged[0].sources.length,2);

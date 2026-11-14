@@ -1,4 +1,5 @@
 import { discoverDiscogs } from "./discogs";
+import { reconcileSearchTracks, searchTrackKey } from "../search/reconcile";
 import type { ArtistCredit, DigRequest, DigResponse, Recommendation, Track } from "../types";
 import { lastFmJson, musicJson, MusicServiceError, LastFmApiError } from "./http";
 import { buildMusicalProfile, discoveryTags } from "../music/profile";
@@ -445,7 +446,16 @@ export async function searchLive(query: string, signal: AbortSignal): Promise<Tr
     } satisfies Track];
   });
 
-  let combined = deduplicate([...mbTracks, ...external]);
+  const reconciled = reconcileSearchTracks([...mbTracks, ...external]);
+  const grouped = new Map<string, Track>();
+  for (const track of reconciled) {
+    const key = searchTrackKey(track), previous = grouped.get(key);
+    // A Last.fm row may already carry the same MBID but no credits. Never
+    // replace the fetched recording facts with that thinner duplicate.
+    const main = previous?.credits?.length ? previous : track;
+    grouped.set(key, { ...main, externalIds: { ...track.externalIds, ...main.externalIds } });
+  }
+  let combined = [...grouped.values()];
   if (structured) {
     combined = combined.sort(
       (a, b) =>
