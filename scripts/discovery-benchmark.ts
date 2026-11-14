@@ -1,3 +1,4 @@
+import { buildTasteProfile } from "../src/lib/discovery/taste-profile";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -1171,6 +1172,7 @@ async function main() {
               pathScores: {},
               knownTracks: [...importedKnown],
               tasteTags: tasteImport.tasteTags,
+              tasteProfile: buildTasteProfile([], tasteImport),
             } },
             AbortSignal.timeout(50_000),
             { compareScope: false, comparePaths: false, compareVibe: false, compareRecording: false },

@@ -13,3 +13,6 @@ verification/
 .digger/
 
 graphify-out/
+
+# Python source-pilot bytecode
+__pycache__/

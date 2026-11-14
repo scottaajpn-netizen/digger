@@ -1,0 +1,2 @@
+# Optional read-only experiment; not an application runtime dependency.
+ytmusicapi==1.12.3

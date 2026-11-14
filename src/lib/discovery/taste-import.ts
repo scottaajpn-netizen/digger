@@ -50,7 +50,7 @@ const playlistTags: Record<string, string[]> = {
   "OST - Library": ["soundtrack", "library music"],
 };
 
-const splitValues = (value: string) => [...new Set(value.split("|").map(item => item.trim()).filter(Boolean))];
+const splitValues = (value = "") => [...new Set(value.split("|").map(item => item.trim()).filter(Boolean))];
 const numeric = (value: string) => Number.isFinite(Number(value)) ? Number(value) : 0;
 
 /** RFC-4180 CSV parser kept local so importing does not add a runtime dependency. */

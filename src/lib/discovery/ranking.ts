@@ -32,6 +32,7 @@ export type ScoreBreakdown = {
   origin: number;
   discoveryPath: number;
   evidenceQuality?: number;
+  taste?: number;
   memory: number;
   discogs: number;
   direction: number;

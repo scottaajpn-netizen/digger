@@ -117,6 +117,7 @@ export interface Recommendation extends Track {
     origin: number;
     discoveryPath: number;
     evidenceQuality?: number;
+    taste?: number;
     memory: number;
     discogs: number;
     direction: number;
@@ -145,7 +146,14 @@ export interface DiscoveryMemorySnapshot {
   knownTracks: string[];
   /** Cautious, aggregate affinities imported from an external listening history. */
   tasteTags?: Record<string, number>;
+  tasteProfile?: TasteProfile;
   updatedAt?: string;
+}
+export interface TasteFeatures { artists: string[]; tags: string[]; labels: string[] }
+export interface TasteProfile {
+  artists: Record<string, number>;
+  tags: Record<string, number>;
+  labels: Record<string, number>;
 }
 export interface DigRequest { seed: string; seedId?: string; seedTrack?: SeedReference; direction: Direction; obscurity: number; feedback: FeedbackMap; session: number; memory?: DiscoveryMemorySnapshot }
 export interface RetrievalStageDiagnostics {

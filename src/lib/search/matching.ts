@@ -1,4 +1,5 @@
 import type { Track } from "../types";
+import { reconcileSearchTracks, searchTrackKey } from "./reconcile";
 export type Suggestion = Track & { sources: string[]; matchScore: number };
 export type SearchResult = { suggestions: Suggestion[]; warnings: string[] };
 export type StructuredSearch = { title: string; artist: string };
@@ -58,6 +59,13 @@ export function resolveSeedSuggestion<T extends Suggestion>(
 
   const best = ranked[0];
   if (!best) return undefined;
+  const conflictingRecording = ranked.some(row =>
+    normalize(row.track.title) === normalize(best.track.title) &&
+    normalize(row.track.artist) === normalize(best.track.artist) &&
+    row.track.externalIds?.musicbrainz && best.track.externalIds?.musicbrainz &&
+    row.track.externalIds.musicbrainz !== best.track.externalIds.musicbrainz,
+  );
+  if (conflictingRecording) return undefined;
 
   const exact = normalize(expectedTitle) === normalize(best.track.title) && normalize(expectedArtist) === normalize(best.track.artist);
   const sources = best.track.sources || [];
@@ -143,10 +151,10 @@ export function fuzzyQuery(query:string) {
 }
 export function mergeSuggestions(query:string, pool:Suggestion[]) {
   const groups=new Map<string,Suggestion>();
-  for(const track of pool) {
+  for(const track of reconcileSearchTracks(pool)) {
     const score=matchScore(query,track); if(score<.66)continue;
-    const key=normalize(track.artist).replace(/ /g,"")+"|"+normalize(track.title).replace(/ /g,"");
-    const old=groups.get(key), main=old?.externalIds?.musicbrainz?old:track;
+    const key=searchTrackKey(track);
+    const old=groups.get(key), main=old?.credits?.length ? old : track.credits?.length ? track : old?.externalIds?.musicbrainz ? old : track;
     groups.set(key,{...main,externalIds:{...old?.externalIds,...Object.fromEntries(Object.entries(track.externalIds||{}).filter(([,v])=>v))},sources:[...new Set([...(old?.sources||[]),...track.sources])],matchScore:Math.max(score,old?.matchScore||0)});
   }
   return [...groups.values()].sort((a,b)=>b.matchScore-a.matchScore||Number(!!b.externalIds?.musicbrainz)-Number(!!a.externalIds?.musicbrainz)).slice(0,8);
