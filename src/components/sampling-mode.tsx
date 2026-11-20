@@ -32,6 +32,7 @@ const DEFAULT_FILTERS: SamplingFilters = {
   excludeShorts: true,
   excludeAI: true,
   excludeCompilations: true,
+  archiveFocus: true,
   minViews: 0,
   maxViews: 50000,
   duration: "any",
@@ -235,7 +236,7 @@ export function SamplingMode() {
   }
 
   function anything() {
-    const nextFilters: SamplingFilters = { duration: "any", excludeShorts: true, excludeAI: true, excludeCompilations: true, minDurationSeconds: 90, maxDurationSeconds: 480 };
+    const nextFilters: SamplingFilters = { duration: "any", archiveFocus: true, excludeShorts: true, excludeAI: true, excludeCompilations: true, minDurationSeconds: 90, maxDurationSeconds: 480 };
     setDraft(nextFilters);
     setFilters(nextFilters);
     void loadPool(nextFilters);
@@ -400,6 +401,14 @@ export function SamplingMode() {
             <label className="sampling-filter-toggle">
               <input
                 type="checkbox"
+                checked={draft.archiveFocus !== false}
+                onChange={event => setDraft(previous => ({ ...previous, archiveFocus: event.target.checked }))}
+              />
+              <span>Mode archives / vinyles (priorité aux enregistrements anciens)</span>
+            </label>
+            <label className="sampling-filter-toggle">
+              <input
+                type="checkbox"
                 checked={draft.excludeShorts !== false}
                 onChange={event => setDraft(previous => ({ ...previous, excludeShorts: event.target.checked }))}
               />
@@ -427,8 +436,9 @@ export function SamplingMode() {
             <button className="secondary" onClick={anything} disabled={busy}>🎲 Donne-moi n’importe quoi</button>
           </div>
           <p className="sampling-filter-note">
-            Pays, instrument et année servent de termes de recherche indicatifs : YouTube ne vérifie pas l'origine d'un disque.
-            Les vues et la durée proviennent des métadonnées YouTube. La détection des Shorts et des contenus IA reste imparfaite.
+            Mode archives : recherche prioritaire de disques et enregistrements datés, plutôt que de nouveautés promotionnelles.
+            Pays, instrument et année ne sont que des indices de recherche ; YouTube ne certifie pas l'origine des disques.
+            Les filtres éditoriaux/IA sont heuristiques et peuvent écarter de vrais morceaux.
           </p>
         </details>
 
