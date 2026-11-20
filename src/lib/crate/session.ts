@@ -65,5 +65,15 @@ export function buildSeenKeys(
   for (const release of releases) {
     if (feedback[release.id]) for (const key of releaseKeys(release)) keys.add(key);
   }
-  return [...keys].filter(k => k.length < 180).slice(-maxKeys);
+  const ordered = [...keys].filter(k => k.length < 180).slice(-maxKeys);
+  // Never exceed the API's URL limit after percent-encoding accented work names.
+  const picked: string[] = [];
+  let encodedLength = 0;
+  for (const key of ordered.reverse()) {
+    const cost = encodeURIComponent(key).length + 1;
+    if (cost + encodedLength > 1900) continue;
+    picked.unshift(key);
+    encodedLength += cost;
+  }
+  return picked;
 }
