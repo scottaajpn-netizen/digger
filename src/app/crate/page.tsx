@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from "react";
 import type { CrateRelease } from "@/lib/crate/select";
+import type { DiscogsTrackPick } from "@/lib/crate/tracklist";
 import { releaseKeys, workKey } from "@/lib/crate/select";
 import "./crate.css";
 
 type Filters = { genre: string; style: string; country: string; from: string; to: string };
 type CrateReply = { releases?: CrateRelease[]; error?: string; warnings?: string[]; source?: string; note?: string; seed?: number };
+type TrackReply = { track?: DiscogsTrackPick; error?: string; eligibleCount?: number };
+type FavoriteRecord = { release: CrateRelease; track: DiscogsTrackPick };
+type VisibleRecord = { release: CrateRelease; track?: DiscogsTrackPick | null };
 const storage = "sukotto.crate.v1";
 const initialFilters: Filters = { genre: "", style: "", country: "", from: "1960", to: "1989" };
 const genres = ["", "Funk / Soul", "Jazz", "Electronic", "Rock", "Reggae", "Latin", "Blues", "Hip Hop", "Pop", "Classical"];
@@ -17,7 +21,10 @@ export default function CratePage() {
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [records, setRecords] = useState<CrateRelease[]>([]);
   const [position, setPosition] = useState(0);
-  const [favorites, setFavorites] = useState<Record<string, CrateRelease>>({});
+  const [favorites, setFavorites] = useState<Record<string, FavoriteRecord>>({});
+  const [trackPicks, setTrackPicks] = useState<Record<string, DiscogsTrackPick | null>>({});
+  const [trackErrors, setTrackErrors] = useState<Record<string, string>>({});
+  const [trackLoading, setTrackLoading] = useState(false);
   const [view, setView] = useState<"dig" | "favorites">("dig");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -30,7 +37,13 @@ export default function CratePage() {
       if (item) {
         const saved = JSON.parse(item) as { filters?: Filters; favorites?: Record<string, CrateRelease> };
         if (saved.filters && typeof saved.filters.genre === "string") setFilters({ ...initialFilters, ...saved.filters });
-        if (saved.favorites && typeof saved.favorites === "object") setFavorites(saved.favorites);
+        if (saved.favorites && typeof saved.favorites === "object") {
+          const verified = Object.entries(saved.favorites).filter((entry): entry is [string, FavoriteRecord] => {
+            const value = entry[1] as FavoriteRecord | undefined;
+            return typeof entry[0] === "string" && !!value?.release?.id && !!value?.track?.title;
+          });
+          setFavorites(Object.fromEntries(verified.slice(0, 150)));
+        }
       }
     } catch { /* Corrupt local profile: start safely with defaults. */ }
     setReady(true);
@@ -42,7 +55,33 @@ export default function CratePage() {
   }, [filters, favorites, ready]);
 
   const current = records[position] ?? null;
-  const starred = current ? Boolean(favorites[workKey(current)]) : false;
+
+  // A release may be an LP or compilation. Look up ONE credited recording;
+  // do not offer the entire LP as a sample candidate.
+  useEffect(() => {
+    if (!current || !/^discogs:\\d+$/.test(current.id)) return;
+    if (Object.prototype.hasOwnProperty.call(trackPicks, current.id) || trackErrors[current.id]) return;
+    const controller = new AbortController();
+    const id = current.id;
+    setTrackLoading(true);
+    const params = new URLSearchParams({
+      releaseId: id.slice("discogs:".length),
+      seed: String(Number(id.slice("discogs:".length)) % 2147483647),
+    });
+    void fetch(`/api/crate/track?${params.toString()}`, { signal: controller.signal, cache: "no-store" })
+      .then(async response => {
+        const result = await response.json() as TrackReply;
+        if (!response.ok || !result.track) throw new Error(result.error || "Aucune piste exploitable.");
+        if (!controller.signal.aborted) setTrackPicks(previous => ({ ...previous, [id]: result.track! }));
+      })
+      .catch(failure => {
+        if (!controller.signal.aborted) {
+          setTrackErrors(previous => ({ ...previous, [id]: failure instanceof Error ? failure.message : "Piste indisponible." }));
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setTrackLoading(false); });
+    return () => controller.abort();
+  }, [current?.id, trackPicks, trackErrors]);
 
   async function discover(surprise = false, reset = false) {
     if (busy) return;
@@ -95,12 +134,12 @@ export default function CratePage() {
     if (position + 1 < records.length) setPosition(position + 1);
     else void discover(false, records.length === 0);
   }
-  function toggleFavorite(record: CrateRelease) {
-    const id = workKey(record);
+  function toggleFavorite(record: CrateRelease, track: DiscogsTrackPick) {
+    const id = track.id;
     setFavorites(previous => {
       const next = { ...previous };
       if (next[id]) delete next[id];
-      else next[id] = record;
+      else next[id] = { release: record, track };
       return next;
     });
   }
@@ -108,7 +147,9 @@ export default function CratePage() {
     setFilters(previous => ({ ...previous, [name]: value }));
   }
   const favoriteRecords = Object.values(favorites);
-  const displayed = view === "favorites" ? favoriteRecords : current ? [current] : [];
+  const displayed: VisibleRecord[] = view === "favorites"
+    ? favoriteRecords
+    : current ? [{ release: current, track: trackPicks[current.id] }] : [];
 
   return <main className="crate-app">
     <header className="crate-header">
@@ -152,7 +193,7 @@ export default function CratePage() {
       {error && <p className="crate-error" role="alert">{error}</p>}
       {view === "dig" && <p className="crate-status">{status}{current ? ` · ${position + 1}/${records.length}` : ""}</p>}
       {!displayed.length && <div className="crate-empty"><div className="crate-vinyl" aria-hidden="true">◎</div><p>{view === "favorites" ? "Aucun favori pour le moment." : "Le prochain disque t'attend."}</p></div>}
-      {displayed.map(record => <article className="crate-record" key={record.id}>
+      {displayed.map(({ release: record, track }) => <article className="crate-record" key={track?.id || record.id}>
         <div className="crate-sleeve">
           <span>{record.genres[0] || "UNKNOWN GROOVE"}</span>
           <div className="crate-disc" aria-hidden="true"><span>33⅓</span></div>
@@ -160,13 +201,16 @@ export default function CratePage() {
         </div>
         <div className="crate-record-info">
           <span className="crate-eyebrow">DISCOVERY · {record.year || "ANNÉE INCONNUE"}</span>
-          <h2>{record.title}</h2>
-          <p className="crate-artist">{record.artist}</p>
-          <p className="crate-meta">{[record.country, record.genres.join(" / "), record.styles.join(" / ")].filter(Boolean).join(" · ") || "Métadonnées limitées"}</p>
-          <p className="crate-disclaimer">Ce prototype affiche des références Discogs. Ni lecture audio, ni téléchargement, ni sampling intégrés pour le moment.</p>
+          <h2>{track?.title || (trackErrors[record.id] ? "Piste individuelle indisponible" : "Recherche d'un morceau…")}</h2>
+          <p className="crate-artist">{track?.artist || record.artist}</p>
+          <p className="crate-meta">Disque source : {record.title}</p>
+          <p className="crate-meta">{[record.country, record.genres.join(" / "), record.styles.join(" / "), track?.durationSeconds ? `Durée Discogs : ${Math.floor(track.durationSeconds / 60)}:${String(track.durationSeconds % 60).padStart(2, "0")}` : "Durée audio à vérifier"].filter(Boolean).join(" · ")}</p>
+          {trackErrors[record.id] && <p className="crate-error">{trackErrors[record.id]} Passe au disque suivant pour chercher un autre morceau.</p>}
+          {!track && !trackErrors[record.id] && trackLoading && <p className="crate-status">Lecture de la liste de pistes Discogs…</p>}
+          <p className="crate-disclaimer">Ce morceau est identifié dans une tracklist Discogs, sans vérification d'un audio disponible. Ni lecture, ni téléchargement, ni sampling intégrés pour le moment.</p>
           <div className="crate-record-actions">
             {record.discogsUrl && <a href={record.discogsUrl} target="_blank" rel="noreferrer">Voir la fiche Discogs ↗</a>}
-            <button type="button" aria-pressed={Boolean(favorites[workKey(record)])} onClick={() => toggleFavorite(record)}>{favorites[workKey(record)] ? "♥ Favori" : "♡ Garder"}</button>
+            <button type="button" disabled={!track} aria-pressed={Boolean(track && favorites[track.id])} onClick={() => { if (track) toggleFavorite(record, track); }}>{track && favorites[track.id] ? "♥ Favori" : "♡ Garder ce morceau"}</button>
           </div>
         </div>
       </article>)}
