@@ -133,3 +133,29 @@ Les tests se trouvent dans `tests/crate-audio-match.test.ts`.
 1. Tester que la MPC One Gen 1 est bien en OS 3.10.1+ et connectée à Internet via Ethernet.
 2. Vérifier sur un PC privé le fonctionnement de la recherche de pistes via la web-app `/crate`, après configuration de `DISCOGS_TOKEN`.
 3. Intégrer un lecteur audio seulement après validation d'une source accessible et autorisée, puis une interface MPC minimaliste avec NEXT, BACK, LIKE et SURPRISE.
+
+
+## V0.3 — premières préécoutes web depuis Discogs
+
+Le schéma audio *testable dans le navigateur* est maintenant :
+`sortie Discogs → tracklist → morceau avec artiste → vidéos associées à la sortie → vérification du titre, artiste et durée → lecteur officiel YouTube si correspondance`.
+
+- `src/lib/crate/video-preview.ts` : normalisation des liens YouTube présents dans `videos` de Discogs, acceptation de seuls identifiants vidéos HTTPS de domaines YouTube connus ; rejet des liens incorrects, des vidéos marquées `embed: false`, des durées inconnues et des erreurs de correspondance.
+- `src/app/api/crate/track/route.ts` : renvoie `preview` lorsqu'une vidéo liée correspond suffisamment à un **morceau individuel**. Sinon `preview: null`. Le statut `audioStreamReady: false` indique qu'aucun flux audio natif MPC n'est fourni.
+- `src/app/crate/page.tsx` : bouton **Écouter le morceau** uniquement si une préécoute a été trouvée ; affiche sur clic une iframe **YouTube officielle**, avec les commandes du lecteur. Aucun téléchargement ni extraction audio.
+- `tests/crate-video-preview.test.ts` : URLs et noms de domaine autorisés, compilations, IA déclarée, artiste incorrect, `embed:false` et décalages de durée.
+
+### Limites importantes
+
+- L'existence d'une vidéo Discogs n'est **pas la garantie** qu'elle se lancera : intégration parfois interdite, contenu supprimé ou géobloqué. Le moteur ne promet pas une source jouable tant que le lecteur ne l'a pas effectivement ouverte.
+- Les vidéos liées aux sorties Discogs ne couvrent qu'une partie du catalogue. Cette V0.3 privilégie la précision plutôt que d'inventer des correspondances ; certains morceaux n'auront donc **aucune préécoute**.
+- Un lecteur YouTube intégré à une **page web** n'est pas un flux audio exploitable dans la **MPC One Gen 1 autonome**. Pour cette dernière, il faudra un fournisseur audio distinct compatible avec la lecture native et les conditions d'utilisation.
+- Pour tester la page `/crate`, la recherche Discogs nécessite toujours le jeton serveur `DISCOGS_TOKEN`. Aucun jeton n'est stocké sur GitHub.
+- Les conditions du lecteur YouTube imposent d'utiliser l'iframe officielle et ses restrictions ; ne pas fabriquer un lien direct MP3/WAV à partir de l'ID vidéo.
+
+Sources :
+- https://developers.google.com/youtube/iframe_api_reference
+- https://developers.google.com/youtube/terms/developer-policies
+- https://support.discogs.com/hc/en-us/articles/360009334593-API-Terms-of-Use
+
+L'API et le module de préécoute n'ont pas encore été éprouvés avec des données Discogs live en l'absence de configuration `DISCOGS_TOKEN` sur l'hébergement ; seuls les tests simulés et la compilation peuvent être validés automatiquement ici.
