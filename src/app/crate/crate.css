@@ -51,3 +51,10 @@
 .crate-player{border:1px solid #50574c;border-radius:9px;margin-top:12px;overflow:hidden;background:#151a16}
 .crate-player iframe{display:block;width:100%;aspect-ratio:16/9;min-height:220px;border:0;background:#111}
 .crate-player small{display:block;padding:12px;color:#aeb7a7;font-size:11px;line-height:1.6}
+
+/* Minimal contextual feedback to improve future digging without extra dialogs. */
+.crate-rejections{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 20px;border-top:1px solid #3c483b;padding-top:16px}
+.crate-rejections span{font-size:11px;color:#c1c6b8;width:100%;margin-bottom:3px}
+.crate-rejections button{background:#252d25;border:1px solid #4c574a;border-radius:5px;font-size:11px;padding:7px 10px;color:#c8cfc3}
+.crate-rejections button:hover{background:#4a3730;color:#f2bd97;border-color:#a57960}
+.crate-session-count{font-size:11px;color:#adb7a5;margin-left:auto}
