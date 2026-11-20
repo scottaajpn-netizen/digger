@@ -35,7 +35,7 @@ export default function CratePage() {
     try {
       const item = localStorage.getItem(storage);
       if (item) {
-        const saved = JSON.parse(item) as { filters?: Filters; favorites?: Record<string, CrateRelease> };
+        const saved = JSON.parse(item) as { filters?: Filters; favorites?: Record<string, FavoriteRecord> };
         if (saved.filters && typeof saved.filters.genre === "string") setFilters({ ...initialFilters, ...saved.filters });
         if (saved.favorites && typeof saved.favorites === "object") {
           const verified = Object.entries(saved.favorites).filter((entry): entry is [string, FavoriteRecord] => {
@@ -59,7 +59,7 @@ export default function CratePage() {
   // A release may be an LP or compilation. Look up ONE credited recording;
   // do not offer the entire LP as a sample candidate.
   useEffect(() => {
-    if (!current || !/^discogs:\\d+$/.test(current.id)) return;
+    if (!current || !/^discogs:\d+$/.test(current.id)) return;
     if (Object.prototype.hasOwnProperty.call(trackPicks, current.id) || trackErrors[current.id]) return;
     const controller = new AbortController();
     const id = current.id;
