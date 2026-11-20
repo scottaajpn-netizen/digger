@@ -43,3 +43,11 @@
 @media(max-width:950px){.crate-fields{grid-template-columns:repeat(3,minmax(0,1fr))}.crate-record{grid-template-columns:220px 1fr;gap:24px}}
 @media(max-width:650px){.crate-app{padding:24px 5% 60px}.crate-header{align-items:flex-start;flex-wrap:wrap}.crate-prototype{width:100%;text-align:center}.crate-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.crate-panel{padding:15px}.crate-record{grid-template-columns:1fr;padding:17px}.crate-sleeve{max-width:290px;width:100%;margin:auto}.crate-actions button{flex:1;min-width:160px}.crate-record-info h2{font-size:29px}}
 @media(prefers-reduced-motion:reduce){.crate-app *{scroll-behavior:auto!important}}
+
+/* A YouTube preview is shown only on direct user interaction, never autoplayed. */
+.crate-preview{margin:18px 0}
+.crate-listen{border:1px solid #cf8e63;background:#dc9567;color:#221a16;border-radius:7px;font-weight:700;font-size:13px;padding:13px 18px}
+.crate-listen:hover{background:#edab7d}
+.crate-player{border:1px solid #50574c;border-radius:9px;margin-top:12px;overflow:hidden;background:#151a16}
+.crate-player iframe{display:block;width:100%;aspect-ratio:16/9;min-height:220px;border:0;background:#111}
+.crate-player small{display:block;padding:12px;color:#aeb7a7;font-size:11px;line-height:1.6}
