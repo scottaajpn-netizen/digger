@@ -25,6 +25,13 @@ const STORAGE_KEY = "digger.sampling.v1";
 const DEFAULT_FILTERS: SamplingFilters = {
   genre: "",
   keywords: "",
+  country: "",
+  instrument: "",
+  minDurationSeconds: 90,
+  maxDurationSeconds: 480,
+  excludeShorts: true,
+  excludeAI: true,
+  excludeCompilations: true,
   minViews: 0,
   maxViews: 50000,
   duration: "any",
@@ -216,6 +223,8 @@ export function SamplingMode() {
       ...draft,
       genre: draft.genre?.trim() || undefined,
       keywords: draft.keywords?.trim() || undefined,
+      country: draft.country?.trim() || undefined,
+      instrument: draft.instrument?.trim() || undefined,
       minViews: draft.minViews === undefined ? undefined : Math.max(0, draft.minViews),
       maxViews: draft.maxViews === undefined ? undefined : Math.max(0, draft.maxViews),
       yearMin: draft.yearMin || undefined,
@@ -226,7 +235,7 @@ export function SamplingMode() {
   }
 
   function anything() {
-    const nextFilters: SamplingFilters = { duration: "any" };
+    const nextFilters: SamplingFilters = { duration: "any", excludeShorts: true, excludeAI: true, excludeCompilations: true, minDurationSeconds: 90, maxDurationSeconds: 480 };
     setDraft(nextFilters);
     setFilters(nextFilters);
     void loadPool(nextFilters);
@@ -311,6 +320,24 @@ export function SamplingMode() {
               />
             </label>
             <label>
+              <span>Pays / scène (recherche indicative)</span>
+              <input
+                value={draft.country || ""}
+                maxLength={60}
+                placeholder="Brésil, Turquie, Roumanie…"
+                onChange={event => setDraft(previous => ({ ...previous, country: event.target.value }))}
+              />
+            </label>
+            <label>
+              <span>Instrument (recherche indicative)</span>
+              <input
+                value={draft.instrument || ""}
+                maxLength={60}
+                placeholder="Rhodes, flûte, basse, batterie…"
+                onChange={event => setDraft(previous => ({ ...previous, instrument: event.target.value }))}
+              />
+            </label>
+            <label>
               <span>Vues min.</span>
               <input
                 type="number"
@@ -349,16 +376,50 @@ export function SamplingMode() {
               />
             </label>
             <label>
-              <span>Durée YouTube</span>
-              <select
-                value={draft.duration || "any"}
-                onChange={event => setDraft(previous => ({ ...previous, duration: event.target.value as SamplingFilters["duration"] }))}
-              >
-                <option value="any">Toutes</option>
-                <option value="short">Moins de 4 min</option>
-                <option value="medium">4 à 20 min</option>
-                <option value="long">Plus de 20 min</option>
-              </select>
+              <span>Durée minimum (minutes)</span>
+              <input
+                type="number"
+                min="0"
+                max="120"
+                step="0.5"
+                value={draft.minDurationSeconds === undefined ? "" : draft.minDurationSeconds / 60}
+                onChange={event => setDraft(previous => ({ ...previous, minDurationSeconds: event.target.value ? Math.round(Number(event.target.value) * 60) : undefined }))}
+              />
+            </label>
+            <label>
+              <span>Durée maximum (minutes)</span>
+              <input
+                type="number"
+                min="0"
+                max="120"
+                step="0.5"
+                value={draft.maxDurationSeconds === undefined ? "" : draft.maxDurationSeconds / 60}
+                onChange={event => setDraft(previous => ({ ...previous, maxDurationSeconds: event.target.value ? Math.round(Number(event.target.value) * 60) : undefined }))}
+              />
+            </label>
+            <label className="sampling-filter-toggle">
+              <input
+                type="checkbox"
+                checked={draft.excludeShorts !== false}
+                onChange={event => setDraft(previous => ({ ...previous, excludeShorts: event.target.checked }))}
+              />
+              <span>Écarter les Shorts identifiables</span>
+            </label>
+            <label className="sampling-filter-toggle">
+              <input
+                type="checkbox"
+                checked={draft.excludeAI !== false}
+                onChange={event => setDraft(previous => ({ ...previous, excludeAI: event.target.checked }))}
+              />
+              <span>Écarter les contenus IA suspects</span>
+            </label>
+            <label className="sampling-filter-toggle">
+              <input
+                type="checkbox"
+                checked={draft.excludeCompilations !== false}
+                onChange={event => setDraft(previous => ({ ...previous, excludeCompilations: event.target.checked }))}
+              />
+              <span>Écarter les compilations et DJ sets</span>
             </label>
           </div>
           <div className="sampling-filter-actions">
@@ -366,8 +427,8 @@ export function SamplingMode() {
             <button className="secondary" onClick={anything} disabled={busy}>🎲 Donne-moi n’importe quoi</button>
           </div>
           <p className="sampling-filter-note">
-            YouTube ne fournit pas l’année originale d’un disque : le filtre d’année sert ici de terme de recherche approximatif.
-            Les vues, elles, viennent des statistiques réelles de la vidéo.
+            Pays, instrument et année servent de termes de recherche indicatifs : YouTube ne vérifie pas l'origine d'un disque.
+            Les vues et la durée proviennent des métadonnées YouTube. La détection des Shorts et des contenus IA reste imparfaite.
           </p>
         </details>
 
