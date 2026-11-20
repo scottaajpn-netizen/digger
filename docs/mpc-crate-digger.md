@@ -159,3 +159,23 @@ Sources :
 - https://support.discogs.com/hc/en-us/articles/360009334593-API-Terms-of-Use
 
 L'API et le module de préécoute n'ont pas encore été éprouvés avec des données Discogs live en l'absence de configuration `DISCOGS_TOKEN` sur l'hébergement ; seuls les tests simulés et la compilation peuvent être validés automatiquement ici.
+
+
+## V0.4 — fluidité du NEXT et historique anti-répétitions
+
+- La page `/crate` précharge **les métadonnées de la piste actuelle et des deux prochaines sorties** en parallèle. Le préchargement porte sur les tracklists et liens de préécoute éventuels, **pas sur le fichier audio**. Les requêtes devenues inutiles sont annulées ; la concurrence reste bornée.
+- Un historique des **disques réellement consultés** est mémorisé dans `localStorage` et transmis par clés œuvre/master Discogs lors des nouvelles découvertes (y compris « Surprise totale »). Les limites de taille évitent des URL trop longues.
+- Six boutons de retour permettent d'écarter une proposition : « Déjà entendu », « Pas intéressant », « IA suspectée », « Compilation », « Mauvais morceau », « Aperçu indisponible ». L'action mémorise une **déclaration utilisateur**, sans prétendre avoir automatiquement prouvé que la musique est générée par IA.
+- Le bouton « Suivant » conserve la possibilité de revenir en arrière durant la session. Les favoris ne sont pas effacés par un rejet.
+- La persistance est **locale au navigateur du prototype web**, pas encore synchronisée avec la MPC ou entre les appareils.
+- `src/lib/crate/session.ts` et `tests/crate-session.test.ts` gèrent la validation des données mémorisées, la déduplication des clés et le plafonnement des URL.
+
+### À mesurer dès que Discogs est configuré
+
+1. Pourcentage de sorties ayant une tracklist exploitable.
+2. Pourcentage de pistes associées à une vidéo intégrable et dont les métadonnées semblent fiables.
+3. Part des rejets utilisateur par motif, surtout compilations, erreurs de piste et IA suspectée.
+4. Latence ressentie lors du bouton NEXT avec préchargement de deux morceaux.
+5. Pertinence et variété des résultats après plusieurs dizaines de découvertes.
+
+**Limites toujours présentes :** aucune préécoute réelle n'a été validée contre Discogs live dans cette session ; les tests de code et de compilation ne remplacent pas l'essai réseau. Le préchargement de métadonnées n'est pas un streaming audio en arrière-plan.
