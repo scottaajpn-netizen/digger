@@ -54,3 +54,28 @@
 - YouTube API statistiques (phase future) : https://developers.google.com/youtube/v3/docs/videos/list
 
 > Cette branche reste séparée de `main`. Aucun logiciel n'est nécessaire sur le PC du boulot et rien n'est installé sur la MPC.
+
+
+## Avancement V0.1 — interface et tests
+
+- Interface provisoire disponible sur `/crate` après démarrage/déploiement du projet Next.js.
+- Boutons « Nouvelle exploration », « Suivant », « Précédent », « Surprise totale » ; favoris et filtres dans le navigateur.
+- Le moteur actuel **ne lit pas d'audio** et **n'est pas un plugin MPC** : il affiche des métadonnées réelles Discogs.
+- La recherche dans la base de Discogs requiert l'authentification. Définir `DISCOGS_TOKEN` **uniquement dans les variables d'environnement serveur** (par ex. dans une variable protégée côté hébergeur). Ne pas placer la valeur dans GitHub, dans `NEXT_PUBLIC_*`, dans l'URL ou dans le navigateur.
+- Les essais audio restent séparés : étudier un accès au flux respectant les permissions de la source et ne jamais présenter une vidéo comme un fichier audio libre.
+- Le déclenchement des tests sur GitHub Actions est dans `.github/workflows/crate-ci.yml`. Vérifier le dernier résultat dans l'onglet Actions avant toute fusion.
+
+### Test d'API (après configuration)
+
+`GET /api/crate?genre=Jazz&from=1965&to=1985&count=8`
+
+`GET /api/crate?surprise=1&count=8`
+
+L'API renvoie `mode: "metadata-only"` et `playable: false`. Tant que le jeton est absent, elle renvoie une erreur de configuration, jamais de résultats inventés.
+
+### Risques techniques à vérifier
+
+- La qualité de l'échantillon aléatoire : sélection de plusieurs pages Discogs dans une plage limitée ; pas encore un aléatoire uniforme à l'échelle entière de la base.
+- Les crédits de **l'instrument** et les **vues** exigent un enrichissement fiable et une politique explicite pour les valeurs manquantes.
+- Favoris aujourd'hui dans `localStorage` (navigateur PC), pas encore synchronisés avec la MPC.
+- Pas de préchargement audio ni de tests MPC One Gen 1 à ce stade.
