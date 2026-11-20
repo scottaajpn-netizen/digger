@@ -574,6 +574,9 @@ display:grid;place-items:center;border-right:1px solid #3c4138;position:relative
 .sampling-filter-grid label{margin:0;display:flex;flex-direction:column;gap:7px}
 .sampling-filter-grid label span{margin:0;color:#9ca496;font:700 8px/1 "Courier New",monospace;letter-spacing:.6px}
 .sampling-filter-grid input,.sampling-filter-grid select{width:100%;background:#111411;border:1px solid #3b4138;color:var(--text);padding:10px;border-radius:2px}
+.sampling-filter-grid label.sampling-filter-toggle{flex-direction:row;align-items:center;gap:9px;min-height:35px;padding:7px 0}
+.sampling-filter-grid .sampling-filter-toggle input[type=checkbox]{width:17px;height:17px;flex:0 0 17px;padding:0;margin:0;accent-color:var(--orange)}
+.sampling-filter-grid .sampling-filter-toggle span{line-height:1.5;letter-spacing:0}
 .sampling-filter-actions{display:flex;gap:8px;padding:0 16px 12px}
 .sampling-filter-actions button,.sampling-error button{background:var(--orange);border:0;color:#251e16;padding:10px 13px;font-weight:700}
 .sampling-filter-actions button.secondary{background:transparent;color:#c1c8ba;border:1px solid #41483d}
