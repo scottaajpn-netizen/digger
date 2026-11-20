@@ -1,0 +1,60 @@
+.crate-app{max-width:1220px;margin:0 auto;padding:32px 5% 80px;min-height:100vh;color:#edece2}
+.crate-header{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid #3b4037;padding-bottom:25px}
+.crate-header>a{font-size:12px;color:#b8bba8}
+.crate-header h1{font-size:clamp(34px,5vw,54px);line-height:1;margin:8px 0 0;letter-spacing:-2px}
+.crate-header h1 em{color:#e7a172;font-weight:400;font-family:Georgia,serif}
+.crate-eyebrow{font-size:10px;letter-spacing:2px;font-weight:700;color:#d3a17d}
+.crate-prototype{font-size:10px;border:1px solid #5a5447;color:#c6ba9f;border-radius:4px;padding:10px 12px;white-space:nowrap}
+.crate-intro{color:#b4b9a9;line-height:1.6;margin:25px 0}
+.crate-panel{border:1px solid #40483c;border-radius:12px;padding:25px;background:#20251f}
+.crate-fields{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.crate-panel label{color:#d3a17d;font-size:10px;letter-spacing:1px;font-weight:600;margin:0}
+.crate-panel input,.crate-panel select{margin-top:10px;width:100%;height:45px;padding:0 12px;border-radius:6px;background:#141a16;border:1px solid #525b4f;color:#f3f0e8;min-width:0}
+.crate-panel input:focus,.crate-panel select:focus{outline:2px solid #d3a17d}
+.crate-hint{color:#9ea797;font-size:12px;margin:17px 0}
+.crate-actions,.crate-record-actions,.crate-transport,.crate-navigation{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.crate-actions button,.crate-navigation button,.crate-transport button,.crate-record-actions button,.crate-record-actions a{padding:13px 17px;background:#30382f;border:1px solid #515d4d;border-radius:7px;color:#e9e7dc;font-size:13px;font-weight:600;text-align:center}
+.crate-actions button.crate-primary,.crate-transport button.crate-primary{background:#ec9f6b;color:#221e1a;border-color:#ec9f6b}
+.crate-surprise{background:#39303c!important;border-color:#826380!important}
+.crate-navigation{margin-top:27px;padding-bottom:14px;border-bottom:1px solid #40483c}
+.crate-navigation button{padding:11px 14px;background:transparent;border-color:transparent;color:#b1b9a9}
+.crate-navigation button[aria-pressed=true]{border-color:#a2785f;background:#342c26;color:#f5c19a}
+.crate-status{color:#a5b29e;font-size:12px;margin:20px 0}
+.crate-error{padding:14px;border-radius:6px;background:#443029;border:1px solid #99594a;color:#ffc3ab}
+.crate-results{min-height:250px}
+.crate-empty{border:1px dashed #485148;border-radius:12px;padding:50px 24px;text-align:center;color:#b0b7a9}
+.crate-vinyl{font-size:68px;line-height:1;color:#d6a47b}
+.crate-record{display:grid;grid-template-columns:minmax(200px,340px) 1fr;gap:35px;align-items:center;border:1px solid #3f453d;background:#1a211b;border-radius:12px;padding:24px;margin:20px 0}
+.crate-sleeve{aspect-ratio:1;background:radial-gradient(circle at 70% 40%,#566552,#273127 72%);box-shadow:8px 10px 22px #0005;padding:22px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;position:relative}
+.crate-sleeve>span{font-size:10px;font-weight:700;letter-spacing:2px;color:#e4e4c9}
+.crate-sleeve>strong{font-size:clamp(24px,4vw,42px);text-transform:uppercase;line-height:.95;letter-spacing:-1px;z-index:1;overflow-wrap:anywhere}
+.crate-disc{position:absolute;width:65%;aspect-ratio:1;right:-7%;top:21%;background:repeating-radial-gradient(circle,#171a17 0px,#171a17 3px,#272c28 4px,#171a17 5px);border-radius:50%;display:grid;place-items:center;box-shadow:3px 3px 10px #0008}
+.crate-disc>span{background:#bf8158;width:35%;aspect-ratio:1;border-radius:50%;display:grid;place-items:center;color:#191c1a;font-size:13px;font-weight:800}
+.crate-record-info h2{font-size:clamp(27px,4vw,47px);letter-spacing:-1.5px;margin:12px 0;line-height:1.1}
+.crate-artist{color:#e8bb91;font-size:20px;margin:6px 0 20px}
+.crate-meta{color:#b9c0b2;font-size:13px;line-height:1.6}
+.crate-disclaimer{padding:12px 14px;background:#30352e;border-radius:7px;font-size:11px;color:#b8bdad;line-height:1.7;margin:25px 0}
+.crate-record-actions a{background:#313a31}
+.crate-record-actions button[aria-pressed=true]{color:#ffd4aa;border-color:#c89266}
+.crate-transport{justify-content:center;margin-top:24px}
+.crate-transport button{min-width:150px}
+.crate-footer{margin-top:60px;padding-top:22px;border-top:1px solid #394138;color:#9da99b;font-size:11px;line-height:1.6}
+.crate-footer a{text-decoration:underline}
+@media(max-width:950px){.crate-fields{grid-template-columns:repeat(3,minmax(0,1fr))}.crate-record{grid-template-columns:220px 1fr;gap:24px}}
+@media(max-width:650px){.crate-app{padding:24px 5% 60px}.crate-header{align-items:flex-start;flex-wrap:wrap}.crate-prototype{width:100%;text-align:center}.crate-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.crate-panel{padding:15px}.crate-record{grid-template-columns:1fr;padding:17px}.crate-sleeve{max-width:290px;width:100%;margin:auto}.crate-actions button{flex:1;min-width:160px}.crate-record-info h2{font-size:29px}}
+@media(prefers-reduced-motion:reduce){.crate-app *{scroll-behavior:auto!important}}
+
+/* A YouTube preview is shown only on direct user interaction, never autoplayed. */
+.crate-preview{margin:18px 0}
+.crate-listen{border:1px solid #cf8e63;background:#dc9567;color:#221a16;border-radius:7px;font-weight:700;font-size:13px;padding:13px 18px}
+.crate-listen:hover{background:#edab7d}
+.crate-player{border:1px solid #50574c;border-radius:9px;margin-top:12px;overflow:hidden;background:#151a16}
+.crate-player iframe{display:block;width:100%;aspect-ratio:16/9;min-height:220px;border:0;background:#111}
+.crate-player small{display:block;padding:12px;color:#aeb7a7;font-size:11px;line-height:1.6}
+
+/* Minimal contextual feedback to improve future digging without extra dialogs. */
+.crate-rejections{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 20px;border-top:1px solid #3c483b;padding-top:16px}
+.crate-rejections span{font-size:11px;color:#c1c6b8;width:100%;margin-bottom:3px}
+.crate-rejections button{background:#252d25;border:1px solid #4c574a;border-radius:5px;font-size:11px;padding:7px 10px;color:#c8cfc3}
+.crate-rejections button:hover{background:#4a3730;color:#f2bd97;border-color:#a57960}
+.crate-session-count{font-size:11px;color:#adb7a5;margin-left:auto}
