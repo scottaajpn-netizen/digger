@@ -25,7 +25,7 @@ La recherche privilégie MusicBrainz, puis Last.fm, puis Discogs si nécessaire 
 
 ## Mode Sampling
 
-L’onglet **Sampling** ouvre une caisse YouTube aléatoire orientée recherche de matière à sampler : un seul lecteur à la fois, ❤️ À sampler / 👎 Pas pour moi / 🎲 Suivant, historique local et filtres de genre, mots-clés, vues, durée et année approximative. Les vues viennent des statistiques YouTube ; l’année originale d’un disque n’est pas fournie par YouTube et sert donc uniquement de terme de recherche approximatif dans ce MVP.
+L’onglet **Sampling** ouvre une caisse YouTube aléatoire orientée recherche de matière à sampler : un seul lecteur à la fois, ❤️ À sampler / 👎 Pas pour moi / 🎲 Suivant, historique local et filtres de genre, mots-clés, vues, durée précise (en minutes), pays, instrument et année approximative. Par défaut, le moteur privilégie des vidéos de 1 min 30 à 8 min et écarte les vidéos éditoriales, les Shorts identifiables, les compilations, les DJ sets et les contenus explicitement signalés comme générés par IA. Ces règles reposent sur les titres, descriptions et durées : elles ne peuvent pas garantir qu’un morceau est authentique ou exclure tous les Shorts. Les vues et la durée viennent des métadonnées YouTube ; pays, instrument et année sont seulement des **termes de recherche**, pas des filtres certifiés sur l’enregistrement original.
 
 Le mode Sampling utilise sa propre mémoire locale (`digger.sampling.v1`) afin de ne pas contaminer le benchmark HOLDOUT. Il nécessite `YOUTUBE_API_KEY` dans `.env.local`, avec **YouTube Data API v3** activée dans Google Cloud. La clé reste côté serveur. Après ajout ou modification de la clé, redémarrer Digger.
 
