@@ -3,14 +3,15 @@
 import { useEffect, useState } from "react";
 import type { CrateRelease } from "@/lib/crate/select";
 import type { DiscogsTrackPick } from "@/lib/crate/tracklist";
+import type { OfficialVideoEmbed } from "@/lib/crate/video-preview";
 import { releaseKeys, workKey } from "@/lib/crate/select";
 import "./crate.css";
 
 type Filters = { genre: string; style: string; country: string; from: string; to: string };
 type CrateReply = { releases?: CrateRelease[]; error?: string; warnings?: string[]; source?: string; note?: string; seed?: number };
-type TrackReply = { track?: DiscogsTrackPick; error?: string; eligibleCount?: number };
-type FavoriteRecord = { release: CrateRelease; track: DiscogsTrackPick };
-type VisibleRecord = { release: CrateRelease; track?: DiscogsTrackPick | null };
+type TrackReply = { track?: DiscogsTrackPick; preview?: OfficialVideoEmbed | null; error?: string; eligibleCount?: number };
+type FavoriteRecord = { release: CrateRelease; track: DiscogsTrackPick; preview?: OfficialVideoEmbed | null };
+type VisibleRecord = { release: CrateRelease; track?: DiscogsTrackPick | null; preview?: OfficialVideoEmbed | null };
 const storage = "sukotto.crate.v1";
 const initialFilters: Filters = { genre: "", style: "", country: "", from: "1960", to: "1989" };
 const genres = ["", "Funk / Soul", "Jazz", "Electronic", "Rock", "Reggae", "Latin", "Blues", "Hip Hop", "Pop", "Classical"];
@@ -24,6 +25,8 @@ export default function CratePage() {
   const [favorites, setFavorites] = useState<Record<string, FavoriteRecord>>({});
   const [trackPicks, setTrackPicks] = useState<Record<string, DiscogsTrackPick | null>>({});
   const [trackErrors, setTrackErrors] = useState<Record<string, string>>({});
+  const [videoPreviews, setVideoPreviews] = useState<Record<string, OfficialVideoEmbed | null>>({});
+  const [openVideoId, setOpenVideoId] = useState<string | null>(null);
   const [trackLoading, setTrackLoading] = useState(false);
   const [view, setView] = useState<"dig" | "favorites">("dig");
   const [busy, setBusy] = useState(false);
@@ -72,7 +75,10 @@ export default function CratePage() {
       .then(async response => {
         const result = await response.json() as TrackReply;
         if (!response.ok || !result.track) throw new Error(result.error || "Aucune piste exploitable.");
-        if (!controller.signal.aborted) setTrackPicks(previous => ({ ...previous, [id]: result.track! }));
+        if (!controller.signal.aborted) {
+          setTrackPicks(previous => ({ ...previous, [id]: result.track! }));
+          setVideoPreviews(previous => ({ ...previous, [id]: result.preview || null }));
+        }
       })
       .catch(failure => {
         if (!controller.signal.aborted) {
@@ -134,12 +140,12 @@ export default function CratePage() {
     if (position + 1 < records.length) setPosition(position + 1);
     else void discover(false, records.length === 0);
   }
-  function toggleFavorite(record: CrateRelease, track: DiscogsTrackPick) {
+  function toggleFavorite(record: CrateRelease, track: DiscogsTrackPick, preview: OfficialVideoEmbed | null) {
     const id = track.id;
     setFavorites(previous => {
       const next = { ...previous };
       if (next[id]) delete next[id];
-      else next[id] = { release: record, track };
+      else next[id] = { release: record, track, preview };
       return next;
     });
   }
@@ -149,13 +155,13 @@ export default function CratePage() {
   const favoriteRecords = Object.values(favorites);
   const displayed: VisibleRecord[] = view === "favorites"
     ? favoriteRecords
-    : current ? [{ release: current, track: trackPicks[current.id] }] : [];
+    : current ? [{ release: current, track: trackPicks[current.id], preview: videoPreviews[current.id] }] : [];
 
   return <main className="crate-app">
     <header className="crate-header">
       <a href="/" aria-label="Retour à Digger">← Digger</a>
       <div><span className="crate-eyebrow">SUKOTTO · MPC LAB</span><h1>CRATE <em>DIGGER</em></h1></div>
-      <span className="crate-prototype">PROTOTYPE WEB · SANS AUDIO</span>
+      <span className="crate-prototype">PROTOTYPE WEB · APERÇUS YOUTUBE</span>
     </header>
     <p className="crate-intro">Des disques inattendus, pas une recherche. Choisis quelques critères, puis fouille un bac virtuel.</p>
 
@@ -193,7 +199,7 @@ export default function CratePage() {
       {error && <p className="crate-error" role="alert">{error}</p>}
       {view === "dig" && <p className="crate-status">{status}{current ? ` · ${position + 1}/${records.length}` : ""}</p>}
       {!displayed.length && <div className="crate-empty"><div className="crate-vinyl" aria-hidden="true">◎</div><p>{view === "favorites" ? "Aucun favori pour le moment." : "Le prochain disque t'attend."}</p></div>}
-      {displayed.map(({ release: record, track }) => <article className="crate-record" key={track?.id || record.id}>
+      {displayed.map(({ release: record, track, preview }) => <article className="crate-record" key={track?.id || record.id}>
         <div className="crate-sleeve">
           <span>{record.genres[0] || "UNKNOWN GROOVE"}</span>
           <div className="crate-disc" aria-hidden="true"><span>33⅓</span></div>
@@ -207,10 +213,23 @@ export default function CratePage() {
           <p className="crate-meta">{[record.country, record.genres.join(" / "), record.styles.join(" / "), track?.durationSeconds ? `Durée Discogs : ${Math.floor(track.durationSeconds / 60)}:${String(track.durationSeconds % 60).padStart(2, "0")}` : "Durée audio à vérifier"].filter(Boolean).join(" · ")}</p>
           {trackErrors[record.id] && <p className="crate-error">{trackErrors[record.id]} Passe au disque suivant pour chercher un autre morceau.</p>}
           {!track && !trackErrors[record.id] && trackLoading && <p className="crate-status">Lecture de la liste de pistes Discogs…</p>}
-          <p className="crate-disclaimer">Ce morceau est identifié dans une tracklist Discogs, sans vérification d'un audio disponible. Ni lecture, ni téléchargement, ni sampling intégrés pour le moment.</p>
+          <p className="crate-disclaimer">{preview
+            ? "Vidéo liée sur Discogs et correspondant aux métadonnées du morceau : écoute via le lecteur YouTube officiel. La disponibilité réelle de la vidéo n'est pas garantie. Pas encore de flux audio vers la MPC."
+            : "Aucune vidéo de ce morceau ne passe actuellement nos filtres de correspondance et de durée. On préfère ne rien jouer plutôt que lancer une compilation ou un mauvais titre."}</p>
+          {preview && <div className="crate-preview">
+            <button type="button" className="crate-listen" aria-expanded={openVideoId === track?.id}
+              onClick={() => setOpenVideoId(previous => previous === track?.id ? null : (track?.id || null))}>
+              {openVideoId === track?.id ? "⏹ Fermer l'aperçu" : "▶ Écouter le morceau"}
+            </button>
+            {openVideoId === track?.id && <div className="crate-player">
+              <iframe title={`Aperçu YouTube : ${preview.title}`} src={preview.embedUrl}
+                allow="encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin"/>
+              <small>Lecteur vidéo officiel · ni téléchargement ni capture audio. Certaines vidéos peuvent refuser l'intégration.</small>
+            </div>}
+          </div>}
           <div className="crate-record-actions">
             {record.discogsUrl && <a href={record.discogsUrl} target="_blank" rel="noreferrer">Voir la fiche Discogs ↗</a>}
-            <button type="button" disabled={!track} aria-pressed={Boolean(track && favorites[track.id])} onClick={() => { if (track) toggleFavorite(record, track); }}>{track && favorites[track.id] ? "♥ Favori" : "♡ Garder ce morceau"}</button>
+            <button type="button" disabled={!track} aria-pressed={Boolean(track && favorites[track.id])} onClick={() => { if (track) toggleFavorite(record, track, preview || null); }}>{track && favorites[track.id] ? "♥ Favori" : "♡ Garder ce morceau"}</button>
           </div>
         </div>
       </article>)}
@@ -219,6 +238,6 @@ export default function CratePage() {
         <button className="crate-primary" disabled={busy} onClick={next}>{busy ? "Exploration…" : "Suivant →"}</button>
       </div>}
     </section>
-    <footer className="crate-footer">Sukotto Crate Digger V0.1 · Métadonnées Discogs · MPC One Gen1 : intégration à venir · <a href="https://github.com/scottaajpn-netizen/digger/pull/14" target="_blank" rel="noreferrer">Suivre le développement ↗</a></footer>
+    <footer className="crate-footer">Sukotto Crate Digger V0.2 · Discogs + prévisualisation YouTube officielle (selon disponibilité) · MPC One Gen1 : intégration à venir · <a href="https://github.com/scottaajpn-netizen/digger/pull/14" target="_blank" rel="noreferrer">Suivre le développement ↗</a></footer>
   </main>;
 }
