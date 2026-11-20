@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  archivalEvidenceScore,
   buildSamplingQuery,
   normalizeSamplingFilters,
   samplingRejectionReason,
@@ -13,6 +14,7 @@ const filters = normalizeSamplingFilters({
   excludeShorts: true,
   excludeAI: true,
   excludeCompilations: true,
+  archiveFocus: false,
 });
 
 test("rejects recommendation Shorts instead of treating them as sample tracks", () => {
@@ -46,6 +48,7 @@ test("quality switches can be disabled independently", () => {
     excludeShorts: false,
     excludeAI: false,
     excludeCompilations: false,
+    archiveFocus: false,
   });
   assert.equal(samplingRejectionReason({ title: "Soul #shorts", durationSeconds: 40 }, disabled), null);
   assert.equal(samplingRejectionReason({ title: "AI Generated Song", durationSeconds: 240 }, disabled), null);
@@ -77,4 +80,66 @@ test("normalization handles inverted ranges safely", () => {
   assert.equal(normalized.maxDurationSeconds, 480);
   assert.equal(normalized.yearMin, 1970);
   assert.equal(normalized.yearMax, 1985);
+});
+
+test("default crate searches for archival records rather than generic modern gospel videos", () => {
+  const defaults = normalizeSamplingFilters({ genre: "", keywords: "" });
+  assert.equal(defaults.archiveFocus, true);
+  for (let i = 0; i < 20; i++) {
+    const query = buildSamplingQuery(defaults);
+    assert.match(query, /\b(?:19[6-9]\d)\b/);
+    assert.match(query, /vinyl|record|pressing|rpm|archive/i);
+    assert.doesNotMatch(query, /\bgospel\b/i);
+  }
+});
+
+test("modern promotional gospel search result from real user trial is rejected", () => {
+  const defaults = normalizeSamplingFilters({
+    minDurationSeconds: 90,
+    maxDurationSeconds: 480,
+    archiveFocus: true,
+  });
+  const result = {
+    title: "SACHE RE BIBLE HAMARA 🙏 | Nagpuri Gospel Song 2026 | New Christian Song | Nagpuri Worship Song",
+    channel: "GOSPEL MUSIC LIBRARY",
+    publishedAt: "2026-10-02T12:00:00Z",
+    durationSeconds: 259,
+  };
+  assert.equal(samplingRejectionReason(result, defaults), "promotion");
+  assert.ok(archivalEvidenceScore(result) < 2);
+});
+
+test("archive mode retains genuine track clues and limits SEO spam", () => {
+  const archive = normalizeSamplingFilters({ archiveFocus: true });
+  assert.equal(samplingRejectionReason({
+    title: "The Pioneers - Sweet Number One (1975) 7 inch vinyl rip",
+    channel: "Record Archive",
+    publishedAt: "2025-04-02T12:00:00Z",
+    durationSeconds: 194,
+  }, archive), null);
+  assert.equal(samplingRejectionReason({
+    title: "Mystery Singer - Forgotten Song",
+    channel: "Unknown Channel",
+    publishedAt: "2025-04-02T12:00:00Z",
+    durationSeconds: 194,
+  }, archive), "not-archival-enough");
+  const allPeriods = normalizeSamplingFilters({ archiveFocus: false });
+  assert.equal(samplingRejectionReason({
+    title: "Mystery Singer - Forgotten Song",
+    channel: "Unknown Channel",
+    publishedAt: "2025-04-02T12:00:00Z",
+    durationSeconds: 194,
+  }, allPeriods), null);
+});
+
+test("explicit user decade remains in archival search, with no invented publication date filtering", () => {
+  const query = buildSamplingQuery(normalizeSamplingFilters({
+    genre: "gospel",
+    yearMin: 1977,
+    yearMax: 1977,
+    archiveFocus: true,
+  }), true);
+  assert.match(query, /gospel/);
+  assert.match(query, /1977/);
+  assert.doesNotMatch(query, /2026/);
 });

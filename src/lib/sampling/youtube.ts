@@ -10,6 +10,7 @@ export interface SamplingFilters {
   excludeShorts?: boolean;
   excludeAI?: boolean;
   excludeCompilations?: boolean;
+  archiveFocus?: boolean;
   minViews?: number;
   maxViews?: number;
   yearMin?: number;
@@ -57,36 +58,31 @@ type YouTubeVideosResponse = {
   }>;
 };
 
+// Search for recordings or physical releases, not a topic about music.
 const diggingTerms = [
-  "vinyl",
-  "rare groove",
-  "private press",
   "vinyl rip",
-  "7 inch single",
-  "45 rpm",
-  "B side",
-  "soundtrack",
-  "library music",
-  "deep cut",
-  "obscure",
+  "rare 45 rpm",
+  "7 inch record",
+  "private press record",
+  "rare vinyl single",
+  "original pressing",
+  "45 rpm B side",
+  "archival recording",
 ] as const;
 
 const genericMusicTerms = [
   "soul",
   "funk",
-  "jazz",
+  "jazz funk",
   "boogie",
   "disco",
-  "house",
-  "hip hop",
-  "gospel",
-  "soundtrack",
+  "psychedelic rock",
   "library music",
-  "psychedelic",
-  "folk",
-  "electronic",
   "afrobeat",
   "reggae",
+  "brazilian jazz",
+  "turkish funk",
+  "ethiopian jazz",
   "r&b",
 ] as const;
 
@@ -114,6 +110,7 @@ export function normalizeSamplingFilters(raw: SamplingFilters): SamplingFilters 
     excludeShorts: raw.excludeShorts !== false,
     excludeAI: raw.excludeAI !== false,
     excludeCompilations: raw.excludeCompilations !== false,
+    archiveFocus: raw.archiveFocus !== false,
     minViews,
     maxViews,
     yearMin: yearMin !== undefined && yearMax !== undefined ? Math.min(yearMin, yearMax) : yearMin,
@@ -133,16 +130,27 @@ export function buildSamplingQuery(filters: SamplingFilters, relaxed = false) {
 
   if (!filters.genre && !filters.keywords) parts.push(randomItem(genericMusicTerms));
 
-  if (!relaxed) parts.push(randomItem(diggingTerms));
+  // For the default sample hunt, search for old recordings rather than the
+  // latest content containing generic words such as "gospel library music".
+  // A selected user year always wins over the archival decade hint.
+  if (filters.archiveFocus !== false) {
+    parts.push(randomItem(diggingTerms));
+  } else if (!relaxed) {
+    parts.push(randomItem(["original recording", "full track", "music"]));
+  }
 
-  // YouTube cannot filter by original release year. This is a search hint only,
-  // and must remain in the query even when we relax the digging term.
   if (filters.yearMin || filters.yearMax) {
     const low = filters.yearMin ?? filters.yearMax!;
     const high = filters.yearMax ?? filters.yearMin!;
     parts.push(String(low + Math.floor(Math.random() * (high - low + 1))));
+  } else if (filters.archiveFocus !== false) {
+    // Only a discovery hint: YouTube provides upload date, not release date.
+    parts.push(String(1960 + Math.floor(Math.random() * 40)));
   }
 
+  // Helpful exclusions at search time; all candidates are still checked after
+  // the API returns them. Keep these broad exclusions out of user-selected terms.
+  parts.push("-shorts", "-reaction", "-tutorial", "-suno", "-udio");
   return parts.filter(Boolean).join(" ").trim();
 }
 
@@ -156,8 +164,31 @@ function parseIsoDuration(value?: string) {
 
 // YouTube Data API does not expose a reliable Shorts flag, AI provenance or the
 // original release year. These conservative heuristics reduce noise, not certify it.
+// Positive recording evidence is more useful than trying to guess AI provenance.
+// A title without clues can be an excellent real track; archive focus is therefore
+// a user-selectable trade-off between precision and discovery coverage.
+export function archivalEvidenceScore(
+  video: { title: string; channel?: string; description?: string; publishedAt?: string },
+): number {
+  const title = video.title.toLowerCase();
+  const description = (video.description || "").toLowerCase();
+  const channel = (video.channel || "").toLowerCase();
+  let score = 0;
+  // Reissues or archive uploads can be new, but the record release is old.
+  if (/\b(?:19[4-9]\d|200[0-9])\b/.test(title)) score += 2;
+  if (/\b(?:19[4-9]\d|200[0-9])\b/.test(description.slice(0, 600))) score += 1;
+  if (/\b(?:vinyl|record rip|vinyl rip|45\s*rpm|7[\s-]*inch|12[\s-]*inch|private press|acetate|original pressing|recorded in)\b/.test(title)) score += 3;
+  if (/\b(?:vinyl|record rip|vinyl rip|45\s*rpm|7[\s-]*inch|12[\s-]*inch|private press|original pressing|catalogue no|catalog number)\b/.test(description.slice(0, 1000))) score += 2;
+  if (/\b(?:vinyl|archive|records|recordings)\b/.test(channel)) score += 1;
+  if (/\s[-–—]\s/.test(title) && title.length < 100) score += 1;
+  if (/^(?:19\d{2}|200\d|201[0-4])/.test(video.publishedAt || "")) score += 1;
+  if ((title.match(/\s\|\s/g) || []).length >= 2) score -= 2;
+  if (/\b20(?:2[0-9])\b/.test(title) && /\b(?:new|latest|trending|viral)\b/.test(title)) score -= 3;
+  return score;
+}
+
 export function samplingRejectionReason(
-  video: { title: string; channel?: string; description?: string; durationSeconds?: number },
+  video: { title: string; channel?: string; description?: string; publishedAt?: string; durationSeconds?: number },
   filters: SamplingFilters,
 ): string | null {
   const title = video.title.toLowerCase();
@@ -190,6 +221,15 @@ export function samplingRejectionReason(
     return "ai-suspected";
   }
 
+  // High-volume SEO/promotional titles often masquerade as rare recordings.
+  // This does not prove AI generation, so use a separate reason.
+  if (filters.archiveFocus !== false && (
+    /\b(?:new|latest)\s+(?:(?:christian|gospel|worship|devotional|hindi|nagpuri|punjabi)\s+)?(?:song|music|track|release)\b/i.test(title) ||
+    /\b(?:new|latest)\s+(?:christian|gospel|worship)\s+(?:song|music)\b/i.test(title) ||
+    /\b(?:trending|viral)\s+(?:song|music|track)\b/i.test(title)
+  )) return "promotion";
+
+  if (filters.archiveFocus !== false && archivalEvidenceScore(video) < 2) return "not-archival-enough";
   return null;
 }
 
@@ -291,7 +331,7 @@ async function searchOnce(filters: SamplingFilters, signal: AbortSignal, relaxed
     const snippet = item.snippet;
     if (!snippet?.title || !snippet.channelTitle || !snippet.publishedAt) return [];
     const durationSeconds = parseIsoDuration(item.contentDetails?.duration);
-    if (samplingRejectionReason({ title: snippet.title, channel: snippet.channelTitle, description: snippet.description, durationSeconds }, filters)) return [];
+    if (samplingRejectionReason({ title: snippet.title, channel: snippet.channelTitle, description: snippet.description, publishedAt: snippet.publishedAt, durationSeconds }, filters)) return [];
 
     return [{
       id: item.id,
