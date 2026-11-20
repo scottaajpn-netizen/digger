@@ -34,12 +34,13 @@ async function discogs(params: URLSearchParams, signal: AbortSignal): Promise<Di
     Accept: "application/vnd.discogs.v2.discogs+json",
     "User-Agent": "SukottoCrateDigger/0.1 (+https://github.com/scottaajpn-netizen/digger)",
   };
-  if (process.env.DISCOGS_TOKEN) headers.Authorization = `Discogs token=${process.env.DISCOGS_TOKEN}`;
+  headers.Authorization = `Discogs token=${process.env.DISCOGS_TOKEN}`;
   const response = await fetch(endpoint, {
     headers,
     signal: AbortSignal.any([signal, AbortSignal.timeout(9000)]),
     cache: "no-store",
   });
+  if (response.status === 401 || response.status === 403) throw new Error("Jeton Discogs refusé : vérifie sa configuration côté serveur.");
   if (response.status === 429) throw new Error("Discogs limite temporairement les appels. Réessaie plus tard.");
   if (!response.ok) throw new Error(`Discogs ne répond pas correctement (HTTP ${response.status}).`);
   const body = await response.json() as DiscogsSearch;
@@ -72,6 +73,10 @@ function fromDiscogs(value: NonNullable<DiscogsSearch["results"]>[number]): Crat
 export async function GET(request: Request) {
   const url = new URL(request.url);
   if (url.search.length > 4500) return Response.json({ error: "Trop de paramètres." }, { status: 413 });
+  // Search API authentication is required. Never put this secret in a browser URL.
+  if (!process.env.DISCOGS_TOKEN) {
+    return Response.json({ error: "La connexion Discogs n'est pas encore configurée : ajoute DISCOGS_TOKEN côté serveur (jamais dans le navigateur)." }, { status: 503 });
+  }
   const params = url.searchParams;
   const surprise = params.get("surprise") === "1";
   const genre = safeText(params.get("genre"));
