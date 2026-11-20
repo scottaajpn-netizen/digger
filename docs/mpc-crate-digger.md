@@ -79,3 +79,27 @@ L'API renvoie `mode: "metadata-only"` et `playable: false`. Tant que le jeton es
 - Les crédits de **l'instrument** et les **vues** exigent un enrichissement fiable et une politique explicite pour les valeurs manquantes.
 - Favoris aujourd'hui dans `localStorage` (navigateur PC), pas encore synchronisés avec la MPC.
 - Pas de préchargement audio ni de tests MPC One Gen 1 à ce stade.
+
+
+## Exigence prioritaire : qualité des morceaux proposés (retour utilisateur du 20/11/2026)
+
+Deux résultats à écarter en priorité :
+1. **Musiques manifestement générées par IA** — uploads mentionnant `AI generated`, `Suno`, `Udio`, `AI music`, `AI cover` ; ne jamais confondre filtrage de labels avec détection fiable de l'origine audio.
+2. **Compilations / longs mixes** — vidéos « full album », « best of », « DJ set », « compilation » et fichiers de 40 minutes : l'utilisateur veut un **morceau individuel**, pas un album de 40 minutes.
+
+### Règles proposées pour l'étape d'écoute
+
+- **Durée par défaut : 1:00 à 10:00** par morceau ; possibilité de relever la limite à 12 minutes pour des pièces longues (jazz, psyché, ambient). Une vidéo sans durée connue n'est pas présentée comme « vérifiée ».
+- Refuser les compilations identifiées par leur titre, même si elles sont courtes ; ne pas exclure automatiquement les titres « remix » ou « extended mix », qui sont souvent des morceaux individuels.
+- Rejeter les vidéos déclarées IA dans leur titre, description ou chaîne connue, en sachant que **l'absence de mention ne prouve pas que la musique soit humaine**. Ne pas écarter « Aïcha » ou des titres contenant naturellement la suite de lettres « ai ».
+- Contrôler le nombre de vues **sur l'upload réellement sélectionné**, pas seulement sur la fiche Discogs.
+- Préserver ces exclusions en mode **Surprise totale** ; celui-ci neutralise uniquement les préférences musicales (genre, pays, années).
+- Enrichir un résultat Discogs **release/album** vers un **titre précis** avant de chercher un enregistrement. Une fiche Discogs n'est pas une preuve d'écoute disponible et une compilation peut être utile pour identifier un morceau individuel à proposer.
+- Prévoir une commande **« Pas intéressant / Ne plus proposer »**, avec une raison facultative : IA suspectée, compilation, pas un morceau, mauvaise correspondance audio. Cela améliorera les règles sans inventer une détection parfaite.
+
+### Implémentation déjà ajoutée
+
+- `src/lib/crate/audio-quality.ts` : filtre pur des candidats audio avec durée, titres de compilations, déclarations IA, éventuel nombre de vues.
+- `tests/crate-audio-quality.test.ts` : scénarios sur de vrais morceaux, contenus déclarés IA, compilations de 40 minutes, durée manquante et extensions jazz.
+
+**Important : cette étape n'est PAS encore branchée à un résolveur audio en production.** La V0.1 sur `/crate` ne montre encore que des fiches Discogs et ne connaît pas la durée des vidéos. Il ne faut donc pas prétendre que le filtrage IA/durée fonctionne déjà pour les propositions affichées.
