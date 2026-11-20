@@ -3,6 +3,13 @@ export type SamplingDuration = "any" | "short" | "medium" | "long";
 export interface SamplingFilters {
   genre?: string;
   keywords?: string;
+  country?: string;
+  instrument?: string;
+  minDurationSeconds?: number;
+  maxDurationSeconds?: number;
+  excludeShorts?: boolean;
+  excludeAI?: boolean;
+  excludeCompilations?: boolean;
   minViews?: number;
   maxViews?: number;
   yearMin?: number;
@@ -27,6 +34,7 @@ type YouTubeSearchResponse = {
     snippet?: {
       title?: string;
       channelTitle?: string;
+      description?: string;
       publishedAt?: string;
       thumbnails?: { medium?: { url?: string }; default?: { url?: string } };
     };
@@ -39,6 +47,7 @@ type YouTubeVideosResponse = {
     snippet?: {
       title?: string;
       channelTitle?: string;
+      description?: string;
       publishedAt?: string;
       thumbnails?: { medium?: { url?: string }; default?: { url?: string } };
     };
@@ -52,13 +61,12 @@ const diggingTerms = [
   "vinyl",
   "rare groove",
   "private press",
-  "original mix",
-  "7 inch",
-  "12 inch",
-  "full album",
+  "vinyl rip",
+  "7 inch single",
+  "45 rpm",
+  "B side",
   "soundtrack",
   "library music",
-  "records",
   "deep cut",
   "obscure",
 ] as const;
@@ -93,10 +101,19 @@ export function normalizeSamplingFilters(raw: SamplingFilters): SamplingFilters 
   const yearMax = clampInt(raw.yearMax, 1900, currentYear);
   const minViews = clampInt(raw.minViews, 0, 10_000_000_000);
   const maxViews = clampInt(raw.maxViews, 0, 10_000_000_000);
+  const minDuration = clampInt(raw.minDurationSeconds, 0, 7200);
+  const maxDuration = clampInt(raw.maxDurationSeconds, 0, 7200);
 
   return {
     genre: typeof raw.genre === "string" ? raw.genre.trim().slice(0, 80) : undefined,
     keywords: typeof raw.keywords === "string" ? raw.keywords.trim().slice(0, 120) : undefined,
+    country: typeof raw.country === "string" ? raw.country.trim().slice(0, 60) : undefined,
+    instrument: typeof raw.instrument === "string" ? raw.instrument.trim().slice(0, 60) : undefined,
+    minDurationSeconds: minDuration !== undefined && maxDuration !== undefined ? Math.min(minDuration, maxDuration) : minDuration,
+    maxDurationSeconds: minDuration !== undefined && maxDuration !== undefined ? Math.max(minDuration, maxDuration) : maxDuration,
+    excludeShorts: raw.excludeShorts !== false,
+    excludeAI: raw.excludeAI !== false,
+    excludeCompilations: raw.excludeCompilations !== false,
     minViews,
     maxViews,
     yearMin: yearMin !== undefined && yearMax !== undefined ? Math.min(yearMin, yearMax) : yearMin,
@@ -111,17 +128,19 @@ export function buildSamplingQuery(filters: SamplingFilters, relaxed = false) {
   const parts: string[] = [];
   if (filters.genre) parts.push(filters.genre);
   if (filters.keywords) parts.push(filters.keywords);
+  if (filters.country) parts.push(filters.country);
+  if (filters.instrument) parts.push(filters.instrument);
 
   if (!filters.genre && !filters.keywords) parts.push(randomItem(genericMusicTerms));
 
-  if (!relaxed) {
-    parts.push(randomItem(diggingTerms));
-    if (filters.yearMin || filters.yearMax) {
-      const low = filters.yearMin ?? filters.yearMax!;
-      const high = filters.yearMax ?? filters.yearMin!;
-      const year = low + Math.floor(Math.random() * (high - low + 1));
-      parts.push(String(year));
-    }
+  if (!relaxed) parts.push(randomItem(diggingTerms));
+
+  // YouTube cannot filter by original release year. This is a search hint only,
+  // and must remain in the query even when we relax the digging term.
+  if (filters.yearMin || filters.yearMax) {
+    const low = filters.yearMin ?? filters.yearMax!;
+    const high = filters.yearMax ?? filters.yearMin!;
+    parts.push(String(low + Math.floor(Math.random() * (high - low + 1))));
   }
 
   return parts.filter(Boolean).join(" ").trim();
@@ -132,6 +151,63 @@ function parseIsoDuration(value?: string) {
   const match = value.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
   if (!match) return undefined;
   return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
+}
+
+
+// YouTube Data API does not expose a reliable Shorts flag, AI provenance or the
+// original release year. These conservative heuristics reduce noise, not certify it.
+export function samplingRejectionReason(
+  video: { title: string; channel?: string; description?: string; durationSeconds?: number },
+  filters: SamplingFilters,
+): string | null {
+  const title = video.title.toLowerCase();
+  const description = (video.description || "").toLowerCase();
+  const duration = video.durationSeconds;
+
+  if (filters.minDurationSeconds !== undefined && (duration === undefined || duration < filters.minDurationSeconds)) {
+    return "too-short";
+  }
+  if (filters.maxDurationSeconds !== undefined && (duration === undefined || duration > filters.maxDurationSeconds)) {
+    return "too-long";
+  }
+
+  // Excludes obvious video essays, recommendation lists and tutorials.
+  if (/\b(?:top|best)\s*(?:\d{1,3}|ten|five)\b|\bmust[\s-]*know\b|\brecommendations?\b|\breviews?\b|\breactions?\b|\binterviews?\b|\btutorials?\b|\bunboxing\b|\bhow to\b|\bexplained\b|\b(?:album|record)\s+ranking\b|\balbums?\s+(?:to|you|ranked|reviewed)\b/i.test(title)) {
+    return "editorial";
+  }
+
+  if (filters.excludeShorts !== false && /(?:#shorts\b|\byoutube shorts?\b|\bshorts?\s+video\b)/i.test(title)) {
+    return "short";
+  }
+
+  if (filters.excludeCompilations !== false &&
+    /\b(?:full\s+(?:album|lp|ep)|complete\s+album|compilation|playlist|mixtape|dj\s+(?:set|mix)|continuous\s+mix|nonstop\s+mix|greatest\s+hits|(?:\d+)\s+(?:hours?|hrs?)\s+(?:of\s+)?(?:music|mix))\b/i.test(title)) {
+    return "compilation";
+  }
+
+  if (filters.excludeAI !== false &&
+    /\b(?:ai[\s-]*(?:generated|made|music|song|cover|vocals?)|generated\s+(?:with|by)\s+(?:ai|suno|udio)|suno(?:\.ai)?|udio(?:\.com)?|synthetic\s+vocals?)\b/i.test([title, description].join(" "))) {
+    return "ai-suspected";
+  }
+
+  return null;
+}
+
+// Prefer different uploaders at the start of each crate, while preserving all
+// valid unique videos for later digging.
+function diversifyByChannel(videos: SamplingVideo[]): SamplingVideo[] {
+  const remaining: SamplingVideo[] = [];
+  const firstPerChannel: SamplingVideo[] = [];
+  const seen = new Set<string>();
+  for (const video of shuffle(videos)) {
+    const key = video.channel.toLocaleLowerCase();
+    if (seen.has(key)) remaining.push(video);
+    else {
+      seen.add(key);
+      firstPerChannel.push(video);
+    }
+  }
+  return [...firstPerChannel, ...remaining];
 }
 
 function shuffle<T>(items: T[]) {
@@ -177,7 +253,7 @@ async function searchOnce(filters: SamplingFilters, signal: AbortSignal, relaxed
     type: "video",
     videoCategoryId: "10",
     videoEmbeddable: "true",
-    maxResults: "30",
+    maxResults: "50",
     q: query,
     safeSearch: "none",
   };
@@ -190,7 +266,7 @@ async function searchOnce(filters: SamplingFilters, signal: AbortSignal, relaxed
   const ids = (search.items || [])
     .map(item => item.id?.videoId)
     .filter((id): id is string => Boolean(id))
-    .slice(0, 30);
+    .slice(0, 50);
 
   if (!ids.length) return { query, videos: [] as SamplingVideo[] };
 
@@ -214,6 +290,8 @@ async function searchOnce(filters: SamplingFilters, signal: AbortSignal, relaxed
 
     const snippet = item.snippet;
     if (!snippet?.title || !snippet.channelTitle || !snippet.publishedAt) return [];
+    const durationSeconds = parseIsoDuration(item.contentDetails?.duration);
+    if (samplingRejectionReason({ title: snippet.title, channel: snippet.channelTitle, description: snippet.description, durationSeconds }, filters)) return [];
 
     return [{
       id: item.id,
@@ -221,13 +299,13 @@ async function searchOnce(filters: SamplingFilters, signal: AbortSignal, relaxed
       channel: snippet.channelTitle,
       publishedAt: snippet.publishedAt,
       views,
-      durationSeconds: parseIsoDuration(item.contentDetails?.duration),
+      durationSeconds,
       thumbnail: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url,
       query,
     } satisfies SamplingVideo];
   });
 
-  return { query, videos: shuffle(videos) };
+  return { query, videos: diversifyByChannel(videos) };
 }
 
 export async function discoverSamplingVideos(
