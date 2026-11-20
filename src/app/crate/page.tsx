@@ -110,8 +110,10 @@ export default function CratePage() {
           }
         })
         .finally(() => {
-          pendingRef.current.delete(id);
-          setLoadingIds(previous => { const next = { ...previous }; delete next[id]; return next; });
+          if (pendingRef.current.get(id) === controller) {
+            pendingRef.current.delete(id);
+            setLoadingIds(previous => { const next = { ...previous }; delete next[id]; return next; });
+          }
         });
     }
   }, [records, position, trackPicks, trackErrors]);
@@ -230,7 +232,7 @@ export default function CratePage() {
     <div className="crate-navigation" role="group" aria-label="Affichage">
       <button aria-pressed={view === "dig"} onClick={() => setView("dig")}>Découverte</button>
       <button aria-pressed={view === "favorites"} onClick={() => setView("favorites")}>♥ Favoris ({favoriteRecords.length})</button>
-      <span className="crate-session-count">Historique : {Math.floor(viewed.length / 2)} visites</span>
+      <span className="crate-session-count">Historique : {viewed.filter(key => key.startsWith("work:")).length} disques</span>
     </div>
 
     <section aria-live="polite" className="crate-results">
