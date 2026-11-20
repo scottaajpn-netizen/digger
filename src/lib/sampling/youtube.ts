@@ -177,8 +177,11 @@ export function archivalEvidenceScore(
   // Reissues or archive uploads can be new, but the record release is old.
   if (/\b(?:19[4-9]\d|200[0-9])\b/.test(title)) score += 2;
   if (/\b(?:19[4-9]\d|200[0-9])\b/.test(description.slice(0, 600))) score += 1;
-  if (/\b(?:vinyl|record rip|vinyl rip|45\s*rpm|7[\s-]*inch|12[\s-]*inch|private press|acetate|original pressing|recorded in)\b/.test(title)) score += 3;
-  if (/\b(?:vinyl|record rip|vinyl rip|45\s*rpm|7[\s-]*inch|12[\s-]*inch|private press|original pressing|catalogue no|catalog number)\b/.test(description.slice(0, 1000))) score += 2;
+  // "Vinyl" alone is a musical/aesthetic word (e.g. a song named "Vinyl Soul").
+  // Require physical-record evidence before granting an archival boost.
+  if (/\b(?:vinyl\s+(?:rip|transfer|recording|pressing|single)|record\s+(?:rip|transfer)|45\s*rpm|7[\s-]*inch|12[\s-]*inch|private[\s-]*press|acetate|original pressing|recorded in)\b|(?:\b(?:7|12)\s*["″]\s*(?:single|record)?)/.test(title)) score += 3;
+  if (/\b(?:record label|catalog(?:ue)?\s*(?:no\.?|number|#)|cat\.\s*no\.?|matrix\s*(?:number|no\.?))\b/i.test(title)) score += 2;
+  if (/\b(?:vinyl\s+(?:rip|transfer|recording|pressing|single)|record\s+(?:rip|transfer)|45\s*rpm|7[\s-]*inch|12[\s-]*inch|private[\s-]*press|original pressing|catalogue no|catalog number|matrix number)\b/.test(description.slice(0, 1000))) score += 2;
   if (/\b(?:vinyl|archive|records|recordings)\b/.test(channel)) score += 1;
   if (/\s[-–—]\s/.test(title) && title.length < 100) score += 1;
   if (/^(?:19\d{2}|200\d|201[0-4])/.test(video.publishedAt || "")) score += 1;

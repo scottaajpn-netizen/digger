@@ -143,3 +143,41 @@ test("explicit user decade remains in archival search, with no invented publicat
   assert.match(query, /1977/);
   assert.doesNotMatch(query, /2026/);
 });
+
+test("a modern song titled Vinyl Soul is not mistaken for a vinyl rip", () => {
+  const archive = normalizeSamplingFilters({
+    archiveFocus: true,
+    minDurationSeconds: 90,
+    maxDurationSeconds: 480,
+  });
+  const video = {
+    title: "Vinyl Soul",
+    channel: "SUKISHA - Topic",
+    publishedAt: "2019-03-01T00:00:00Z",
+    durationSeconds: 96,
+    description: "Provided to YouTube by a distributor. Vinyl Soul.",
+  };
+  assert.equal(archivalEvidenceScore(video), 0);
+  assert.equal(samplingRejectionReason(video, archive), "not-archival-enough");
+  assert.equal(samplingRejectionReason(video, { ...archive, archiveFocus: false }), null);
+});
+
+test("private press 7-inch record example remains eligible as real archival evidence", () => {
+  const archive = normalizeSamplingFilters({ archiveFocus: true, minDurationSeconds: 90, maxDurationSeconds: 480 });
+  const video = {
+    title: 'SOUTHGREEN RECORDERS - Seashore - obscure private press 7"',
+    channel: "forummusic.co.uk",
+    publishedAt: "2013-06-10T00:00:00Z",
+    durationSeconds: 126,
+  };
+  assert.ok(archivalEvidenceScore(video) >= 2);
+  assert.equal(samplingRejectionReason(video, archive), null);
+});
+
+test("archive clues in description count, but bare aesthetic words do not", () => {
+  assert.equal(archivalEvidenceScore({ title: "Vinyl Dreams", channel: "New Artist - Topic" }), 0);
+  assert.ok(archivalEvidenceScore({
+    title: "Seashore - Southgreen Recorders",
+    description: "Original pressing. 45 rpm single, catalog number 620B.",
+  }) >= 2);
+});
