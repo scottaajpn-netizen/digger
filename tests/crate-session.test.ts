@@ -35,3 +35,11 @@ test("seen keys remain bounded to avoid oversized API query URLs",()=>{
   assert.equal(keys.length,60);
   assert.equal(keys[0],"master:140");
 });
+
+test("exclude history fits in URL budget even with accented and long titles",()=>{
+  const keys=Array.from({length:100},(_,i)=>"work:"+("électro jazz rare ".repeat(7))+i);
+  const seen=buildSeenKeys(keys,[],{},90);
+  const query = new URLSearchParams({seen:seen.join(",")}).toString();
+  assert.ok(query.length <= 2200);
+  assert.ok(seen.length > 0 && seen.length < 90);
+});
