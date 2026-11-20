@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CrateRelease } from "@/lib/crate/select";
 import type { DiscogsTrackPick } from "@/lib/crate/tracklist";
 import type { OfficialVideoEmbed } from "@/lib/crate/video-preview";
-import { releaseKeys, workKey } from "@/lib/crate/select";
+import { workKey } from "@/lib/crate/select";
+import { buildSeenKeys, pushViewed, validateFeedback, validateHistory, rejectionReasons, rejectionLabels, type RejectionReason, type CrateFeedback } from "@/lib/crate/session";
 import "./crate.css";
 
 type Filters = { genre: string; style: string; country: string; from: string; to: string };
@@ -27,7 +28,10 @@ export default function CratePage() {
   const [trackErrors, setTrackErrors] = useState<Record<string, string>>({});
   const [videoPreviews, setVideoPreviews] = useState<Record<string, OfficialVideoEmbed | null>>({});
   const [openVideoId, setOpenVideoId] = useState<string | null>(null);
-  const [trackLoading, setTrackLoading] = useState(false);
+  const [loadingIds, setLoadingIds] = useState<Record<string, boolean>>({});
+  const pendingRef = useRef<Map<string, AbortController>>(new Map());
+  const [viewed, setViewed] = useState<string[]>([]);
+  const [feedback, setFeedback] = useState<CrateFeedback>({});
   const [view, setView] = useState<"dig" | "favorites">("dig");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -38,8 +42,10 @@ export default function CratePage() {
     try {
       const item = localStorage.getItem(storage);
       if (item) {
-        const saved = JSON.parse(item) as { filters?: Filters; favorites?: Record<string, FavoriteRecord> };
+        const saved = JSON.parse(item) as { filters?: Filters; favorites?: Record<string, FavoriteRecord>; viewed?: string[]; feedback?: CrateFeedback };
         if (saved.filters && typeof saved.filters.genre === "string") setFilters({ ...initialFilters, ...saved.filters });
+        setViewed(validateHistory(saved.viewed));
+        setFeedback(validateFeedback(saved.feedback));
         if (saved.favorites && typeof saved.favorites === "object") {
           const verified = Object.entries(saved.favorites).filter((entry): entry is [string, FavoriteRecord] => {
             const value = entry[1] as FavoriteRecord | undefined;
@@ -54,40 +60,66 @@ export default function CratePage() {
 
   useEffect(() => {
     if (!ready) return;
-    try { localStorage.setItem(storage, JSON.stringify({ filters, favorites })); } catch { /* Full or disabled storage. */ }
-  }, [filters, favorites, ready]);
+    try { localStorage.setItem(storage, JSON.stringify({ filters, favorites, viewed, feedback })); } catch { /* Full or disabled storage. */ }
+  }, [filters, favorites, viewed, feedback, ready]);
 
   const current = records[position] ?? null;
 
-  // A release may be an LP or compilation. Look up ONE credited recording;
-  // do not offer the entire LP as a sample candidate.
+  // Record only releases actually viewed, never prefetched candidates.
   useEffect(() => {
-    if (!current || !/^discogs:\d+$/.test(current.id)) return;
-    if (Object.prototype.hasOwnProperty.call(trackPicks, current.id) || trackErrors[current.id]) return;
-    const controller = new AbortController();
-    const id = current.id;
-    setTrackLoading(true);
-    const params = new URLSearchParams({
-      releaseId: id.slice("discogs:".length),
-      seed: String(Number(id.slice("discogs:".length)) % 2147483647),
-    });
-    void fetch(`/api/crate/track?${params.toString()}`, { signal: controller.signal, cache: "no-store" })
-      .then(async response => {
-        const result = await response.json() as TrackReply;
-        if (!response.ok || !result.track) throw new Error(result.error || "Aucune piste exploitable.");
-        if (!controller.signal.aborted) {
+    if (ready && current) setViewed(previous => pushViewed(previous, current));
+  }, [current?.id, ready]);
+
+  // Prefetch tracklists + optional video metadata for current and next 2 records.
+  // Requests offscreen are aborted to keep concurrency at most three.
+  useEffect(() => {
+    const wanted = records.slice(position, position + 3).filter(
+      record => /^discogs:\d+$/.test(record.id),
+    );
+    const wantedIds = new Set(wanted.map(record => record.id));
+    for (const [id, controller] of pendingRef.current) {
+      if (!wantedIds.has(id)) {
+        controller.abort();
+        pendingRef.current.delete(id);
+      }
+    }
+    for (const record of wanted) {
+      const id = record.id;
+      if (Object.prototype.hasOwnProperty.call(trackPicks, id) ||
+          trackErrors[id] || pendingRef.current.has(id)) continue;
+      const controller = new AbortController();
+      pendingRef.current.set(id, controller);
+      setLoadingIds(previous => ({ ...previous, [id]: true }));
+      const params = new URLSearchParams({
+        releaseId: id.slice("discogs:".length),
+        seed: String(Number(id.slice("discogs:".length)) % 2147483647),
+      });
+      void fetch(`/api/crate/track?${params.toString()}`, { signal: controller.signal, cache: "no-store" })
+        .then(async response => {
+          const result = await response.json() as TrackReply;
+          if (!response.ok || !result.track) throw new Error(result.error || "Aucune piste exploitable.");
+          if (controller.signal.aborted) return;
           setTrackPicks(previous => ({ ...previous, [id]: result.track! }));
           setVideoPreviews(previous => ({ ...previous, [id]: result.preview || null }));
-        }
-      })
-      .catch(failure => {
-        if (!controller.signal.aborted) {
-          setTrackErrors(previous => ({ ...previous, [id]: failure instanceof Error ? failure.message : "Piste indisponible." }));
-        }
-      })
-      .finally(() => { if (!controller.signal.aborted) setTrackLoading(false); });
-    return () => controller.abort();
-  }, [current?.id, trackPicks, trackErrors]);
+        })
+        .catch(failure => {
+          if (!controller.signal.aborted) {
+            setTrackErrors(previous => ({
+              ...previous, [id]: failure instanceof Error ? failure.message : "Piste indisponible.",
+            }));
+          }
+        })
+        .finally(() => {
+          pendingRef.current.delete(id);
+          setLoadingIds(previous => { const next = { ...previous }; delete next[id]; return next; });
+        });
+    }
+  }, [records, position, trackPicks, trackErrors]);
+
+  useEffect(() => {
+    const pending = pendingRef.current;
+    return () => { for (const controller of pending.values()) controller.abort(); pending.clear(); };
+  }, []);
 
   async function discover(surprise = false, reset = false) {
     if (busy) return;
@@ -103,9 +135,8 @@ export default function CratePage() {
       if (filters.from) params.set("from", filters.from);
       if (filters.to) params.set("to", filters.to);
     }
-    if (!reset && records.length) {
-      params.set("seen", records.flatMap(releaseKeys).slice(-38).join(","));
-    }
+    const seen = buildSeenKeys(viewed, records, feedback);
+    if (seen.length) params.set("seen", seen.join(","));
     try {
       const response = await fetch(`/api/crate?${params.toString()}`, { cache: "no-store" });
       const result = await response.json() as CrateReply;
@@ -140,6 +171,12 @@ export default function CratePage() {
     if (position + 1 < records.length) setPosition(position + 1);
     else void discover(false, records.length === 0);
   }
+  function rejectCurrent(record: CrateRelease, reason: RejectionReason) {
+    setFeedback(previous => ({ ...previous, [record.id]: { reason, at: Date.now() } }));
+    setOpenVideoId(null);
+    next();
+  }
+
   function toggleFavorite(record: CrateRelease, track: DiscogsTrackPick, preview: OfficialVideoEmbed | null) {
     const id = track.id;
     setFavorites(previous => {
@@ -193,6 +230,7 @@ export default function CratePage() {
     <div className="crate-navigation" role="group" aria-label="Affichage">
       <button aria-pressed={view === "dig"} onClick={() => setView("dig")}>Découverte</button>
       <button aria-pressed={view === "favorites"} onClick={() => setView("favorites")}>♥ Favoris ({favoriteRecords.length})</button>
+      <span className="crate-session-count">Historique : {Math.floor(viewed.length / 2)} visites</span>
     </div>
 
     <section aria-live="polite" className="crate-results">
@@ -212,7 +250,7 @@ export default function CratePage() {
           <p className="crate-meta">Disque source : {record.title}</p>
           <p className="crate-meta">{[record.country, record.genres.join(" / "), record.styles.join(" / "), track?.durationSeconds ? `Durée Discogs : ${Math.floor(track.durationSeconds / 60)}:${String(track.durationSeconds % 60).padStart(2, "0")}` : "Durée audio à vérifier"].filter(Boolean).join(" · ")}</p>
           {trackErrors[record.id] && <p className="crate-error">{trackErrors[record.id]} Passe au disque suivant pour chercher un autre morceau.</p>}
-          {!track && !trackErrors[record.id] && trackLoading && <p className="crate-status">Lecture de la liste de pistes Discogs…</p>}
+          {!track && !trackErrors[record.id] && loadingIds[record.id] && <p className="crate-status">Recherche du morceau et de sa préécoute…</p>}
           <p className="crate-disclaimer">{preview
             ? "Vidéo liée sur Discogs et correspondant aux métadonnées du morceau : écoute via le lecteur YouTube officiel. La disponibilité réelle de la vidéo n'est pas garantie. Pas encore de flux audio vers la MPC."
             : "Aucune vidéo de ce morceau ne passe actuellement nos filtres de correspondance et de durée. On préfère ne rien jouer plutôt que lancer une compilation ou un mauvais titre."}</p>
@@ -226,6 +264,14 @@ export default function CratePage() {
                 allow="encrypted-media; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin"/>
               <small>Lecteur vidéo officiel · ni téléchargement ni capture audio. Certaines vidéos peuvent refuser l'intégration.</small>
             </div>}
+          </div>}
+          {view === "dig" && <div className="crate-rejections" role="group" aria-label="Écarter cette découverte">
+            <span>Pas la bonne pépite ?</span>
+            {rejectionReasons.map(reason => <button type="button" key={reason}
+              onClick={() => rejectCurrent(record, reason)}
+              title={`Écarter ce disque : ${rejectionLabels[reason]}`}>
+              {rejectionLabels[reason]}
+            </button>)}
           </div>}
           <div className="crate-record-actions">
             {record.discogsUrl && <a href={record.discogsUrl} target="_blank" rel="noreferrer">Voir la fiche Discogs ↗</a>}
