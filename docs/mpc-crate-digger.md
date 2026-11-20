@@ -103,3 +103,33 @@ Deux résultats à écarter en priorité :
 - `tests/crate-audio-quality.test.ts` : scénarios sur de vrais morceaux, contenus déclarés IA, compilations de 40 minutes, durée manquante et extensions jazz.
 
 **Important : cette étape n'est PAS encore branchée à un résolveur audio en production.** La V0.1 sur `/crate` ne montre encore que des fiches Discogs et ne connaît pas la durée des vidéos. Il ne faut donc pas prétendre que le filtrage IA/durée fonctionne déjà pour les propositions affichées.
+
+
+## Avancement V0.2 — du disque à un véritable morceau
+
+L'API de découverte `/api/crate` sélectionne des **sorties Discogs** (un album ou une compilation possible).
+La nouvelle API `/api/crate/track?releaseId=<id>&seed=42` lit la tracklist de cette sortie et sélectionne **une piste individuelle**, avec son artiste crédité, sa position (A1, B2…), et la durée Discogs quand celle-ci existe.
+
+- `src/lib/crate/tracklist.ts` : extraction de pistes, sections/compilations, durée `mm:ss` ou `hh:mm:ss`, rejet des pistes explicitement trop longues, des headings, des morceaux clairement étiquetés IA et des identifications d'artiste insuffisantes.
+- `src/app/api/crate/track/route.ts` : lecture d'une sortie Discogs via jeton serveur, cache et erreurs lisibles.
+- `src/app/crate/page.tsx` : montre maintenant **le titre du morceau** plutôt que seulement le titre du disque ; favoris associés au morceau trouvé. En cas de tracklist insuffisante, on le signale au lieu d'inventer un titre.
+- `tests/crate-tracklist.test.ts` : vérification de l'extraction, compilations, crédit artiste, durées inconnues et hasard reproductible.
+
+### Éligibilité de l'audio (étape préparée, pas encore branchée à un fournisseur)
+
+Le module `src/lib/crate/audio-match.ts` compare la piste choisie à une liste de candidats audio et rejette :
+- vidéo dont le titre ne correspond pas au morceau précis ;
+- artiste introuvable dans le titre ou le nom de la chaîne ;
+- reprise, remix, version live ou instrumental qui ne figure pas dans l'identification du morceau ;
+- musique explicitement signalée IA, compilation ou vidéo trop longue ;
+- vidéo sans durée connue, et absence de nombre de vues quand ce filtre est utilisé.
+
+Les tests se trouvent dans `tests/crate-audio-match.test.ts`.
+
+**Important : aucun flux n'est encore récupéré, joué ou téléchargé.** Le matching vérifie seulement des **métadonnées** : il ne garantit pas la présence ni la qualité d'un enregistrement. Les nouvelles fonctions Discogs nécessitent une variable serveur `DISCOGS_TOKEN`. Aucune clé API ne doit être committée dans le dépôt. La route de tracklist pourrait être assez lente à froid ; optimiser son préchargement seulement après mesure.
+
+### Pour le prochain test sur la MPC
+
+1. Tester que la MPC One Gen 1 est bien en OS 3.10.1+ et connectée à Internet via Ethernet.
+2. Vérifier sur un PC privé le fonctionnement de la recherche de pistes via la web-app `/crate`, après configuration de `DISCOGS_TOKEN`.
+3. Intégrer un lecteur audio seulement après validation d'une source accessible et autorisée, puis une interface MPC minimaliste avec NEXT, BACK, LIKE et SURPRISE.
