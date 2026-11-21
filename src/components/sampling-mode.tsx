@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SamplingFilters, SamplingVideo } from "@/lib/sampling/youtube";
+import { samplingPlaybackAction } from "@/lib/sampling/playback";
+import { SamplingYouTubePlayer } from "@/components/sampling-youtube-player";
 
 type SamplingVote = "keep" | "pass";
 
@@ -96,6 +98,8 @@ export function SamplingMode() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [relaxed, setRelaxed] = useState(false);
+  const [playerIssue, setPlayerIssue] = useState("");
+  const autoSkippedVideo = useRef<string | null>(null);
 
   useEffect(() => {
     try {
@@ -122,6 +126,11 @@ export function SamplingMode() {
   }, [profile, ready]);
 
   const current = pool[index];
+
+  useEffect(() => {
+    autoSkippedVideo.current = null;
+    setPlayerIssue("");
+  }, [current?.id]);
 
   const excludeIds = useMemo(
     () => [...new Set([...profile.historyIds, ...pool.slice(0, index + 1).map(video => video.id)])].slice(-300),
@@ -196,6 +205,23 @@ export function SamplingMode() {
     }
 
     await loadPool(filters, false);
+  }
+
+  function handlePlayerError(code: number) {
+    if (!current || busy) return;
+    const action = samplingPlaybackAction(code);
+    if (action === "configuration") {
+      setPlayerIssue("Le lecteur YouTube est bloqué par un problème d'identification du site (code 153). Essaie le lien YouTube ou vérifie les paramètres d'intégration.");
+      return;
+    }
+    if (action === "unknown") {
+      setPlayerIssue(`Impossible de confirmer la lecture (erreur YouTube ${code}). Tu peux ouvrir le morceau sur YouTube ou le passer.`);
+      return;
+    }
+    if (autoSkippedVideo.current === current.id) return;
+    autoSkippedVideo.current = current.id;
+    // Do not record a musical dislike: the video simply cannot play here.
+    void next();
   }
 
   function vote(value: SamplingVote) {
@@ -463,13 +489,11 @@ export function SamplingMode() {
         {current && (
           <section className="sampling-player-stage" aria-busy={busy}>
             <div className="sampling-video-wrap">
-              <iframe
+              <SamplingYouTubePlayer
                 key={current.id}
-                src={`https://www.youtube-nocookie.com/embed/${current.id}?autoplay=1&rel=0&playsinline=1`}
+                id={current.id}
                 title={`${current.title} — ${current.channel}`}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                referrerPolicy="strict-origin-when-cross-origin"
-                allowFullScreen
+                onPlaybackError={handlePlayerError}
               />
             </div>
 
@@ -483,6 +507,10 @@ export function SamplingMode() {
                 <span>upload {new Date(current.publishedAt).getFullYear()}</span>
               </div>
               <a href={`https://www.youtube.com/watch?v=${current.id}`} target="_blank" rel="noreferrer">Ouvrir sur YouTube ↗</a>
+              <button className="sampling-unavailable" type="button" onClick={() => void next()} disabled={busy}>
+                Vidéo inaccessible ? Passer sans avis négatif
+              </button>
+              {playerIssue && <p className="sampling-player-issue" role="status">{playerIssue}</p>}
               <small>Recherche utilisée : {query || current.query}{relaxed ? " · recherche élargie" : ""}</small>
             </div>
 
