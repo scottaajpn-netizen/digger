@@ -135,6 +135,14 @@ const countryGroups = [
   ] },
 ] as const;
 
+function displayCountryName(value: string): string {
+  for (const group of countryGroups) {
+    const match = group.countries.find(([, code]) => code === value);
+    if (match) return match[0];
+  }
+  return value;
+}
+
 const emptyProfile = (): SamplingProfile => ({
   version: 1,
   historyIds: [],
@@ -568,7 +576,7 @@ export function SamplingMode() {
               {selectedCountries.length > 0 && (
                 <div className="sampling-choice-chips" aria-label="Pays sélectionnés">
                   {selectedCountries.map(value => (
-                    <button type="button" key={value} onClick={() => toggleCountry(value)}>{value} ×</button>
+                    <button type="button" key={value} onClick={() => toggleCountry(value)}>{displayCountryName(value)} ×</button>
                   ))}
                 </div>
               )}
