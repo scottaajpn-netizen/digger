@@ -48,6 +48,24 @@ jobs:
           MPC_SDK=/tmp/mpc-sdk ./build-sdk.sh
           python tools/package.py
           test -s "dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip"
+          python - <<'PY'
+          import json, zipfile
+          path = "dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip"
+          root = "VST2 Plugins/sd88me - VST - Sukotto Digger/"
+          with zipfile.ZipFile(path) as z:
+              names = set(z.namelist())
+              manifest = json.loads(z.read(root + "plugin.json"))
+              assert manifest["name"] == "Sukotto Digger", manifest
+              assert manifest["uid"] == "SkDg", manifest
+              assert manifest["format"] == "vst2", manifest
+              assert manifest["file32"] == "VST/sukotto-arm32.so", manifest
+              assert root + manifest["file32"] in names
+              assert root + "Plugin Skins/TUI.json" in names
+              assert root + "Plugin Skins/Q-Links.json" in names
+              ui = json.loads(z.read(root + "Plugin Skins/TUI.json"))
+              assert len(ui["pageData"]["tabs"]) == 1
+          print("Verified ARM32 package, dedicated plugin UID and single-screen skin")
+          PY
       - name: Upload experimental package
         uses: actions/upload-artifact@v4
         with:
