@@ -1,3 +1,5 @@
+import { MAX_SAMPLING_CHOICES } from "./choices";
+
 export type SamplingDuration = "any" | "short" | "medium" | "long";
 
 export interface SamplingFilters {
@@ -98,8 +100,6 @@ const clampInt = (value: number | undefined, min: number, max: number) =>
   Number.isFinite(value) ? Math.max(min, Math.min(max, Math.round(value!))) : undefined;
 
 const randomItem = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)];
-
-export const MAX_SAMPLING_CHOICES = 10;
 
 export function normalizeSamplingChoices(value: unknown, maxLength = 60): string[] {
   if (!Array.isArray(value)) return [];
