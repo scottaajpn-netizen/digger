@@ -53,7 +53,10 @@ type YouTubeVideosResponse = {
       thumbnails?: { medium?: { url?: string }; default?: { url?: string } };
     };
     statistics?: { viewCount?: string };
-    contentDetails?: { duration?: string };
+    contentDetails?: {
+      duration?: string;
+      regionRestriction?: { allowed?: string[]; blocked?: string[] };
+    };
     status?: { embeddable?: boolean; privacyStatus?: string };
   }>;
 };
@@ -152,6 +155,19 @@ export function buildSamplingQuery(filters: SamplingFilters, relaxed = false) {
   // the API returns them. Keep these broad exclusions out of user-selected terms.
   parts.push("-shorts", "-reaction", "-tutorial", "-suno", "-udio");
   return parts.filter(Boolean).join(" ").trim();
+}
+
+/** Some videos are not viewable in a given country even when embeddable. */
+export function samplingPlayableInRegion(
+  restriction: { allowed?: string[]; blocked?: string[] } | undefined,
+  country = "FR",
+): boolean {
+  const code = country.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return true;
+  if (!restriction) return true;
+  if (restriction.blocked?.includes(code)) return false;
+  if (restriction.allowed && !restriction.allowed.includes(code)) return false;
+  return true;
 }
 
 function parseIsoDuration(value?: string) {
@@ -328,6 +344,7 @@ async function searchOnce(filters: SamplingFilters, signal: AbortSignal, relaxed
 
   const videos = (details.items || []).flatMap(item => {
     if (!item.id || item.status?.embeddable === false || item.status?.privacyStatus === "private") return [];
+    if (!samplingPlayableInRegion(item.contentDetails?.regionRestriction)) return [];
     const views = Number(item.statistics?.viewCount || 0);
     if (!Number.isFinite(views) || views < minViews || views > maxViews) return [];
 
