@@ -212,7 +212,8 @@ test("multi-select normalization deduplicates and resolves include/exclude confl
   assert.deepEqual(normalized.genres, ["soul", "funk"]);
   assert.deepEqual(normalized.countries, ["Brazil", "Romania"]);
   assert.deepEqual(normalized.excludeGenres, ["hip hop", "metal"]);
-  assert.deepEqual(normalizeSamplingChoices(["jazz", "", 5, "jazz", "|rock"]), ["jazz", "rock"]);
+  assert.deepEqual(normalizeSamplingChoices(["jazz", "", 5, "jazz", "|rock", "-metal"]), ["jazz", "rock", "metal"]);
+  assert.equal(normalizeSamplingChoices(Array.from({ length: 20 }, (_, i) => "genre" + i)).length, 10);
 });
 
 test("many selected countries and genres form an OR search with explicit genre exclusions", () => {
@@ -263,4 +264,14 @@ test("one genre, one country and legacy single selections still work", () => {
   const legacy = buildSamplingQuery(normalizeSamplingFilters({ genre: "soul", country: "Turkey" }));
   assert.match(legacy, /soul/);
   assert.match(legacy, /Turkey/);
+});
+
+test("excluding jazz also avoids a random jazz-funk default, without confusing trap and rap", () => {
+  const settings = normalizeSamplingFilters({ excludeGenres: ["jazz", "rock", "rap"], archiveFocus: false });
+  for (let i = 0; i < 30; i++) {
+    const query = buildSamplingQuery(settings);
+    assert.doesNotMatch(query, /^(?:jazz funk|psychedelic rock)\b/i);
+  }
+  const rapOnly = normalizeSamplingFilters({ excludeGenres: ["rap"], archiveFocus: false });
+  assert.equal(samplingRejectionReason({ title: "Trap 1983", durationSeconds: 250 }, rapOnly), null);
 });
