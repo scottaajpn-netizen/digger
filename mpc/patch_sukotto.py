@@ -54,8 +54,11 @@ def patch(root: Path) -> None:
         raise RuntimeError("Unexpected upstream parameter table: do not reorder VST parameters")
     params["name"], params["uid"] = NAME, UID
     params["params"].append({"key": "next_track", "name": "Next Record", "type": "trigger"})
+    params["params"].append({"key": "start_track", "name": "Back to Start", "type": "trigger"})
+    for k in range(32):
+        params["params"].append({"key": f"wave_{k:02d}", "name": f"Waveform {k+1}", "type": "level"})
     params_path.write_text(json.dumps(params, indent=2, ensure_ascii=False) + "\n")
-    lock_path.write_text("\n".join(old_lock + ["next_track"]) + "\n")
+    lock_path.write_text("\n".join(old_lock + ["next_track", "start_track"] + [f"wave_{k:02d}" for k in range(32)]) + "\n")
 
     cpp = cpp_path.read_text()
     cpp = replace_once(
@@ -63,7 +66,9 @@ def patch(root: Path) -> None:
         "    int page = 0;\n",
         "    int page = 0;\n"
         "    bool sukottoAutoPlay = false; // start first result when a new dig completes\n"
-        "    bool sukottoSawSearch = false; // avoid replaying an old result after SEARCH\n",
+        "    bool sukottoSawSearch = false; // avoid replaying an old result after SEARCH\n"
+        "    unsigned char sukottoWave[32] = {}; // cached, progressive track peak envelope\n"
+        "    int sukottoWaveResult = -1;\n",
         "Engine state",
     )
     cpp = replace_once(
@@ -78,7 +83,12 @@ def patch(root: Path) -> None:
     cpp = replace_once(
         cpp,
         "        else if (i == P_PAGE_PREV || i == P_PAGE_NEXT)\n",
-        """        else if (i == P_NEXT_TRACK)
+        """        else if (i == P_START_TRACK)
+        {
+            if (!core_get(p, "stream_url").empty())
+                core_set(p, "seek_to_seconds", "0");
+        }
+        else if (i == P_NEXT_TRACK)
         {
             // One press means one NEW record, not an eight-item results page.
             const int n = result_count(p);
@@ -116,9 +126,41 @@ def patch(root: Path) -> None:
                 else if (st == "error" || st == "no_results")
                     e_.sukottoAutoPlay = false;
             }
+            // Build the waveform gradually from streamed audio already heard.
+            // No audio-thread allocation or network prefetch required.
+            {
+                const int current = current_result(&e_);
+                if (current != e_.sukottoWaveResult)
+                {
+                    std::memset(e_.sukottoWave, 0, sizeof(e_.sukottoWave));
+                    e_.sukottoWaveResult = current;
+                }
+                if (current >= 0 && core_get(&e_, "stream_status") == "streaming")
+                {
+                    const int duration = clock_seconds(core_get_idx(&e_, "search_result_duration_%d", current));
+                    const int at = clock_seconds(core_get(&e_, "playback_time"));
+                    if (duration > 0 && at >= 0 && at <= duration)
+                    {
+                        const int bin = std::min(31, at * 32 / duration);
+                        const float peak = std::max(peakL_.load(), peakR_.load());
+                        if (peak > 0.006f)
+                        {
+                            const int level = std::max(1, std::min(10, (int)std::ceil(peak * 12.0f)));
+                            e_.sukottoWave[bin] = (unsigned char)std::max((int)e_.sukottoWave[bin], level);
+                        }
+                    }
+                }
+            }
             for (int i = 0; i < NPARAMS; ++i)
 """,
         "uiPass autoplay",
+    )
+    cpp = replace_once(
+        cpp,
+        '            return lamps(i == P_LEVEL_L ? peakL_.load() : peakR_.load());\n',
+        '            if (i >= P_WAVE_00 && i <= P_WAVE_31) return (float)e_.sukottoWave[i - P_WAVE_00];\n'
+        '            return lamps(i == P_LEVEL_L ? peakL_.load() : peakR_.load());\n',
+        "progressive waveform level readout",
     )
     cpp_path.write_text(cpp)
 
@@ -130,25 +172,50 @@ def patch(root: Path) -> None:
         raise RuntimeError("Upstream TUI generator has changed")
     new_skin = r'''
 # ---- Sukotto one-record screen ------------------------------------------------
+def sukotto_wave_strip():
+    # Audio amplitude, not an invented full-track analysis: columns fill as the stream plays.
+    img = Image.new("RGBA", (20, 62 * 11), (0, 0, 0, 0))
+    for level in range(11):
+        sp = Sprite(20, 62)
+        sp.r((9, 28, 11, 34), 1, fill=(39, 112, 49, 190))
+        if level:
+            half = int(3 + level * 2.4)
+            sp.r((6, 31 - half, 14, 31 + half), 3, fill=(8, 38, 14, 255))
+            sp.r((7, 31 - half, 9, 31 + half), 2, fill=(16, 83, 23, 255))
+        img.paste(sp.image(), (0, level * 62))
+    return save(img, "sukotto_wave_strip.png")
+
+
 def build_sukotto():
     c = base_canvas("SUKOTTO DIGGER")
     p = Page("DIG", 0)
     M.lcd(c, (40, 82, 1240, 430))
-    M.lt(c, (75, 123), "NOW PLAYING", 14, dim=True)
-    p.lcd_text("now_playing", 78, 190, 1090, size=33, h=54)
-    M.lt(c, (75, 260), "STATUS", 13, dim=True)
-    p.lcd_text("status", 75, 300, 740, size=24, h=38)
-    M.lt(c, (980, 260), "TIME", 13, dim=True)
-    p.lcd_text("time", 1055, 300, 150, size=23, h=38)
-    M.lt(c, (75, 360), "DIGGING", 13, dim=True)
-    p.lcd_text("search_status", 75, 397, 1090, size=19, h=38)
+    M.lt(c, (75, 115), "NOW PLAYING", 13, dim=True)
+    p.lcd_text("now_playing", 78, 167, 940, size=29, h=48)
+    M.lt(c, (1050, 117), "TIME", 12, dim=True)
+    p.lcd_text("time", 1061, 168, 135, size=25, h=38)
+
+    M.lt(c, (75, 220), "WAVEFORM  /  HEARD SECTIONS", 12, dim=True)
+    strip = sukotto_wave_strip()
+    for k in range(32):
+        x = 83 + k * 34
+        p.kids.append(entry("Wave %02d" % (k + 1), "Image",
+                            {"version": 2, "imageType": "FilmStrip", "colour": "0",
+                             "image": strip, "numFrames": 11, "handleName": "Data"},
+                            "%d 236 20 62" % x, remap=P("wave_%02d" % k)))
+
+    M.lt(c, (75, 323), "STATUS", 12, dim=True)
+    p.lcd_text("status", 75, 356, 750, size=23, h=34)
+    M.lt(c, (75, 389), "DIGGING", 12, dim=True)
+    p.lcd_text("search_status", 75, 411, 1120, size=17, h=32)
 
     M.brushed(c, (40, 440, 1240, 544))
     M.bracket(c, 65, 1212, 451, "LISTEN  /  DISCOVER")
-    p.key("play_pause", "PLAY / PAUSE", "cream", 180, 497, 210, 56, size=14)
-    p.key("next_track", "NEXT RECORD", "red", 490, 497, 260, 66, size=19)
-    p.key("search", "NEW DIG", "cream", 800, 497, 190, 56, size=15)
-    p.key("transport_sync", "SYNC", "cream", 1070, 497, 150, 56, size=15, toggle=True, lamp="amber")
+    p.key("start_track", "TO START", "cream", 155, 497, 150, 56, size=13)
+    p.key("play_pause", "PLAY / PAUSE", "cream", 365, 497, 190, 56, size=13)
+    p.key("next_track", "NEXT RECORD", "red", 650, 497, 255, 66, size=19)
+    p.key("search", "NEW DIG", "cream", 938, 497, 180, 56, size=14)
+    p.key("transport_sync", "SYNC", "cream", 1132, 497, 122, 56, size=13, toggle=True, lamp="amber")
 
     M.brushed(c, (40, 548, 1240, 616))
     for name, x in (("genre", 175), ("decade", 478), ("region", 781), ("country", 1084)):
@@ -159,9 +226,9 @@ def build_sukotto():
         arrow(p, name + "_next", "►", x + 115, 589, w=26, h=24, size=12, pad=5)
 
     add_master(p)
-    p.qgroup((40, 440, 1240, 544), ["play_pause", "next_track", "search", "transport_sync"])
+    p.qgroup((40, 440, 1240, 544), ["start_track", "play_pause", "next_track", "search"])
     p.qgroup((40, 548, 1240, 616), ["genre", "decade", "region", "country"])
-    p.qgroup((700, 6, 1240, 78), ["gain"])
+    p.qgroup((700, 6, 1240, 78), ["gain", "transport_sync", "rewind_15", "forward_15"])
     return p, c
 
 
