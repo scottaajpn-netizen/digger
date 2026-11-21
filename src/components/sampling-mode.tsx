@@ -137,8 +137,9 @@ const countryGroups = [
 
 function displayCountryName(value: string): string {
   for (const group of countryGroups) {
-    const match = group.countries.find(([, code]) => code === value);
-    if (match) return match[0];
+    for (const [label, code] of group.countries) {
+      if (code === value) return label;
+    }
   }
   return value;
 }
