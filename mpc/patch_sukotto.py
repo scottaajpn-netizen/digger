@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build-time adapter: upstream Crate Digger 2.2 -> a one-track Sukotto MPC skin.
+"""Build-time adapter: upstream Crate Digger 2.2 -> Sukotto 03 sampler interface.
 
 This deliberately patches a clean checkout instead of modifying the installed
 Crate Digger VST.  It keeps upstream's MIT sources and audio engine, adds one
@@ -42,7 +42,7 @@ def patch(root: Path) -> None:
         "name": NAME,
         "uid": UID,
         "format": "vst2",
-        "description": "Single-record digging on MPC; adapted from sd88me Crate Digger.",
+        "description": "Retro MPC digging and stereo WAV sampling; based on MIT Crate Digger audio engine.",
         "url": "https://github.com/scottaajpn-netizen/digger",
     })
     meta_path.write_text(json.dumps(meta, indent=2) + "\n")
@@ -57,10 +57,26 @@ def patch(root: Path) -> None:
     params["params"].append({"key": "start_track", "name": "Back to Start", "type": "trigger"})
     for k in range(32):
         params["params"].append({"key": f"wave_{k:02d}", "name": f"Waveform {k+1}", "type": "level"})
+    # V3 appends only; V1 and V2 indices remain stable for existing MPC projects.
+    new_actions = [
+        ("prev_track", "Previous Record", "trigger"),
+        ("capture_rec", "Capture / Stop", "trigger"),
+        ("mark_in", "Mark In / Rec", "trigger"),
+        ("mark_out", "Mark Out / Save", "trigger"),
+        ("save_last_30", "Save Last 30s", "trigger"),
+        ("capture_status", "Capture Status", "readout"),
+    ]
+    for key, label, typ in new_actions:
+        params["params"].append({"key": key, "name": label, "type": typ})
     params_path.write_text(json.dumps(params, indent=2, ensure_ascii=False) + "\n")
-    lock_path.write_text("\n".join(old_lock + ["next_track", "start_track"] + [f"wave_{k:02d}" for k in range(32)]) + "\n")
+    lock_path.write_text("\n".join(
+        old_lock + ["next_track", "start_track"] + [f"wave_{k:02d}" for k in range(32)]
+        + [k for k, _, _ in new_actions]) + "\n")
 
     cpp = cpp_path.read_text()
+    cpp = replace_once(cpp, '#include "varispeed.h"\n',
+                       '#include "varispeed.h"\n#include "sukotto_capture.h"\n',
+                       "capture class include")
     cpp = replace_once(
         cpp,
         "    int page = 0;\n",
@@ -68,7 +84,11 @@ def patch(root: Path) -> None:
         "    bool sukottoAutoPlay = false; // start first result when a new dig completes\n"
         "    bool sukottoSawSearch = false; // avoid replaying an old result after SEARCH\n"
         "    unsigned char sukottoWave[32] = {}; // cached, progressive track peak envelope\n"
-        "    int sukottoWaveResult = -1;\n",
+        "    int sukottoWaveResult = -1;\n"
+        "    struct SukottoRecord { std::string url, provider, title, duration; };\n"
+        "    std::vector<SukottoRecord> sukottoHistory;\n"
+        "    int sukottoHistoryAt = -1, sukottoCurrentSearchIndex = -1, sukottoTrackSerial = 0;\n"
+        "    std::string sukottoNowPlaying, sukottoDuration, sukottoCaptureStatus = \"READY / WAITING FOR AUDIO\";\n",
         "Engine state",
     )
     cpp = replace_once(
@@ -77,26 +97,37 @@ def patch(root: Path) -> None:
         "    p->page = 0;\n"
         "    p->sukottoAutoPlay = true;\n"
         "    p->sukottoSawSearch = false;\n"
+        "    p->sukottoCurrentSearchIndex = -1;\n"
         "    p->searched_source = src;\n",
         "do_search",
     )
     cpp = replace_once(
         cpp,
         "        else if (i == P_PAGE_PREV || i == P_PAGE_NEXT)\n",
-        """        else if (i == P_START_TRACK)
+        """        else if (i == P_PREV_TRACK)
+        {
+            // Recall even after NEW DIG changed the search results.
+            if (p->sukottoHistoryAt > 0)
+                sukotto_restore_history(p, p->sukottoHistoryAt - 1);
+        }
+        else if (i == P_START_TRACK)
         {
             if (!core_get(p, "stream_url").empty())
                 core_set(p, "seek_to_seconds", "0");
         }
         else if (i == P_NEXT_TRACK)
         {
-            // One press means one NEW record, not an eight-item results page.
-            const int n = result_count(p);
-            if (n <= 0) do_search(p, false);
+            if (p->sukottoHistoryAt >= 0 &&
+                p->sukottoHistoryAt + 1 < (int)p->sukottoHistory.size())
+            {
+                sukotto_restore_history(p, p->sukottoHistoryAt + 1);
+            }
             else
             {
-                int next = current_result(p) + 1;
-                if (next >= n) do_search(p, false);  // a fresh random crate
+                // Continue the last search; when exhausted dig a fresh crate.
+                int next = p->sukottoCurrentSearchIndex + 1;
+                const int n = result_count(p);
+                if (n <= 0 || next >= n) do_search(p, false);
                 else
                 {
                     while (next < n && !play_result(p, next)) ++next;
@@ -129,15 +160,16 @@ def patch(root: Path) -> None:
             // Build the waveform gradually from streamed audio already heard.
             // No audio-thread allocation or network prefetch required.
             {
-                const int current = current_result(&e_);
+                const int current = e_.sukottoTrackSerial;
                 if (current != e_.sukottoWaveResult)
                 {
                     std::memset(e_.sukottoWave, 0, sizeof(e_.sukottoWave));
                     e_.sukottoWaveResult = current;
+                    capture_.command(SukottoCapture::CLEAR); // prevent cross-record samples
                 }
-                if (current >= 0 && core_get(&e_, "stream_status") == "streaming")
+                if (current > 0 && core_get(&e_, "stream_status") == "streaming")
                 {
-                    const int duration = clock_seconds(core_get_idx(&e_, "search_result_duration_%d", current));
+                    const int duration = clock_seconds(e_.sukottoDuration);
                     const int at = clock_seconds(core_get(&e_, "playback_time"));
                     if (duration > 0 && at >= 0 && at <= duration)
                     {
@@ -162,98 +194,127 @@ def patch(root: Path) -> None:
         '            return lamps(i == P_LEVEL_L ? peakL_.load() : peakR_.load());\n',
         "progressive waveform level readout",
     )
+    # History captures the source URI before a new DIG overwrites the result list.
+    cpp = replace_once(
+        cpp,
+        '    core_set(p, "cratedig_result_index", s);\n    return true;\n',
+        """    core_set(p, "cratedig_result_index", s);
+    Plugin::SukottoRecord record {
+        url, prov.empty() ? "youtube" : prov,
+        core_get_idx(p, "search_result_title_%d", idx),
+        core_get_idx(p, "search_result_duration_%d", idx)
+    };
+    if (p->sukottoHistoryAt + 1 < (int)p->sukottoHistory.size())
+        p->sukottoHistory.erase(p->sukottoHistory.begin() + p->sukottoHistoryAt + 1,
+                                p->sukottoHistory.end());
+    p->sukottoHistory.push_back(record);
+    if (p->sukottoHistory.size() > 12) p->sukottoHistory.erase(p->sukottoHistory.begin());
+    p->sukottoHistoryAt = (int)p->sukottoHistory.size() - 1;
+    p->sukottoCurrentSearchIndex = idx;
+    p->sukottoNowPlaying = record.title;
+    p->sukottoDuration = record.duration;
+    ++p->sukottoTrackSerial;
+    return true;
+""", "play_result appends history",
+    )
+    cpp = replace_once(
+        cpp,
+        "static int current_result(Plugin *p) {\n",
+        """static bool sukotto_restore_history(Plugin *p, int i) {
+    if (i < 0 || i >= (int)p->sukottoHistory.size()) return false;
+    const auto rec = p->sukottoHistory[(size_t)i];
+    if (rec.url.empty()) return false;
+    p->hold = p->sync;
+    p->sync_started = false;
+    core_set(p, "hold_start", p->hold ? "1" : "0");
+    core_set(p, "stream_provider", rec.provider.c_str());
+    core_set(p, "stream_url", rec.url.c_str());
+    core_set(p, "cratedig_result_index", "-1");
+    p->sukottoHistoryAt = i;
+    p->sukottoNowPlaying = rec.title;
+    p->sukottoDuration = rec.duration;
+    ++p->sukottoTrackSerial;
+    return true;
+}
+static int current_result(Plugin *p) {
+""", "history restore helper",
+    )
+    cpp = replace_once(
+        cpp,
+        '        if (i == P_NOW_PLAYING) {\n            int c = current_result(p);\n',
+        '        if (i == P_CAPTURE_STATUS) return p->sukottoCaptureStatus;\n'
+        '        if (i == P_NOW_PLAYING) {\n'
+        '            if (!p->sukottoNowPlaying.empty()) return p->sukottoNowPlaying;\n'
+        '            int c = current_result(p);\n',
+        "history / capture status readout",
+    )
+    cpp = replace_once(
+        cpp,
+        '        e_.rpos.store(r + used);\n',
+        '        capture_.push(l, rr, n); // lock-free; dedicated thread writes WAVs\n'
+        '        e_.rpos.store(r + used);\n',
+        "realtime PCM tap",
+    )
+    cpp = replace_once(
+        cpp,
+        '        else if (i == P_STOP) core_set(p, "stop_step", "trigger");\n',
+        """        else if (i == P_CAPTURE_REC) capture_.command(SukottoCapture::REC);
+        else if (i == P_MARK_IN) capture_.command(SukottoCapture::MARK_IN);
+        else if (i == P_MARK_OUT) capture_.command(SukottoCapture::MARK_OUT);
+        else if (i == P_SAVE_LAST_30) capture_.command(SukottoCapture::LAST_30);
+        else if (i == P_STOP) core_set(p, "stop_step", "trigger");
+""", "capture buttons",
+    )
+    cpp = replace_once(
+        cpp,
+        '            load_channels(&e_);\n',
+        """            load_channels(&e_);
+            switch (capture_.state()) {
+            case SukottoCapture::RECORDING:
+                e_.sukottoCaptureStatus = "REC  " + std::to_string(capture_.elapsedSeconds()) + "S / MARK OUT TO SAVE";
+                break;
+            case SukottoCapture::SAVED:
+                e_.sukottoCaptureStatus = "WAV SAVED / SUKOTTO SAMPLES";
+                break;
+            case SukottoCapture::DISK_ERROR:
+                e_.sukottoCaptureStatus = "SAVE ERROR / CHECK USB";
+                break;
+            case SukottoCapture::NOTHING_TO_SAVE:
+                e_.sukottoCaptureStatus = "NO AUDIO YET";
+                break;
+            case SukottoCapture::CAPTURE_LIMIT:
+                e_.sukottoCaptureStatus = "SAVED / 3 MIN LIMIT";
+                break;
+            case SukottoCapture::DROPPED_AUDIO:
+                e_.sukottoCaptureStatus = "REC / USB TOO SLOW";
+                break;
+            default:
+                e_.sukottoCaptureStatus = "READY / MARK IN OR REC";
+            }
+""", "live recorder status",
+    )
+    cpp = replace_once(
+        cpp,
+        '    std::atomic<float> peakL_{0.0f}, peakR_{0.0f};\n',
+        '    std::atomic<float> peakL_{0.0f}, peakR_{0.0f};\n'
+        '    SukottoCapture capture_{mpc::pluginFolder()};\n',
+        "capture member",
+    )
+    cpp = replace_once(
+        cpp,
+        '        if (coverThread_.joinable()) coverThread_.join();\n',
+        '        if (coverThread_.joinable()) coverThread_.join();\n'
+        '        capture_.shutdown();\n',
+        "capture cleanup",
+    )
     cpp_path.write_text(cpp)
 
-    # Reuse upstream's existing skin sprites, controls, and vintage faceplate.
-    # A single tab replaces PLAY/FILTERS/FIND and hides provider selection.
+    # A custom Sukotto facade, controls and palette replace Crate Digger's artwork.
     skin = skin_path.read_text()
     marker = "\ndef main():\n"
     if skin.count(marker) != 1:
         raise RuntimeError("Upstream TUI generator has changed")
-    new_skin = r'''
-# ---- Sukotto one-record screen ------------------------------------------------
-def sukotto_wave_strip():
-    # Audio amplitude, not an invented full-track analysis: columns fill as the stream plays.
-    img = Image.new("RGBA", (20, 62 * 11), (0, 0, 0, 0))
-    for level in range(11):
-        sp = Sprite(20, 62)
-        sp.r((9, 28, 11, 34), 1, fill=(39, 112, 49, 190))
-        if level:
-            half = int(3 + level * 2.4)
-            sp.r((6, 31 - half, 14, 31 + half), 3, fill=(8, 38, 14, 255))
-            sp.r((7, 31 - half, 9, 31 + half), 2, fill=(16, 83, 23, 255))
-        img.paste(sp.image(), (0, level * 62))
-    return save(img, "sukotto_wave_strip.png")
-
-
-def build_sukotto():
-    c = base_canvas("SUKOTTO DIGGER")
-    p = Page("DIG", 0)
-    M.lcd(c, (40, 82, 1240, 430))
-    M.lt(c, (75, 115), "NOW PLAYING", 13, dim=True)
-    p.lcd_text("now_playing", 78, 167, 940, size=29, h=48)
-    M.lt(c, (1050, 117), "TIME", 12, dim=True)
-    p.lcd_text("time", 1061, 168, 135, size=25, h=38)
-
-    M.lt(c, (75, 220), "WAVEFORM  /  HEARD SECTIONS", 12, dim=True)
-    strip = sukotto_wave_strip()
-    for k in range(32):
-        x = 83 + k * 34
-        p.kids.append(entry("Wave %02d" % (k + 1), "Image",
-                            {"version": 2, "imageType": "FilmStrip", "colour": "0",
-                             "image": strip, "numFrames": 11, "handleName": "Data"},
-                            "%d 236 20 62" % x, remap=P("wave_%02d" % k)))
-
-    M.lt(c, (75, 323), "STATUS", 12, dim=True)
-    p.lcd_text("status", 75, 356, 750, size=23, h=34)
-    M.lt(c, (75, 389), "DIGGING", 12, dim=True)
-    p.lcd_text("search_status", 75, 411, 1120, size=17, h=32)
-
-    M.brushed(c, (40, 440, 1240, 544))
-    M.bracket(c, 65, 1212, 451, "LISTEN  /  DISCOVER")
-    p.key("start_track", "TO START", "cream", 155, 497, 150, 56, size=13)
-    p.key("play_pause", "PLAY / PAUSE", "cream", 365, 497, 190, 56, size=13)
-    p.key("next_track", "NEXT RECORD", "red", 650, 497, 255, 66, size=19)
-    p.key("search", "NEW DIG", "cream", 938, 497, 180, 56, size=14)
-    p.key("transport_sync", "SYNC", "cream", 1132, 497, 122, 56, size=13, toggle=True, lamp="amber")
-
-    M.brushed(c, (40, 548, 1240, 616))
-    for name, x in (("genre", 175), ("decade", 478), ("region", 781), ("country", 1084)):
-        M.lt(c, (x, 558), name.upper(), 11, dim=True)
-        p.lcd_text(name, x - 88, 589, 176, size=18, h=28,
-                   just="horizontallyCentred verticallyCentred", colour="ff202326")
-        arrow(p, name + "_prev", "◄", x - 115, 589, w=26, h=24, size=12, pad=5)
-        arrow(p, name + "_next", "►", x + 115, 589, w=26, h=24, size=12, pad=5)
-
-    add_master(p)
-    p.qgroup((40, 440, 1240, 544), ["start_track", "play_pause", "next_track", "search"])
-    p.qgroup((40, 548, 1240, 616), ["genre", "decade", "region", "country"])
-    p.qgroup((700, 6, 1240, 78), ["gain", "transport_sync", "rewind_15", "forward_15"])
-    return p, c
-
-
-def main():
-    if os.path.isdir(OUT):
-        shutil.rmtree(OUT)
-    os.makedirs(OUT)
-    p, c = build_sukotto()
-    tab = p.tab(save(c.im.resize((1280, 628), Image.LANCZOS).convert("RGB"), "bg_sukotto.png"))
-    if "--preview" in sys.argv:
-        preview([p], [tab])
-    tui = {"pageData": {"version": 1,
-                        "componentDefinitions": {"version": 2, "importFiles": [],
-                                                 "localComponentDefinitions": overlay_defs() + DEFS},
-                        "replacementStrings": [],
-                        "info": {"version": 1, "type": "CompleteDescription"},
-                        "tabs": [tab]}}
-    open(os.path.join(OUT, "TUI.json"), "w").write(dump(tui) + "\n")
-    open(os.path.join(OUT, "Q-Links.json"), "w").write(dump(qlinks_for([p])) + "\n")
-    print("Sukotto MPC skin: one tab, one record, NEXT RECORD and NEW DIG")
-
-
-if __name__ == "__main__":
-    main()
-'''
+    new_skin = (Path(__file__).resolve().parent / "skin_v3.py").read_text()
     skin_path.write_text(skin.split(marker, 1)[0] + "\n" + new_skin.lstrip("\n"))
 
     build = build_path.read_text()
