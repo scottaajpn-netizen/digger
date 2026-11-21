@@ -456,15 +456,47 @@ export function SamplingMode() {
         <details className="sampling-filters">
           <summary>Filtres de digging <span>{filters.maxViews ? `≤ ${formatViews(filters.maxViews)} vues` : "sans limite de vues"}</span></summary>
           <div className="sampling-filter-grid">
-            <label>
-              <span>Genre / terrain</span>
-              <select
-                value={draft.genre || ""}
-                onChange={event => setDraft(previous => ({ ...previous, genre: event.target.value }))}
-              >
-                {genres.map(value => <option key={value || "all"} value={value}>{value || "Tous les genres"}</option>)}
-              </select>
-            </label>
+            <div className="sampling-multi-field sampling-span-2">
+              <span className="sampling-field-title">Genres — inclure ou exclure</span>
+              <details className="sampling-multi-dropdown">
+                <summary>
+                  {selectedGenres.length || excludedGenres.length
+                    ? selectedGenres.length + " inclus · " + excludedGenres.length + " exclus"
+                    : "Tous les genres"}
+                  <span>Choisir des genres</span>
+                </summary>
+                <div className="sampling-multi-options">
+                  <p className="sampling-multi-help">Pour chaque genre : inclure (+), exclure (−), ou laisser libre. Jusqu’à {MAX_SAMPLING_CHOICES} de chaque.</p>
+                  {genres.map(value => (
+                    <div className="sampling-genre-row" key={value}>
+                      <span>{value}</span>
+                      <div role="group" aria-label={"Filtre " + value}>
+                        <button
+                          type="button"
+                          className={selectedGenres.includes(value) ? "is-include" : ""}
+                          aria-pressed={selectedGenres.includes(value)}
+                          disabled={!selectedGenres.includes(value) && selectedGenres.length >= MAX_SAMPLING_CHOICES}
+                          onClick={() => toggleGenre(value, "include")}
+                        >+ Inclure</button>
+                        <button
+                          type="button"
+                          className={excludedGenres.includes(value) ? "is-exclude" : ""}
+                          aria-pressed={excludedGenres.includes(value)}
+                          disabled={!excludedGenres.includes(value) && excludedGenres.length >= MAX_SAMPLING_CHOICES}
+                          onClick={() => toggleGenre(value, "exclude")}
+                        >− Exclure</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+              {(selectedGenres.length > 0 || excludedGenres.length > 0) && (
+                <div className="sampling-choice-chips" aria-label="Genres sélectionnés">
+                  {selectedGenres.map(value => <button type="button" key={"include-" + value} onClick={() => toggleGenre(value, "include")}>+ {value} ×</button>)}
+                  {excludedGenres.map(value => <button type="button" className="excluded" key={"exclude-" + value} onClick={() => toggleGenre(value, "exclude")}>− {value} ×</button>)}
+                </div>
+              )}
+            </div>
             <label>
               <span>Mots-clés</span>
               <input
