@@ -302,9 +302,11 @@ static int current_result(Plugin *p) {
     )
     cpp = replace_once(
         cpp,
-        '        if (coverThread_.joinable()) coverThread_.join();\n',
         '        if (coverThread_.joinable()) coverThread_.join();\n'
-        '        capture_.shutdown();\n',
+        '        if (e_.core) e_.api->destroy_instance(e_.core);\n',
+        '        if (coverThread_.joinable()) coverThread_.join();\n'
+        '        capture_.shutdown();\n'
+        '        if (e_.core) e_.api->destroy_instance(e_.core);\n',
         "capture cleanup",
     )
     cpp_path.write_text(cpp)
