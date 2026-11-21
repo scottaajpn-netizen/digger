@@ -617,6 +617,7 @@ display:grid;place-items:center;border-right:1px solid #3c4138;position:relative
 .sampling-filter-actions button,.sampling-error button{background:var(--orange);border:0;color:#251e16;padding:10px 13px;font-weight:700}
 .sampling-filter-actions button.secondary{background:transparent;color:#c1c8ba;border:1px solid #41483d}
 .sampling-filter-note{padding:0 16px 16px;margin:0;color:#737c70;font-size:9px;line-height:1.6}
+.sampling-filter-grid .sampling-instrument-note{font-size:10px;line-height:1.5;color:#9ba995;font-weight:400;letter-spacing:0}
 .sampling-error,.sampling-loading{border:1px solid #4a4134;background:#1b1815;padding:24px;margin:20px 0;text-align:center}
 .sampling-error strong,.sampling-loading strong{display:block;font-size:18px;margin-bottom:8px}
 .sampling-error p,.sampling-loading p{color:var(--muted);line-height:1.6}
