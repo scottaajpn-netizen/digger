@@ -87,11 +87,21 @@ export function instrumentMetadataEvidence(
   const title = video.title;
   const description = (video.description || "").slice(0, 2500);
   const negated = words.some(word =>
-    matchesPhrase(title, "no " + word) || matchesPhrase(title, "without " + word) ||
-    matchesPhrase(title, "sans " + word),
+    [title, description].some(text =>
+      matchesPhrase(text, "no " + word) ||
+      matchesPhrase(text, "without " + word) ||
+      matchesPhrase(text, "sans " + word),
+    ),
   );
   if (negated) return null;
-  if (words.some(word => matchesPhrase(title, word))) return "title";
-  if (words.some(word => matchesPhrase(description, word))) return "description";
+
+  // Rhodes is also a performer name. "Rhodes - Song Title" alone is not
+  // instrument evidence; a qualified piano reference must corroborate it.
+  const terms = preset?.id === "rhodes" && /^rhodes\s*[-–—|:]/i.test(fold(title))
+    ? words.filter(word => fold(word) !== "rhodes")
+    : words;
+
+  if (terms.some(word => matchesPhrase(title, word))) return "title";
+  if (terms.some(word => matchesPhrase(description, word))) return "description";
   return null;
 }
