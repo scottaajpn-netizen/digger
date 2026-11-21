@@ -107,9 +107,8 @@ export function normalizeSamplingChoices(value: unknown, maxLength = 60): string
   const seen = new Set<string>();
   for (const candidate of value) {
     if (typeof candidate !== "string") continue;
-    // YouTube uses | and - as query operators; never let user-controlled options
-    // inject them into the include/exclude expression.
-    const clean = candidate.replace(/[|"\\\r\n]/g, " ").trim().slice(0, maxLength);
+    // YouTube uses | as OR and - as NOT; keep list values as plain text.
+    const clean = candidate.replace(/[|"\r\n\\]/g, " ").trim().slice(0, maxLength);
     const key = clean.toLocaleLowerCase();
     if (!clean || seen.has(key)) continue;
     seen.add(key);
@@ -120,8 +119,8 @@ export function normalizeSamplingChoices(value: unknown, maxLength = 60): string
 }
 
 function searchTerm(value: string): string {
-  const clean = value.replace(/[|"\\\r\n]/g, " ").replace(/\\s+/g, " ").trim();
-  return clean.includes(" ") ? `"${clean}"` : clean;
+  const clean = value.replace(/[|"\r\n\\]/g, " ").replace(/\s+/g, " ").trim();
+  return clean.includes(" ") ? '"' + clean + '"' : clean;
 }
 
 function alternatives(values: string[]): string {
@@ -133,12 +132,11 @@ function genreExcludedInMetadata(video: { title: string; description?: string },
   const title = video.title.toLocaleLowerCase();
   const description = (video.description || "").slice(0, 350).toLocaleLowerCase();
   return exclusions.some(genre => {
-    const token = genre.toLocaleLowerCase().replace(/[.*+?^${}()|[\\]\\]/g, "\\const randomItem = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)];");
-    const word = new RegExp(`(^|[^\\p{L}\\p{N}])${token}(?=$|[^\\p{L}\\p{N}])`, "iu");
-    // Reject explicit genre in the title, or an explicitly labelled genre tag
-    // in the description. Mere discussion of a style is not reliable metadata.
-    return word.test(title) || /(?:^|[\\n;])\\s*(?:genre|style)\\s*:/iu.test(description) &&
-      word.test(description.match(/(?:^|[\\n;])\\s*(?:genre|style)\\s*:[^\\n]{0,100}/iu)?.[0] || "");
+    const token = genre.toLocaleLowerCase().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const word = new RegExp('(^|[^\\p{L}\\p{N}])' + token + '(?=$|[^\\p{L}\\p{N}])', "iu");
+    // Only explicit genre labels, not discussions like "sampled by hip hop producers".
+    const genreLabel = description.match(/(?:^|[\n;])\s*(?:genre|style)\s*:[^\n]{0,100}/iu)?.[0] || "";
+    return word.test(title) || word.test(genreLabel);
   });
 }
 
