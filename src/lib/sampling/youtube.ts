@@ -1,9 +1,16 @@
+import { MAX_SAMPLING_CHOICES } from "./choices";
+
 export type SamplingDuration = "any" | "short" | "medium" | "long";
 
 export interface SamplingFilters {
+  /** Legacy single selections remain readable for saved sessions. */
   genre?: string;
-  keywords?: string;
   country?: string;
+  /** Multiple include/exclude selections from Sampling V5. */
+  genres?: string[];
+  countries?: string[];
+  excludeGenres?: string[];
+  keywords?: string;
   instrument?: string;
   minDurationSeconds?: number;
   maxDurationSeconds?: number;
@@ -94,6 +101,45 @@ const clampInt = (value: number | undefined, min: number, max: number) =>
 
 const randomItem = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)];
 
+export function normalizeSamplingChoices(value: unknown, maxLength = 60): string[] {
+  if (!Array.isArray(value)) return [];
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of value) {
+    if (typeof candidate !== "string") continue;
+    // YouTube uses | as OR and - as NOT; keep list values as plain text.
+    const clean = candidate.replace(/[|"\r\n\\]/g, " ").trim().replace(/^-+\s*/, "").slice(0, maxLength);
+    const key = clean.toLocaleLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    result.push(clean);
+    if (result.length >= MAX_SAMPLING_CHOICES) break;
+  }
+  return result;
+}
+
+function searchTerm(value: string): string {
+  const clean = value.replace(/[|"\r\n\\]/g, " ").replace(/\s+/g, " ").trim();
+  return clean.includes(" ") ? '"' + clean + '"' : clean;
+}
+
+function alternatives(values: string[]): string {
+  // YouTube Data API search.q documents | as an OR operator.
+  return values.map(searchTerm).join("|");
+}
+
+function genreExcludedInMetadata(video: { title: string; description?: string }, exclusions: string[]): boolean {
+  const title = video.title.toLocaleLowerCase();
+  const description = (video.description || "").slice(0, 350).toLocaleLowerCase();
+  return exclusions.some(genre => {
+    const token = genre.toLocaleLowerCase().replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const word = new RegExp('(^|[^\\p{L}\\p{N}])' + token + '(?=$|[^\\p{L}\\p{N}])', "iu");
+    // Only explicit genre labels, not discussions like "sampled by hip hop producers".
+    const genreLabel = description.match(/(?:^|[\n;])\s*(?:genre|style)\s*:[^\n]{0,100}/iu)?.[0] || "";
+    return word.test(title) || word.test(genreLabel);
+  });
+}
+
 export function normalizeSamplingFilters(raw: SamplingFilters): SamplingFilters {
   const currentYear = new Date().getFullYear();
   const yearMin = clampInt(raw.yearMin, 1900, currentYear);
@@ -102,9 +148,17 @@ export function normalizeSamplingFilters(raw: SamplingFilters): SamplingFilters 
   const maxViews = clampInt(raw.maxViews, 0, 10_000_000_000);
   const minDuration = clampInt(raw.minDurationSeconds, 0, 7200);
   const maxDuration = clampInt(raw.maxDurationSeconds, 0, 7200);
+  const genres = normalizeSamplingChoices(raw.genres, 80);
+  const countries = normalizeSamplingChoices(raw.countries, 60);
+  const excludedGenres = normalizeSamplingChoices(raw.excludeGenres, 80).filter(
+    value => !genres.some(genre => genre.toLocaleLowerCase() === value.toLocaleLowerCase()),
+  );
 
   return {
     genre: typeof raw.genre === "string" ? raw.genre.trim().slice(0, 80) : undefined,
+    genres,
+    countries,
+    excludeGenres: excludedGenres,
     keywords: typeof raw.keywords === "string" ? raw.keywords.trim().slice(0, 120) : undefined,
     country: typeof raw.country === "string" ? raw.country.trim().slice(0, 60) : undefined,
     instrument: typeof raw.instrument === "string" ? raw.instrument.trim().slice(0, 60) : undefined,
@@ -126,12 +180,18 @@ export function normalizeSamplingFilters(raw: SamplingFilters): SamplingFilters 
 
 export function buildSamplingQuery(filters: SamplingFilters, relaxed = false) {
   const parts: string[] = [];
-  if (filters.genre) parts.push(filters.genre);
+  const genres = filters.genres?.length ? filters.genres : filters.genre ? [filters.genre] : [];
+  const countries = filters.countries?.length ? filters.countries : filters.country ? [filters.country] : [];
+  const excluded = filters.excludeGenres || [];
+  if (genres.length) parts.push(alternatives(genres));
+  if (countries.length) parts.push(alternatives(countries));
   if (filters.keywords) parts.push(filters.keywords);
-  if (filters.country) parts.push(filters.country);
   if (filters.instrument) parts.push(filters.instrument);
 
-  if (!filters.genre && !filters.keywords) parts.push(randomItem(genericMusicTerms));
+  if (!genres.length && !filters.keywords) {
+    const possible = genericMusicTerms.filter(term => !genreExcludedInMetadata({ title: term }, excluded));
+    if (possible.length) parts.push(randomItem(possible));
+  }
 
   // For the default sample hunt, search for old recordings rather than the
   // latest content containing generic words such as "gospel library music".
@@ -154,6 +214,8 @@ export function buildSamplingQuery(filters: SamplingFilters, relaxed = false) {
   // Helpful exclusions at search time; all candidates are still checked after
   // the API returns them. Keep these broad exclusions out of user-selected terms.
   parts.push("-shorts", "-reaction", "-tutorial", "-suno", "-udio");
+  // AND NOT each excluded genre; spaces are quoted so "hip hop" is one phrase.
+  for (const genre of excluded) parts.push(`-${searchTerm(genre)}`);
   return parts.filter(Boolean).join(" ").trim();
 }
 
@@ -238,6 +300,10 @@ export function samplingRejectionReason(
   if (filters.excludeAI !== false &&
     /\b(?:ai[\s-]*(?:generated|made|music|song|cover|vocals?)|generated\s+(?:with|by)\s+(?:ai|suno|udio)|suno(?:\.ai)?|udio(?:\.com)?|synthetic\s+vocals?)\b/i.test([title, description].join(" "))) {
     return "ai-suspected";
+  }
+
+  if (filters.excludeGenres?.length && genreExcludedInMetadata(video, filters.excludeGenres)) {
+    return "excluded-genre";
   }
 
   // High-volume SEO/promotional titles often masquerade as rare recordings.

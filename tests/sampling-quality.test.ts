@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   archivalEvidenceScore,
   buildSamplingQuery,
+  normalizeSamplingChoices,
   normalizeSamplingFilters,
   samplingRejectionReason,
   samplingPlayableInRegion,
@@ -200,4 +201,77 @@ test("region restriction excludes videos blocked in France before showing the pl
   assert.equal(samplingPlayableInRegion({ allowed: ["US", "DE"] }), false);
   assert.equal(samplingPlayableInRegion({ allowed: ["FR", "US"] }), true);
   assert.equal(samplingPlayableInRegion({ allowed: [] }), false);
+});
+
+test("multi-select normalization deduplicates and resolves include/exclude conflicts", () => {
+  const normalized = normalizeSamplingFilters({
+    genres: ["soul", "funk", "Soul"],
+    countries: ["Brazil", "Romania", "brazil"],
+    excludeGenres: ["hip hop", "metal", "FUNK"],
+  });
+  assert.deepEqual(normalized.genres, ["soul", "funk"]);
+  assert.deepEqual(normalized.countries, ["Brazil", "Romania"]);
+  assert.deepEqual(normalized.excludeGenres, ["hip hop", "metal"]);
+  assert.deepEqual(normalizeSamplingChoices(["jazz", "", 5, "jazz", "|rock", "-metal"]), ["jazz", "rock", "metal"]);
+  assert.equal(normalizeSamplingChoices(Array.from({ length: 20 }, (_, i) => "genre" + i)).length, 10);
+});
+
+test("many selected countries and genres form an OR search with explicit genre exclusions", () => {
+  const filter = normalizeSamplingFilters({
+    genres: ["soul", "jazz funk"],
+    countries: ["Brazil", "Moldova"],
+    excludeGenres: ["hip hop", "metal"],
+    archiveFocus: false,
+  });
+  const query = buildSamplingQuery(filter);
+  assert.match(query, /soul\|"jazz funk"/);
+  assert.match(query, /Brazil\|Moldova/);
+  assert.match(query, /-"hip hop"/);
+  assert.match(query, /-metal/);
+});
+
+test("excluded genres do not become random positive genre searches", () => {
+  const filters = normalizeSamplingFilters({ excludeGenres: ["funk", "soul"], archiveFocus: false });
+  for (let i = 0; i < 30; i++) {
+    const query = buildSamplingQuery(filters);
+    assert.doesNotMatch(query, /^(funk|soul)\b/i);
+  }
+});
+
+test("explicit exclusion rejects title or genre-labelled description, not sample references", () => {
+  const filters = normalizeSamplingFilters({ excludeGenres: ["hip hop"], archiveFocus: false });
+  assert.equal(samplingRejectionReason({
+    title: "Rare Hip Hop Track 1990",
+    description: "",
+    durationSeconds: 220,
+  }, filters), "excluded-genre");
+  assert.equal(samplingRejectionReason({
+    title: "Vintage Funk 1974",
+    description: "Genre: Hip Hop",
+    durationSeconds: 220,
+  }, filters), "excluded-genre");
+  assert.equal(samplingRejectionReason({
+    title: "Funk Break 1974",
+    description: "Often sampled by hip hop producers",
+    durationSeconds: 220,
+  }, filters), null);
+});
+
+test("one genre, one country and legacy single selections still work", () => {
+  const modern = buildSamplingQuery(normalizeSamplingFilters({ genres: ["jazz"], countries: ["France"] }));
+  assert.match(modern, /jazz/);
+  assert.match(modern, /France/);
+  const legacy = buildSamplingQuery(normalizeSamplingFilters({ genre: "soul", country: "Turkey" }));
+  assert.match(legacy, /soul/);
+  assert.match(legacy, /Turkey/);
+});
+
+test("excluding jazz also avoids a random jazz-funk default, without confusing trap and rap", () => {
+  const settings = normalizeSamplingFilters({ excludeGenres: ["jazz", "rock", "rap"], archiveFocus: false });
+  for (let i = 0; i < 30; i++) {
+    const query = buildSamplingQuery(settings);
+    assert.doesNotMatch(query, /^(?:jazz funk|psychedelic rock)\b/i);
+  }
+  const rapOnly = normalizeSamplingFilters({ excludeGenres: ["rap"], archiveFocus: false });
+  assert.equal(samplingRejectionReason({ title: "Trap 1983", durationSeconds: 250 }, rapOnly), null);
 });

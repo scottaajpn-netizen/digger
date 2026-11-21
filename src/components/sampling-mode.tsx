@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SamplingFilters, SamplingVideo } from "@/lib/sampling/youtube";
+import { MAX_SAMPLING_CHOICES } from "@/lib/sampling/choices";
 import { samplingPlaybackAction } from "@/lib/sampling/playback";
 import { SamplingYouTubePlayer } from "@/components/sampling-youtube-player";
 
@@ -25,9 +26,10 @@ type SamplingProfile = {
 const STORAGE_KEY = "digger.sampling.v1";
 
 const DEFAULT_FILTERS: SamplingFilters = {
-  genre: "",
+  genres: [],
+  excludeGenres: [],
+  countries: [],
   keywords: "",
-  country: "",
   instrument: "",
   minDurationSeconds: 90,
   maxDurationSeconds: 480,
@@ -41,17 +43,28 @@ const DEFAULT_FILTERS: SamplingFilters = {
 };
 
 const genres = [
-  "",
   "soul",
   "funk",
   "jazz",
   "jazz funk",
+  "jazz fusion",
+  "blues",
+  "neo soul",
   "boogie",
   "disco",
   "house",
+  "deep house",
+  "garage",
+  "breakbeat",
+  "ambient",
+  "lo-fi",
+  "trap",
   "hip hop",
   "r&b",
   "gospel",
+  "rock",
+  "metal",
+  "classical",
   "brazilian",
   "afrobeat",
   "reggae dub",
@@ -60,6 +73,8 @@ const genres = [
   "psychedelic",
   "folk",
   "electronic",
+  "synthwave",
+  "world music",
 ] as const;
 
 
@@ -120,6 +135,15 @@ const countryGroups = [
   ] },
 ] as const;
 
+function displayCountryName(value: string): string {
+  for (const group of countryGroups) {
+    for (const [label, code] of group.countries) {
+      if (code === value) return label;
+    }
+  }
+  return value;
+}
+
 const emptyProfile = (): SamplingProfile => ({
   version: 1,
   historyIds: [],
@@ -148,7 +172,7 @@ function numericInput(value: number | undefined) {
 export function SamplingMode() {
   const [filters, setFilters] = useState<SamplingFilters>(DEFAULT_FILTERS);
   const [draft, setDraft] = useState<SamplingFilters>(DEFAULT_FILTERS);
-  const [countrySelection, setCountrySelection] = useState("");
+  const [countrySearch, setCountrySearch] = useState("");
   const [customCountry, setCustomCountry] = useState("");
   const [profile, setProfile] = useState<SamplingProfile>(emptyProfile);
   const [pool, setPool] = useState<SamplingVideo[]>([]);
@@ -186,6 +210,55 @@ export function SamplingMode() {
   }, [profile, ready]);
 
   const current = pool[index];
+  const selectedCountries = draft.countries || [];
+  const selectedGenres = draft.genres || [];
+  const excludedGenres = draft.excludeGenres || [];
+
+  function toggleCountry(value: string) {
+    setDraft(previous => {
+      const selected = previous.countries || [];
+      const next = selected.includes(value)
+        ? selected.filter(item => item !== value)
+        : selected.length < MAX_SAMPLING_CHOICES ? [...selected, value] : selected;
+      return { ...previous, country: undefined, countries: next };
+    });
+  }
+
+  function addCustomCountry() {
+    const value = customCountry.trim().slice(0, 60);
+    if (!value) return;
+    setDraft(previous => {
+      const selected = previous.countries || [];
+      if (selected.some(item => item.toLowerCase() === value.toLowerCase()) || selected.length >= MAX_SAMPLING_CHOICES) return previous;
+      return { ...previous, country: undefined, countries: [...selected, value] };
+    });
+    setCustomCountry("");
+  }
+
+  function toggleGenre(value: string, mode: "include" | "exclude") {
+    setDraft(previous => {
+      const included = previous.genres || [];
+      const excluded = previous.excludeGenres || [];
+      if (mode === "include") {
+        const already = included.includes(value);
+        if (!already && included.length >= MAX_SAMPLING_CHOICES) return previous;
+        return {
+          ...previous,
+          genre: undefined,
+          genres: already ? included.filter(item => item !== value) : [...included, value],
+          excludeGenres: excluded.filter(item => item !== value),
+        };
+      }
+      const already = excluded.includes(value);
+      if (!already && excluded.length >= MAX_SAMPLING_CHOICES) return previous;
+      return {
+        ...previous,
+        genre: undefined,
+        genres: included.filter(item => item !== value),
+        excludeGenres: already ? excluded.filter(item => item !== value) : [...excluded, value],
+      };
+    });
+  }
 
   useEffect(() => {
     autoSkippedVideo.current = null;
@@ -308,9 +381,12 @@ export function SamplingMode() {
   function applyFilters() {
     const nextFilters: SamplingFilters = {
       ...draft,
-      genre: draft.genre?.trim() || undefined,
+      genre: undefined,
+      genres: selectedGenres,
+      excludeGenres: excludedGenres,
+      countries: selectedCountries,
       keywords: draft.keywords?.trim() || undefined,
-      country: draft.country?.trim() || undefined,
+      country: undefined,
       instrument: draft.instrument?.trim() || undefined,
       minViews: draft.minViews === undefined ? undefined : Math.max(0, draft.minViews),
       maxViews: draft.maxViews === undefined ? undefined : Math.max(0, draft.maxViews),
@@ -322,9 +398,9 @@ export function SamplingMode() {
   }
 
   function anything() {
-    const nextFilters: SamplingFilters = { duration: "any", archiveFocus: true, excludeShorts: true, excludeAI: true, excludeCompilations: true, minDurationSeconds: 90, maxDurationSeconds: 480 };
+    const nextFilters: SamplingFilters = { ...DEFAULT_FILTERS };
     setDraft(nextFilters);
-    setCountrySelection("");
+    setCountrySearch("");
     setCustomCountry("");
     setFilters(nextFilters);
     void loadPool(nextFilters);
@@ -390,15 +466,47 @@ export function SamplingMode() {
         <details className="sampling-filters">
           <summary>Filtres de digging <span>{filters.maxViews ? `≤ ${formatViews(filters.maxViews)} vues` : "sans limite de vues"}</span></summary>
           <div className="sampling-filter-grid">
-            <label>
-              <span>Genre / terrain</span>
-              <select
-                value={draft.genre || ""}
-                onChange={event => setDraft(previous => ({ ...previous, genre: event.target.value }))}
-              >
-                {genres.map(value => <option key={value || "all"} value={value}>{value || "Tous les genres"}</option>)}
-              </select>
-            </label>
+            <div className="sampling-multi-field sampling-span-2">
+              <span className="sampling-field-title">Genres — inclure ou exclure</span>
+              <details className="sampling-multi-dropdown">
+                <summary>
+                  {selectedGenres.length || excludedGenres.length
+                    ? selectedGenres.length + " inclus · " + excludedGenres.length + " exclus"
+                    : "Tous les genres"}
+                  <span>Choisir des genres</span>
+                </summary>
+                <div className="sampling-multi-options">
+                  <p className="sampling-multi-help">Pour chaque genre : inclure (+), exclure (−), ou laisser libre. Jusqu’à {MAX_SAMPLING_CHOICES} de chaque.</p>
+                  {genres.map(value => (
+                    <div className="sampling-genre-row" key={value}>
+                      <span>{value}</span>
+                      <div role="group" aria-label={"Filtre " + value}>
+                        <button
+                          type="button"
+                          className={selectedGenres.includes(value) ? "is-include" : ""}
+                          aria-pressed={selectedGenres.includes(value)}
+                          disabled={!selectedGenres.includes(value) && selectedGenres.length >= MAX_SAMPLING_CHOICES}
+                          onClick={() => toggleGenre(value, "include")}
+                        >+ Inclure</button>
+                        <button
+                          type="button"
+                          className={excludedGenres.includes(value) ? "is-exclude" : ""}
+                          aria-pressed={excludedGenres.includes(value)}
+                          disabled={!excludedGenres.includes(value) && excludedGenres.length >= MAX_SAMPLING_CHOICES}
+                          onClick={() => toggleGenre(value, "exclude")}
+                        >− Exclure</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+              {(selectedGenres.length > 0 || excludedGenres.length > 0) && (
+                <div className="sampling-choice-chips" aria-label="Genres sélectionnés">
+                  {selectedGenres.map(value => <button type="button" key={"include-" + value} onClick={() => toggleGenre(value, "include")}>+ {value} ×</button>)}
+                  {excludedGenres.map(value => <button type="button" className="excluded" key={"exclude-" + value} onClick={() => toggleGenre(value, "exclude")}>− {value} ×</button>)}
+                </div>
+              )}
+            </div>
             <label>
               <span>Mots-clés</span>
               <input
@@ -408,39 +516,72 @@ export function SamplingMode() {
                 onChange={event => setDraft(previous => ({ ...previous, keywords: event.target.value }))}
               />
             </label>
-            <label>
-              <span>Pays / scène (recherche indicative)</span>
-              <select
-                value={countrySelection}
-                onChange={event => {
-                  const choice = event.target.value;
-                  setCountrySelection(choice);
-                  setDraft(previous => ({ ...previous, country: choice === "__other__" ? customCountry : choice }));
-                }}
-              >
-                <option value="">Tous les pays</option>
-                {countryGroups.map(group => (
-                  <optgroup key={group.label} label={group.label}>
-                    {group.countries.map(([label, value]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </optgroup>
-                ))}
-                <option value="__other__">Autre pays / territoire…</option>
-              </select>
-              {countrySelection === "__other__" && (
-                <input
-                  aria-label="Autre pays ou territoire"
-                  value={customCountry}
-                  maxLength={60}
-                  placeholder="Précise le pays ou territoire"
-                  onChange={event => {
-                    setCustomCountry(event.target.value);
-                    setDraft(previous => ({ ...previous, country: event.target.value }));
-                  }}
-                />
+            <div className="sampling-multi-field sampling-span-2">
+              <span className="sampling-field-title">Pays / scènes — plusieurs possibles</span>
+              <details className="sampling-multi-dropdown">
+                <summary>
+                  {selectedCountries.length ? selectedCountries.length + " pays sélectionné(s)" : "Tous les pays"}
+                  <span>Choisir des pays</span>
+                </summary>
+                <div className="sampling-multi-options">
+                  <input
+                    type="search"
+                    aria-label="Rechercher un pays"
+                    value={countrySearch}
+                    placeholder="Rechercher un pays…"
+                    onChange={event => setCountrySearch(event.target.value)}
+                  />
+                  <div className="sampling-country-list">
+                    {countryGroups.map(group => {
+                      const matching = group.countries.filter(([label, value]) =>
+                        (label + " " + value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+                          .includes(countrySearch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())
+                      );
+                      return matching.length ? (
+                        <div key={group.label} className="sampling-country-group">
+                          <strong>{group.label}</strong>
+                          {matching.map(([label, value]) => (
+                            <label key={value}>
+                              <input
+                                type="checkbox"
+                                checked={selectedCountries.includes(value)}
+                                disabled={!selectedCountries.includes(value) && selectedCountries.length >= MAX_SAMPLING_CHOICES}
+                                onChange={() => toggleCountry(value)}
+                              />
+                              <span>{label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                  <div className="sampling-custom-country">
+                    <input
+                      value={customCountry}
+                      maxLength={60}
+                      aria-label="Autre pays ou territoire"
+                      placeholder="Pays ou territoire absent de la liste"
+                      onChange={event => setCustomCountry(event.target.value)}
+                      onKeyDown={event => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          addCustomCountry();
+                        }
+                      }}
+                    />
+                    <button type="button" disabled={!customCountry.trim() || selectedCountries.length >= MAX_SAMPLING_CHOICES} onClick={addCustomCountry}>Ajouter</button>
+                  </div>
+                  <p className="sampling-multi-help">Jusqu’à {MAX_SAMPLING_CHOICES} pays. Il s’agit de pistes de recherche, pas d’origines certifiées.</p>
+                </div>
+              </details>
+              {selectedCountries.length > 0 && (
+                <div className="sampling-choice-chips" aria-label="Pays sélectionnés">
+                  {selectedCountries.map(value => (
+                    <button type="button" key={value} onClick={() => toggleCountry(value)}>{displayCountryName(value)} ×</button>
+                  ))}
+                </div>
               )}
-            </label>
+            </div>
             <label>
               <span>Instrument (recherche indicative)</span>
               <input
