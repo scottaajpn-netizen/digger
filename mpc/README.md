@@ -1,76 +1,69 @@
-# Sukotto Digger — premier prototype MPC One Gen 1
+# Sukotto Digger V3 — MPC One Gen 1 / ARM32
 
-Ce dossier prépare une version EXPÉRIMENTALE de Sukotto Digger pour MPC One Gen 1 : un seul morceau à la fois, un bouton NEXT RECORD et une page tactile vintage.
+## Objet
 
-## Origine et sécurité
+Sukotto Digger adapte le moteur MIT de Crate Digger à une machine de digging et sampling. La V3 possède une façade originale inspirée des samplers 80–90s et des instruments de laboratoire : châssis beige/gris, écran phosphore, boutons physiques rouges et ambre.
 
-Cette adaptation s'appuie sur le code source open source MIT de [Crate Digger](https://github.com/sd88me/mpc-vst-cratedigger), écrit par sd88me. Elle conserve le moteur de recherche/streaming existant et produit une archive distincte du Crate Digger déjà installé. Les sources et les binaires tiers conservent leurs mentions de licence.
+Le plugin est indépendant de Crate Digger (identifiant VST SkDg). Ne jamais supprimer Crate Digger ni Morph FX pour installer Sukotto.
 
-- Nom du nouveau plugin : Sukotto Digger.
-- Identifiant VST distinct : SkDg.
-- Plateforme visée : ARMv7 (MPC One Gen 1, MPC OS 3.10.1 ou ultérieur).
-- Pas d'édition du firmware, du fichier MPC.settings ni d'accès root.
-- Ne pas remplacer Crate Digger ni Morph FX.
+## Commandes V3
 
-## Fonctions prévues en V1
+- NEW DIG : nouvelle recherche à partir des filtres genre, décennie, région, pays.
+- NEXT RECORD : morceau suivant, nouvelle recherche lorsque la liste est épuisée.
+- PREV : retrouver un des 12 morceaux précédents, y compris après une nouvelle recherche.
+- TO START / PLAY-PAUSE / SYNC : transport.
+- Waveform : niveaux constatés pendant l'écoute, pas analyse complète du morceau.
+- MARK IN : début de prise ; MARK OUT : fin, fermeture et sauvegarde WAV.
+- REC / STOP : alternative pour lancer et stopper une prise.
+- LAST 30 SEC : enregistrer jusqu'à 30 secondes d'audio tout juste entendu.
 
-- Une seule page tactile, pas d'onglets PLAY / FILTERS / FIND.
-- Un seul titre affiché en grand, sans liste de huit résultats.
-- NEXT RECORD : écoute le résultat suivant immédiatement ; après le dernier résultat, relance une recherche.
-- NEW DIG : effectue une nouvelle recherche et tente de lancer le premier titre lorsqu'elle se termine.
-- PLAY / PAUSE et SYNC pour le resampling.
-- Genre, décennie, région et pays visibles sur le même écran.
-- Q-Links pour la navigation principale.
+La capture se fait sur la sortie stéréo du plugin, avec tampon audio et thread d'écriture distinct : pas d'I/O USB dans le callback audio.
 
-Le moteur utilise pour cette V1 **Discogs comme source de découverte**, puis la résolution audio de Crate Digger. Il n'est pas encore l'agrégateur Digger multi-sources. Les filtres du Digger Web (instruments, pays multiples, exclusions, anti-compilations, anti-IA, obscurité) ne sont pas encore portés. Le préchargement du morceau suivant reste à développer.
+## Où retrouver les samples
 
-## Compilation avec GitHub Actions
+Dossier à la racine du support contenant le plugin :
 
-Les fichiers source de cette adaptation se trouvent dans mpc/patch_sukotto.py.
+    USB ou SD / Sukotto Samples / SUKOTTO_YYYYMMDD_HHMMSS_PID_N.wav
 
-La compilation expérimentale est configurée dans [.github/workflows/build-sukotto-mpc.yml](../.github/workflows/build-sukotto-mpc.yml) sur la branche feat/mpc-sukotto-one-track-v1. Une modification du dossier mpc/ ou du workflow sur cette branche déclenche une tentative de build.
+Fichiers PCM stéréo 16 bits, 44 100 Hz, durée maximale de 3 minutes par prise. Le dossier est créé au premier enregistrement.
 
-Sources épinglées pour rendre le résultat reproductible :
+Sur la MPC, ouvrir le Browser, trouver « Sukotto Samples », importer le WAV dans le projet, puis utiliser Sample Edit > Chop et affecter les slices aux pads.
 
-- Crate Digger : 331d32442fc7a53f5bd6bd2d7eb2648ed59dd661
-- SDK MPC Akai : a5949cf6fe2cbfb95bcbe0ddf1f7ef555e71f2be
+IMPORTANT : le SDK public n'expose pas de commande documentée pour insérer directement le WAV dans le Sample Pool. L'export est natif, mais l'import MPC reste manuel à ce stade. Un disque plein ou non inscriptible doit produire SAVE ERROR / CHECK USB. Une clé trop lente peut entraîner REC / USB TOO SLOW.
 
-Le workflow récupère les deux dépôts, applique le patch, génère le skin et lance la compilation ARM32 dans Docker/QEMU. **Si elle réussit**, l'archive Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip est jointe au job sous la forme d'un artifact GitHub Actions.
+## Installation
 
-Il est également possible de construire manuellement avec les outils Linux du projet amont :
+1. Sauvegarder sur ordinateur le dossier Sukotto Digger actuellement fonctionnel.
+2. Décompresser le ZIP de la release alpha 0.3.
+3. Remplacer uniquement le dossier « sd88me - VST - Sukotto Digger » sous « VST2 Plugins » à la racine de la clé USB.
+4. Ne pas toucher à Crate Digger ni à Morph FX.
+5. Éjecter la clé, redémarrer la MPC avec Enhancements + External Plugin Support activés et Ethernet branché.
+6. Tester sur un nouveau projet vide.
 
-    git clone https://github.com/sd88me/mpc-vst-cratedigger.git cratedigger-upstream
-    git -C cratedigger-upstream checkout 331d32442fc7a53f5bd6bd2d7eb2648ed59dd661
-    git clone https://github.com/inmusic-software/mpc-plugin-builder-sdk.git mpc-sdk
-    git -C mpc-sdk checkout a5949cf6fe2cbfb95bcbe0ddf1f7ef555e71f2be
-    python3 mpc/patch_sukotto.py cratedigger-upstream
-    (cd cratedigger-upstream && python3 tools/make_tui.py --preview)
-    (cd cratedigger-upstream && MPC_SDK="$(pwd)/../mpc-sdk" ./build-sdk.sh && python3 tools/package.py)
+Ne pas lancer install-force.sh ni modifier le firmware.
 
-Il faut Docker, QEMU ARM, Python avec Pillow et gh. La procédure n'a pas encore été validée sur une MPC One.
+## Tests matériels à confirmer
 
-## Installation sur la MPC (uniquement après réussite du build)
+- Interface et filtres réactifs, waveform progressive lisible.
+- NEW DIG / NEXT / PREV / TO START fonctionnels.
+- MARK IN puis MARK OUT créent un WAV, que le Browser MPC ouvre.
+- LAST 30 SEC produit un autre WAV non muet.
+- Sample Edit > Chop fonctionne sur le WAV importé.
+- Pas de craquements audio ni blocage en cours de prise.
+- Crate Digger et Morph FX restent utilisables.
 
-1. Sauvegarder le contenu de la clé USB.
-2. Décompresser l'archive générée.
-3. Copier exclusivement le dossier VST2 Plugins/sd88me - VST - Sukotto Digger dans le dossier VST2 Plugins de la clé USB.
-4. Vérifier que plugin.json, VST/sukotto-arm32.so et Plugin Skins/TUI.json existent.
-5. Vérifier que plugin.json contient format: vst2 et file32: VST/sukotto-arm32.so.
-6. Éjecter la clé proprement, puis redémarrer la MPC avec Enhancements et External Plugin Support activés.
-7. Créer une nouvelle piste Plugin et rechercher Sukotto Digger sous les instruments externes.
+Le code compile sur ARM32 et un test Linux natif contrôle REC/STOP, LAST 30 et en-têtes WAV. Cette validation ne remplace PAS les essais sur MPC One réelle.
 
-Ne pas lancer install-force.sh : la méthode classique suffit sur le firmware déjà utilisé.
+## Sources et développement
 
-## Test utilisateur à réaliser
+- Crate Digger, commit 331d32442fc7a53f5bd6bd2d7eb2648ed59dd661.
+- MPC Plugin Builder SDK, commit a5949cf6fe2cbfb95bcbe0ddf1f7ef555e71f2be.
+- patch_sukotto.py : identité VST, paramètres append-only, moteur.
+- skin_v3.py : visuel MPC original, contrôles et filtres.
+- sukotto_capture.h : file lock-free + 30 s de mémoire + sauvegarde WAV.
+- tests/test_capture.cpp : test Linux des captures.
+- GitHub Actions : build-sukotto-mpc.yml, Docker / QEMU, release préliminaire.
 
-1. Crate Digger et Morph FX restent disponibles.
-2. Sukotto Digger apparaît comme un autre instrument.
-3. Le plugin s'ouvre sans blocage.
-4. NEW DIG donne un résultat et lit un morceau.
-5. NEXT RECORD passe au morceau suivant avec une seule pression.
-6. En fin de résultats, NEXT RECORD lance une nouvelle recherche.
-7. Les flèches des filtres fonctionnent et la piste peut être enregistrée avec Sampler > Resample L+R.
+Le moteur de découverte reste Crate Digger / Discogs. Les critères anti-IA, anti-compilations, obscurité, instruments, vues et les filtres avancés de Digger Web sont encore à porter.
 
-## Points à investiguer
-
-L'autolecture de NEW DIG repose sur le passage du moteur par SEARCHING avant DONE ; si le moteur répond trop vite, l'écoute automatique peut manquer ce premier état. La compatibilité et les performances du moteur Crate Digger 2.2 sur MPC One ARM32 restent à confirmer. La musique soumise aux droits d'auteur nécessite les autorisations applicables avant toute réutilisation publique.
+La waveform complète dès le chargement, le clic direct pour repositionner la lecture et l'import automatique au Sample Pool ne sont pas encore développés.
