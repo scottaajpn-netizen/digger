@@ -1,0 +1,102 @@
+name: Build Sukotto Digger for MPC One Gen 1
+
+on:
+  push:
+    branches:
+      - feat/mpc-sukotto-one-track-v1
+    paths:
+      - "mpc/**"
+      - ".github/workflows/build-sukotto-mpc.yml"
+  pull_request:
+    branches:
+      - fix/sampling-instrument-metadata-v6
+    paths:
+      - "mpc/**"
+      - ".github/workflows/build-sukotto-mpc.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  armv7-mpc-plugin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+      - name: Python dependencies
+        run: python -m pip install --upgrade pillow
+      - name: Get fixed upstream Crate Digger and SDK commits
+        shell: bash
+        run: |
+          git clone https://github.com/sd88me/mpc-vst-cratedigger.git /tmp/cratedigger
+          git -C /tmp/cratedigger checkout 331d32442fc7a53f5bd6bd2d7eb2648ed59dd661
+          git clone https://github.com/inmusic-software/mpc-plugin-builder-sdk.git /tmp/mpc-sdk
+          git -C /tmp/mpc-sdk checkout a5949cf6fe2cbfb95bcbe0ddf1f7ef555e71f2be
+      - name: Generate one-track MPC plugin and check Python syntax
+        run: |
+          python -m py_compile mpc/patch_sukotto.py
+          python mpc/patch_sukotto.py /tmp/cratedigger
+          python -m py_compile /tmp/cratedigger/tools/make_tui.py /tmp/cratedigger/tools/package.py
+          cd /tmp/cratedigger
+          python tools/make_tui.py --preview
+      - name: Build standalone ARMv7 VST2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd /tmp/cratedigger
+          MPC_SDK=/tmp/mpc-sdk ./build-sdk.sh
+          python tools/package.py
+          test -s "dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip"
+          python - <<'PY'
+          import json, zipfile
+          path = "dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip"
+          root = "VST2 Plugins/sd88me - VST - Sukotto Digger/"
+          with zipfile.ZipFile(path) as z:
+              names = set(z.namelist())
+              manifest = json.loads(z.read(root + "plugin.json"))
+              assert manifest["name"] == "Sukotto Digger", manifest
+              assert manifest["uid"] == "SkDg", manifest
+              assert manifest["format"] == "vst2", manifest
+              assert manifest["file32"] == "VST/sukotto-arm32.so", manifest
+              assert root + manifest["file32"] in names
+              assert root + "Plugin Skins/TUI.json" in names
+              assert root + "Plugin Skins/Q-Links.json" in names
+              ui = json.loads(z.read(root + "Plugin Skins/TUI.json"))
+              assert len(ui["pageData"]["tabs"]) == 1
+              skin = json.dumps(ui)
+              assert "sukotto_wave_strip.png" in skin
+              assert "start_track" in open("vst/params.lock").read()
+          print("Verified ARM32 package, dedicated plugin UID and single-screen skin")
+          PY
+      - name: Upload experimental package
+        uses: actions/upload-artifact@v4
+        with:
+          name: sukotto-digger-mpc-one-armv7-experimental
+          path: /tmp/cratedigger/dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish direct download in GitHub Releases
+        if: github.event_name == 'push' || github.head_ref == 'feat/mpc-sukotto-one-track-v1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=sukotto-mpc-one-v0.2.0-test
+          zip=/tmp/cratedigger/dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "$zip" --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "$zip" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Sukotto Digger MPC One Gen 1 — alpha 0.2" \
+              --prerelease \
+              --notes "Experimental ARMv7 plugin for MPC One Gen 1. Based on sd88me Crate Digger (MIT). Separate UID SkDg. Single-track UI, waveform while listening, BACK TO START and NEXT RECORD. User-confirmed earlier prototype loaded; these additions require device testing. Keep the original plugins installed."
+          fi
