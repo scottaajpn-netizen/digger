@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   armv7-mpc-plugin:
@@ -79,3 +79,21 @@ jobs:
           path: /tmp/cratedigger/dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish direct download in GitHub Releases
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=sukotto-mpc-one-v0.1.0-test
+          zip=/tmp/cratedigger/dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "$zip" --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "$zip" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Sukotto Digger MPC One Gen 1 — alpha 0.1" \
+              --prerelease \
+              --notes "Experimental ARMv7 plugin for MPC One Gen 1. Based on sd88me Crate Digger (MIT). Separate UID SkDg. One-record UI and NEXT RECORD. Not yet validated on physical MPC. Keep the original plugins installed."
+          fi
