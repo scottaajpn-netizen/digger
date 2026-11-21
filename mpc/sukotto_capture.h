@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fcntl.h>
 #include <ctime>
 #include <memory>
 #include <string>
@@ -81,7 +82,7 @@ private:
     static int16_t toPCM(float f) noexcept {
         if (!std::isfinite(f)) return 0;
         const float v = std::max(-1.0f, std::min(1.0f, f));
-        return (int16_t)std::lround(v * (v < 0 ? 32768.0f : 32767.0f));
+        return (int16_t)(v * (v < 0 ? 32768.0f : 32767.0f));
     }
 
     static std::string sampleDirectory(std::string pluginFolder) {
@@ -122,9 +123,17 @@ private:
         struct tm t;
         if (localtime_r(&now, &t)) std::strftime(date, sizeof(date), "%Y%m%d_%H%M%S", &t);
         else std::snprintf(date, sizeof(date), "%lld", (long long)now);
-        fileName_ = base_ + "/SUKOTTO_" + date + "_" + std::to_string(++serial_) + ".wav";
-        file_ = std::fopen(fileName_.c_str(), "wb+");
-        if (!file_) { state_.store(DISK_ERROR); return false; }
+        // Exclusive creation: never overwrite a previously saved MPC sample.
+        int fd = -1;
+        for (int i = 0; i < 1000; ++i) {
+            fileName_ = base_ + "/SUKOTTO_" + date + "_" + std::to_string(::getpid())
+                      + "_" + std::to_string(++serial_) + ".wav";
+            fd = ::open(fileName_.c_str(), O_CREAT | O_EXCL | O_RDWR, 0664);
+            if (fd >= 0 || errno != EEXIST) break;
+        }
+        if (fd < 0) { state_.store(DISK_ERROR); return false; }
+        file_ = ::fdopen(fd, "wb+");
+        if (!file_) { ::close(fd); std::remove(fileName_.c_str()); state_.store(DISK_ERROR); return false; }
         fileFrames_ = 0;
         frames_.store(0);
         if (!wavHeader(file_, 0)) { closeTake(false); state_.store(DISK_ERROR); return false; }
