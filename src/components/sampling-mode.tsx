@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { MAX_SAMPLING_CHOICES, type SamplingFilters, type SamplingVideo } from "@/lib/sampling/youtube";
+import type { SamplingFilters, SamplingVideo } from "@/lib/sampling/youtube";
+import { MAX_SAMPLING_CHOICES } from "@/lib/sampling/choices";
 import { samplingPlaybackAction } from "@/lib/sampling/playback";
 import { SamplingYouTubePlayer } from "@/components/sampling-youtube-player";
 
