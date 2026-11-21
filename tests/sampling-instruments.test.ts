@@ -60,3 +60,22 @@ test("presets have distinct IDs and nonempty English query hints", () => {
     assert.equal(resolveInstrument(item.id)?.id, item.id);
   }
 });
+
+test("a performer named Rhodes does not certify electric piano instrumentation", () => {
+  assert.equal(instrumentMetadataEvidence({ title: "Rhodes - The Way It Is" }, "rhodes"), null);
+  assert.equal(instrumentMetadataEvidence({
+    title: "Rhodes - The Way It Is",
+    description: "Electric piano performance on this original recording",
+  }, "rhodes"), "description");
+});
+
+test("explicit negative instrument credits in descriptions cannot count as positive evidence", () => {
+  assert.equal(instrumentMetadataEvidence({
+    title: "A Drumless Break",
+    description: "No drums on this version; bass only",
+  }, "drums"), null);
+  assert.equal(instrumentMetadataEvidence({
+    title: "A Solo Track",
+    description: "Sans flûte ni clarinette",
+  }, "flute"), null);
+});
