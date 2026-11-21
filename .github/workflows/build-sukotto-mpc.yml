@@ -81,7 +81,7 @@ jobs:
           retention-days: 14
 
       - name: Publish direct download in GitHub Releases
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.head_ref == 'feat/mpc-sukotto-one-track-v1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
