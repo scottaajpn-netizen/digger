@@ -597,6 +597,7 @@ display:grid;place-items:center;border-right:1px solid #3c4138;position:relative
 .sampling-country-group{display:flex;flex-direction:column;gap:6px;min-width:0}
 .sampling-country-group>strong{color:#f49a74;font:700 9px "Courier New",monospace;letter-spacing:.6px;margin:5px 0}
 .sampling-filter-grid .sampling-country-group label{display:flex;flex-direction:row;align-items:center;gap:7px;cursor:pointer;font-size:11px;color:#cbd2c2}
+.sampling-filter-grid .sampling-country-group label span{font:400 11px/1.4 Arial,sans-serif;letter-spacing:normal;color:#cbd2c2}
 .sampling-filter-grid .sampling-country-group input[type=checkbox]{width:15px;height:15px;flex:0 0 15px;accent-color:var(--orange);padding:0;margin:0}
 .sampling-custom-country{display:flex;gap:7px}
 .sampling-custom-country>input{min-width:0;flex:1}
