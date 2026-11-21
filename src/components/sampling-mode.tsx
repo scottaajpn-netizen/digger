@@ -506,39 +506,72 @@ export function SamplingMode() {
                 onChange={event => setDraft(previous => ({ ...previous, keywords: event.target.value }))}
               />
             </label>
-            <label>
-              <span>Pays / scène (recherche indicative)</span>
-              <select
-                value={countrySelection}
-                onChange={event => {
-                  const choice = event.target.value;
-                  setCountrySelection(choice);
-                  setDraft(previous => ({ ...previous, country: choice === "__other__" ? customCountry : choice }));
-                }}
-              >
-                <option value="">Tous les pays</option>
-                {countryGroups.map(group => (
-                  <optgroup key={group.label} label={group.label}>
-                    {group.countries.map(([label, value]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </optgroup>
-                ))}
-                <option value="__other__">Autre pays / territoire…</option>
-              </select>
-              {countrySelection === "__other__" && (
-                <input
-                  aria-label="Autre pays ou territoire"
-                  value={customCountry}
-                  maxLength={60}
-                  placeholder="Précise le pays ou territoire"
-                  onChange={event => {
-                    setCustomCountry(event.target.value);
-                    setDraft(previous => ({ ...previous, country: event.target.value }));
-                  }}
-                />
+            <div className="sampling-multi-field sampling-span-2">
+              <span className="sampling-field-title">Pays / scènes — plusieurs possibles</span>
+              <details className="sampling-multi-dropdown">
+                <summary>
+                  {selectedCountries.length ? selectedCountries.length + " pays sélectionné(s)" : "Tous les pays"}
+                  <span>Choisir des pays</span>
+                </summary>
+                <div className="sampling-multi-options">
+                  <input
+                    type="search"
+                    aria-label="Rechercher un pays"
+                    value={countrySearch}
+                    placeholder="Rechercher un pays…"
+                    onChange={event => setCountrySearch(event.target.value)}
+                  />
+                  <div className="sampling-country-list">
+                    {countryGroups.map(group => {
+                      const matching = group.countries.filter(([label, value]) =>
+                        (label + " " + value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+                          .includes(countrySearch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())
+                      );
+                      return matching.length ? (
+                        <div key={group.label} className="sampling-country-group">
+                          <strong>{group.label}</strong>
+                          {matching.map(([label, value]) => (
+                            <label key={value}>
+                              <input
+                                type="checkbox"
+                                checked={selectedCountries.includes(value)}
+                                disabled={!selectedCountries.includes(value) && selectedCountries.length >= MAX_SAMPLING_CHOICES}
+                                onChange={() => toggleCountry(value)}
+                              />
+                              <span>{label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                  <div className="sampling-custom-country">
+                    <input
+                      value={customCountry}
+                      maxLength={60}
+                      aria-label="Autre pays ou territoire"
+                      placeholder="Pays ou territoire absent de la liste"
+                      onChange={event => setCustomCountry(event.target.value)}
+                      onKeyDown={event => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          addCustomCountry();
+                        }
+                      }}
+                    />
+                    <button type="button" disabled={!customCountry.trim() || selectedCountries.length >= MAX_SAMPLING_CHOICES} onClick={addCustomCountry}>Ajouter</button>
+                  </div>
+                  <p className="sampling-multi-help">Jusqu’à {MAX_SAMPLING_CHOICES} pays. Il s’agit de pistes de recherche, pas d’origines certifiées.</p>
+                </div>
+              </details>
+              {selectedCountries.length > 0 && (
+                <div className="sampling-choice-chips" aria-label="Pays sélectionnés">
+                  {selectedCountries.map(value => (
+                    <button type="button" key={value} onClick={() => toggleCountry(value)}>{value} ×</button>
+                  ))}
+                </div>
               )}
-            </label>
+            </div>
             <label>
               <span>Instrument (recherche indicative)</span>
               <input
