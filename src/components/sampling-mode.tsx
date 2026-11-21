@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SamplingFilters, SamplingVideo } from "@/lib/sampling/youtube";
 import { MAX_SAMPLING_CHOICES } from "@/lib/sampling/choices";
+import { INSTRUMENT_PRESETS } from "@/lib/sampling/instruments";
 import { samplingPlaybackAction } from "@/lib/sampling/playback";
 import { SamplingYouTubePlayer } from "@/components/sampling-youtube-player";
 
@@ -174,6 +175,7 @@ export function SamplingMode() {
   const [draft, setDraft] = useState<SamplingFilters>(DEFAULT_FILTERS);
   const [countrySearch, setCountrySearch] = useState("");
   const [customCountry, setCustomCountry] = useState("");
+  const [customInstrumentMode, setCustomInstrumentMode] = useState(false);
   const [profile, setProfile] = useState<SamplingProfile>(emptyProfile);
   const [pool, setPool] = useState<SamplingVideo[]>([]);
   const [index, setIndex] = useState(0);
@@ -295,7 +297,9 @@ export function SamplingMode() {
         setIndex(0);
         setQuery(data.query || "");
         setRelaxed(Boolean(data.relaxed));
-        setError("Aucun morceau ne passe ces filtres. Élargis un peu la recherche.");
+        setError(nextFilters.instrument
+          ? "Aucun résultat avec une mention explicite de cet instrument dans le titre ou la description. Élargis les autres critères ou désactive le mode archives."
+          : "Aucun morceau ne passe ces filtres. Élargis un peu la recherche.");
         return;
       }
 
@@ -402,6 +406,7 @@ export function SamplingMode() {
     setDraft(nextFilters);
     setCountrySearch("");
     setCustomCountry("");
+    setCustomInstrumentMode(false);
     setFilters(nextFilters);
     void loadPool(nextFilters);
   }
@@ -583,13 +588,31 @@ export function SamplingMode() {
               )}
             </div>
             <label>
-              <span>Instrument (recherche indicative)</span>
-              <input
-                value={draft.instrument || ""}
-                maxLength={60}
-                placeholder="Rhodes, flûte, basse, batterie…"
-                onChange={event => setDraft(previous => ({ ...previous, instrument: event.target.value }))}
-              />
+              <span>Instrument (mention dans les métadonnées)</span>
+              <select
+                value={customInstrumentMode ? "__other__" : draft.instrument || ""}
+                onChange={event => {
+                  const value = event.target.value;
+                  setCustomInstrumentMode(value === "__other__");
+                  setDraft(previous => ({ ...previous, instrument: value === "__other__" ? "" : value }));
+                }}
+              >
+                <option value="">Tous les instruments</option>
+                {INSTRUMENT_PRESETS.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                <option value="__other__">Autre instrument…</option>
+              </select>
+              {customInstrumentMode && (
+                <input
+                  value={draft.instrument || ""}
+                  maxLength={60}
+                  aria-label="Autre instrument à rechercher"
+                  placeholder="Ex. flugelhorn, guzheng..."
+                  onChange={event => setDraft(previous => ({ ...previous, instrument: event.target.value }))}
+                />
+              )}
+              <small className="sampling-instrument-note">
+                Digger recherche les variantes du nom et n'affiche que les vidéos qui mentionnent cet instrument. La présence dans l'audio n'est pas certifiée.
+              </small>
             </label>
             <label>
               <span>Vues min.</span>
@@ -731,6 +754,7 @@ export function SamplingMode() {
               <div className="sampling-meta">
                 <span>{formatViews(current.views)} vues</span>
                 <span>{formatDuration(current.durationSeconds)}</span>
+                {current.instrumentEvidence && <span>Instrument mentionné : {current.instrumentEvidence === "title" ? "titre" : "description"}</span>}
                 <span>upload {new Date(current.publishedAt).getFullYear()}</span>
               </div>
               <a href={`https://www.youtube.com/watch?v=${current.id}`} target="_blank" rel="noreferrer">Ouvrir sur YouTube ↗</a>

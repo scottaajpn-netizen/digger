@@ -1,4 +1,5 @@
 import { MAX_SAMPLING_CHOICES } from "./choices";
+import { instrumentMetadataEvidence, instrumentSearchPhrase, type InstrumentEvidence } from "./instruments";
 
 export type SamplingDuration = "any" | "short" | "medium" | "long";
 
@@ -34,6 +35,7 @@ export interface SamplingVideo {
   durationSeconds?: number;
   thumbnail?: string;
   query: string;
+  instrumentEvidence?: InstrumentEvidence;
 }
 
 type YouTubeSearchResponse = {
@@ -186,9 +188,9 @@ export function buildSamplingQuery(filters: SamplingFilters, relaxed = false) {
   if (genres.length) parts.push(alternatives(genres));
   if (countries.length) parts.push(alternatives(countries));
   if (filters.keywords) parts.push(filters.keywords);
-  if (filters.instrument) parts.push(filters.instrument);
+  if (filters.instrument) parts.push(instrumentSearchPhrase(filters.instrument, relaxed));
 
-  if (!genres.length && !filters.keywords) {
+  if (!genres.length && !filters.keywords && !filters.instrument) {
     const possible = genericMusicTerms.filter(term => !genreExcludedInMetadata({ title: term }, excluded));
     if (possible.length) parts.push(randomItem(possible));
   }
@@ -197,7 +199,8 @@ export function buildSamplingQuery(filters: SamplingFilters, relaxed = false) {
   // latest content containing generic words such as "gospel library music".
   // A selected user year always wins over the archival decade hint.
   if (filters.archiveFocus !== false) {
-    parts.push(randomItem(diggingTerms));
+    // Relax only the extra record-search term, never the requested instrument.
+    if (!filters.instrument || !relaxed) parts.push(randomItem(diggingTerms));
   } else if (!relaxed) {
     parts.push(randomItem(["original recording", "full track", "music"]));
   }
@@ -206,8 +209,9 @@ export function buildSamplingQuery(filters: SamplingFilters, relaxed = false) {
     const low = filters.yearMin ?? filters.yearMax!;
     const high = filters.yearMax ?? filters.yearMin!;
     parts.push(String(low + Math.floor(Math.random() * (high - low + 1))));
-  } else if (filters.archiveFocus !== false) {
-    // Only a discovery hint: YouTube provides upload date, not release date.
+  } else if (filters.archiveFocus !== false && !filters.instrument) {
+    // An extra random year alongside an instrument is needlessly restrictive.
+    // Explicit user year filters above are still respected.
     parts.push(String(1960 + Math.floor(Math.random() * 40)));
   }
 
@@ -418,6 +422,12 @@ async function searchOnce(filters: SamplingFilters, signal: AbortSignal, relaxed
     if (!snippet?.title || !snippet.channelTitle || !snippet.publishedAt) return [];
     const durationSeconds = parseIsoDuration(item.contentDetails?.duration);
     if (samplingRejectionReason({ title: snippet.title, channel: snippet.channelTitle, description: snippet.description, publishedAt: snippet.publishedAt, durationSeconds }, filters)) return [];
+    const instrumentEvidence = filters.instrument
+      ? instrumentMetadataEvidence({ title: snippet.title, description: snippet.description }, filters.instrument)
+      : undefined;
+    // The previous implementation merely appended the text to YouTube search.
+    // This actual post-filter avoids presenting unrelated instruments as matches.
+    if (filters.instrument && !instrumentEvidence) return [];
 
     return [{
       id: item.id,
@@ -428,6 +438,7 @@ async function searchOnce(filters: SamplingFilters, signal: AbortSignal, relaxed
       durationSeconds,
       thumbnail: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url,
       query,
+      instrumentEvidence: instrumentEvidence || undefined,
     } satisfies SamplingVideo];
   });
 
