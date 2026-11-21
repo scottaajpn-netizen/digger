@@ -108,7 +108,7 @@ export function normalizeSamplingChoices(value: unknown, maxLength = 60): string
   for (const candidate of value) {
     if (typeof candidate !== "string") continue;
     // YouTube uses | as OR and - as NOT; keep list values as plain text.
-    const clean = candidate.replace(/[|"\r\n\\]/g, " ").trim().slice(0, maxLength);
+    const clean = candidate.replace(/[|"\r\n\\]/g, " ").trim().replace(/^-+\s*/, "").slice(0, maxLength);
     const key = clean.toLocaleLowerCase();
     if (!clean || seen.has(key)) continue;
     seen.add(key);
@@ -189,7 +189,7 @@ export function buildSamplingQuery(filters: SamplingFilters, relaxed = false) {
   if (filters.instrument) parts.push(filters.instrument);
 
   if (!genres.length && !filters.keywords) {
-    const possible = genericMusicTerms.filter(term => !excluded.some(genre => genre.toLowerCase() === term.toLowerCase()));
+    const possible = genericMusicTerms.filter(term => !genreExcludedInMetadata({ title: term }, excluded));
     if (possible.length) parts.push(randomItem(possible));
   }
 
