@@ -77,11 +77,12 @@ jobs:
               assert len(ui["pageData"]["tabs"]) == 1
               skin = json.dumps(ui)
               assert "sukotto_wave_strip.png" in skin
-              params = open("vst/params.lock").read()
+              params = json.load(open("vst/params.json"))["params"]
+              positions = {p["key"]: i for i, p in enumerate(params)}
               for key in ["start_track", "prev_track", "mark_in", "mark_out",
                           "capture_rec", "save_last_30", "capture_status"]:
-                  assert key in params, key
-                  assert key in skin, key
+                  assert key in positions, key
+                  assert f"Parameter {positions[key]}" in skin, key
               assert "bg_sukotto.png" in names or root + "Plugin Skins/bg_sukotto.png" in names
           print("Verified ARM32 package, dedicated plugin UID and single-screen skin")
           PY
