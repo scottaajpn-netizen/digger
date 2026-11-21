@@ -7,6 +7,12 @@ on:
     paths:
       - "mpc/**"
       - ".github/workflows/build-sukotto-mpc.yml"
+  pull_request:
+    branches:
+      - fix/sampling-instrument-metadata-v6
+    paths:
+      - "mpc/**"
+      - ".github/workflows/build-sukotto-mpc.yml"
   workflow_dispatch:
 
 permissions:
