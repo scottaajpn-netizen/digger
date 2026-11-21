@@ -589,6 +589,12 @@ display:grid;place-items:center;border-right:1px solid #3c4138;position:relative
 .sampling-player-stage{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(320px,.8fr);gap:22px;align-items:stretch;margin-top:26px}
 .sampling-video-wrap{aspect-ratio:16/9;background:#090b09;border:1px solid #3d433a;box-shadow:8px 9px 0 #080a08}
 .sampling-video-wrap iframe{display:block;width:100%;height:100%;border:0}
+.sampling-youtube-player{width:100%;height:100%}
+.sampling-unavailable{align-self:flex-start;background:transparent;border:1px dashed #5b6355;color:#cbd2c2;padding:9px 10px;font:700 10px/1.4 "Courier New",monospace;cursor:pointer;margin:-8px 0 14px}
+.sampling-unavailable:hover{border-color:var(--orange);color:#ffc09a}
+.sampling-unavailable:disabled{opacity:.5;cursor:not-allowed}
+.sampling-player-issue{color:#f0b28f;font-size:11px;line-height:1.5;margin:0 0 14px}
+
 .sampling-track-info{border:1px solid #3a4037;background:#191c19;padding:28px;display:flex;flex-direction:column;justify-content:center;min-width:0}
 .sampling-track-info h2{font:900 clamp(30px,3.5vw,56px)/.95 Impact,"Arial Narrow",Arial,sans-serif;letter-spacing:-.8px;text-transform:uppercase;overflow-wrap:anywhere;margin:10px 0}
 .sampling-track-info h3{font:italic 17px/1.4 Georgia,serif;color:#b8bfb2;margin:0 0 20px}

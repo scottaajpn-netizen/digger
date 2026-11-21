@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SamplingFilters, SamplingVideo } from "@/lib/sampling/youtube";
+import { samplingPlaybackAction } from "@/lib/sampling/playback";
+import { SamplingYouTubePlayer } from "@/components/sampling-youtube-player";
 
 type SamplingVote = "keep" | "pass";
 
@@ -60,6 +62,64 @@ const genres = [
   "electronic",
 ] as const;
 
+
+const countryGroups = [
+  { label: "Europe", countries: [
+    ["Albanie", "Albania"], ["Allemagne", "Germany"], ["Arménie", "Armenia"],
+    ["Autriche", "Austria"], ["Belgique", "Belgium"], ["Bosnie-Herzégovine", "Bosnia"],
+    ["Bulgarie", "Bulgaria"], ["Croatie", "Croatia"], ["Danemark", "Denmark"],
+    ["Espagne", "Spain"], ["Finlande", "Finland"], ["France", "France"],
+    ["Géorgie", "Georgia"], ["Grèce", "Greece"], ["Hongrie", "Hungary"],
+    ["Irlande", "Ireland"], ["Islande", "Iceland"], ["Italie", "Italy"],
+    ["Moldavie", "Moldova"], ["Norvège", "Norway"], ["Pays-Bas", "Netherlands"],
+    ["Pologne", "Poland"], ["Portugal", "Portugal"], ["République tchèque", "Czechia"],
+    ["Roumanie", "Romania"], ["Royaume-Uni", "United Kingdom"], ["Russie", "Russia"],
+    ["Serbie", "Serbia"], ["Slovaquie", "Slovakia"], ["Suède", "Sweden"],
+    ["Suisse", "Switzerland"], ["Turquie", "Turkey"], ["Ukraine", "Ukraine"],
+  ] },
+  { label: "Afrique", countries: [
+    ["Afrique du Sud", "South Africa"], ["Algérie", "Algeria"], ["Angola", "Angola"],
+    ["Bénin", "Benin"], ["Cameroun", "Cameroon"], ["Cap-Vert", "Cape Verde"],
+    ["Congo", "Congo"], ["Côte d'Ivoire", "Ivory Coast"], ["Égypte", "Egypt"],
+    ["Éthiopie", "Ethiopia"], ["Gabon", "Gabon"], ["Ghana", "Ghana"],
+    ["Guinée", "Guinea"], ["Kenya", "Kenya"], ["Madagascar", "Madagascar"],
+    ["Mali", "Mali"], ["Maroc", "Morocco"], ["Maurice", "Mauritius"],
+    ["Mozambique", "Mozambique"], ["Nigeria", "Nigeria"], ["Ouganda", "Uganda"],
+    ["République démocratique du Congo", "DR Congo"], ["Sénégal", "Senegal"],
+    ["Soudan", "Sudan"], ["Tanzanie", "Tanzania"], ["Togo", "Togo"],
+    ["Tunisie", "Tunisia"], ["Zambie", "Zambia"], ["Zimbabwe", "Zimbabwe"],
+  ] },
+  { label: "Amériques / Caraïbes", countries: [
+    ["Argentine", "Argentina"], ["Barbade", "Barbados"], ["Bolivie", "Bolivia"],
+    ["Brésil", "Brazil"], ["Canada", "Canada"], ["Chili", "Chile"],
+    ["Colombie", "Colombia"], ["Cuba", "Cuba"], ["Équateur", "Ecuador"],
+    ["États-Unis", "USA"], ["Guatemala", "Guatemala"], ["Haïti", "Haiti"],
+    ["Jamaïque", "Jamaica"], ["Mexique", "Mexico"], ["Panama", "Panama"],
+    ["Paraguay", "Paraguay"], ["Pérou", "Peru"], ["Porto Rico", "Puerto Rico"],
+    ["République dominicaine", "Dominican Republic"],
+    ["Trinité-et-Tobago", "Trinidad and Tobago"], ["Uruguay", "Uruguay"],
+    ["Venezuela", "Venezuela"],
+  ] },
+  { label: "Asie / Moyen-Orient", countries: [
+    ["Afghanistan", "Afghanistan"], ["Arabie saoudite", "Saudi Arabia"],
+    ["Bangladesh", "Bangladesh"], ["Cambodge", "Cambodia"], ["Chine", "China"],
+    ["Corée du Sud", "South Korea"], ["Hong Kong", "Hong Kong"],
+    ["Inde", "India"], ["Indonésie", "Indonesia"], ["Irak", "Iraq"],
+    ["Iran", "Iran"], ["Israël", "Israel"], ["Japon", "Japan"],
+    ["Kazakhstan", "Kazakhstan"], ["Laos", "Laos"], ["Liban", "Lebanon"],
+    ["Malaisie", "Malaysia"], ["Mongolie", "Mongolia"], ["Myanmar", "Myanmar"],
+    ["Népal", "Nepal"], ["Ouzbékistan", "Uzbekistan"], ["Pakistan", "Pakistan"],
+    ["Palestine", "Palestine"], ["Philippines", "Philippines"],
+    ["Sri Lanka", "Sri Lanka"], ["Syrie", "Syria"], ["Taïwan", "Taiwan"],
+    ["Thaïlande", "Thailand"], ["Vietnam", "Vietnam"], ["Yémen", "Yemen"],
+  ] },
+  { label: "Océanie", countries: [
+    ["Australie", "Australia"], ["Fidji", "Fiji"],
+    ["Nouvelle-Zélande", "New Zealand"], ["Papouasie-Nouvelle-Guinée", "Papua New Guinea"],
+    ["Samoa", "Samoa"], ["Tonga", "Tonga"],
+  ] },
+] as const;
+
 const emptyProfile = (): SamplingProfile => ({
   version: 1,
   historyIds: [],
@@ -88,6 +148,8 @@ function numericInput(value: number | undefined) {
 export function SamplingMode() {
   const [filters, setFilters] = useState<SamplingFilters>(DEFAULT_FILTERS);
   const [draft, setDraft] = useState<SamplingFilters>(DEFAULT_FILTERS);
+  const [countrySelection, setCountrySelection] = useState("");
+  const [customCountry, setCustomCountry] = useState("");
   const [profile, setProfile] = useState<SamplingProfile>(emptyProfile);
   const [pool, setPool] = useState<SamplingVideo[]>([]);
   const [index, setIndex] = useState(0);
@@ -96,6 +158,8 @@ export function SamplingMode() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [relaxed, setRelaxed] = useState(false);
+  const [playerIssue, setPlayerIssue] = useState("");
+  const autoSkippedVideo = useRef<string | null>(null);
 
   useEffect(() => {
     try {
@@ -122,6 +186,11 @@ export function SamplingMode() {
   }, [profile, ready]);
 
   const current = pool[index];
+
+  useEffect(() => {
+    autoSkippedVideo.current = null;
+    setPlayerIssue("");
+  }, [current?.id]);
 
   const excludeIds = useMemo(
     () => [...new Set([...profile.historyIds, ...pool.slice(0, index + 1).map(video => video.id)])].slice(-300),
@@ -198,6 +267,23 @@ export function SamplingMode() {
     await loadPool(filters, false);
   }
 
+  function handlePlayerError(code: number) {
+    if (!current || busy) return;
+    const action = samplingPlaybackAction(code);
+    if (action === "configuration") {
+      setPlayerIssue("Le lecteur YouTube est bloqué par un problème d'identification du site (code 153). Essaie le lien YouTube ou vérifie les paramètres d'intégration.");
+      return;
+    }
+    if (action === "unknown") {
+      setPlayerIssue(`Impossible de confirmer la lecture (erreur YouTube ${code}). Tu peux ouvrir le morceau sur YouTube ou le passer.`);
+      return;
+    }
+    if (autoSkippedVideo.current === current.id) return;
+    autoSkippedVideo.current = current.id;
+    // Do not record a musical dislike: the video simply cannot play here.
+    void next();
+  }
+
   function vote(value: SamplingVote) {
     if (!current || busy) return;
 
@@ -238,6 +324,8 @@ export function SamplingMode() {
   function anything() {
     const nextFilters: SamplingFilters = { duration: "any", archiveFocus: true, excludeShorts: true, excludeAI: true, excludeCompilations: true, minDurationSeconds: 90, maxDurationSeconds: 480 };
     setDraft(nextFilters);
+    setCountrySelection("");
+    setCustomCountry("");
     setFilters(nextFilters);
     void loadPool(nextFilters);
   }
@@ -322,12 +410,36 @@ export function SamplingMode() {
             </label>
             <label>
               <span>Pays / scène (recherche indicative)</span>
-              <input
-                value={draft.country || ""}
-                maxLength={60}
-                placeholder="Brésil, Turquie, Roumanie…"
-                onChange={event => setDraft(previous => ({ ...previous, country: event.target.value }))}
-              />
+              <select
+                value={countrySelection}
+                onChange={event => {
+                  const choice = event.target.value;
+                  setCountrySelection(choice);
+                  setDraft(previous => ({ ...previous, country: choice === "__other__" ? customCountry : choice }));
+                }}
+              >
+                <option value="">Tous les pays</option>
+                {countryGroups.map(group => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.countries.map(([label, value]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+                <option value="__other__">Autre pays / territoire…</option>
+              </select>
+              {countrySelection === "__other__" && (
+                <input
+                  aria-label="Autre pays ou territoire"
+                  value={customCountry}
+                  maxLength={60}
+                  placeholder="Précise le pays ou territoire"
+                  onChange={event => {
+                    setCustomCountry(event.target.value);
+                    setDraft(previous => ({ ...previous, country: event.target.value }));
+                  }}
+                />
+              )}
             </label>
             <label>
               <span>Instrument (recherche indicative)</span>
@@ -463,13 +575,11 @@ export function SamplingMode() {
         {current && (
           <section className="sampling-player-stage" aria-busy={busy}>
             <div className="sampling-video-wrap">
-              <iframe
+              <SamplingYouTubePlayer
                 key={current.id}
-                src={`https://www.youtube-nocookie.com/embed/${current.id}?autoplay=1&rel=0&playsinline=1`}
+                id={current.id}
                 title={`${current.title} — ${current.channel}`}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                referrerPolicy="strict-origin-when-cross-origin"
-                allowFullScreen
+                onPlaybackError={handlePlayerError}
               />
             </div>
 
@@ -483,6 +593,10 @@ export function SamplingMode() {
                 <span>upload {new Date(current.publishedAt).getFullYear()}</span>
               </div>
               <a href={`https://www.youtube.com/watch?v=${current.id}`} target="_blank" rel="noreferrer">Ouvrir sur YouTube ↗</a>
+              <button className="sampling-unavailable" type="button" onClick={() => void next()} disabled={busy}>
+                Vidéo inaccessible ? Passer sans avis négatif
+              </button>
+              {playerIssue && <p className="sampling-player-issue" role="status">{playerIssue}</p>}
               <small>Recherche utilisée : {query || current.query}{relaxed ? " · recherche élargie" : ""}</small>
             </div>
 

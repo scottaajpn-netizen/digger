@@ -6,7 +6,9 @@ import {
   buildSamplingQuery,
   normalizeSamplingFilters,
   samplingRejectionReason,
+  samplingPlayableInRegion,
 } from "../src/lib/sampling/youtube";
+import { samplingPlaybackAction } from "../src/lib/sampling/playback";
 
 const filters = normalizeSamplingFilters({
   minDurationSeconds: 90,
@@ -180,4 +182,22 @@ test("archive clues in description count, but bare aesthetic words do not", () =
     title: "Seashore - Southgreen Recorders",
     description: "Original pressing. 45 rpm single, catalog number 620B.",
   }) >= 2);
+});
+
+test("playback errors distinguish unavailable videos from broken embed configuration", () => {
+  assert.equal(samplingPlaybackAction(100), "skip");
+  assert.equal(samplingPlaybackAction(101), "skip");
+  assert.equal(samplingPlaybackAction(150), "skip");
+  assert.equal(samplingPlaybackAction(5), "skip");
+  assert.equal(samplingPlaybackAction(153), "configuration");
+  assert.equal(samplingPlaybackAction(2), "unknown");
+});
+
+test("region restriction excludes videos blocked in France before showing the player", () => {
+  assert.equal(samplingPlayableInRegion(undefined), true);
+  assert.equal(samplingPlayableInRegion({ blocked: ["FR"] }), false);
+  assert.equal(samplingPlayableInRegion({ blocked: ["US"] }), true);
+  assert.equal(samplingPlayableInRegion({ allowed: ["US", "DE"] }), false);
+  assert.equal(samplingPlayableInRegion({ allowed: ["FR", "US"] }), true);
+  assert.equal(samplingPlayableInRegion({ allowed: [] }), false);
 });
