@@ -42,7 +42,7 @@ jobs:
           python tools/make_tui.py --preview
       - name: Build standalone ARMv7 VST2
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd /tmp/cratedigger
           MPC_SDK=/tmp/mpc-sdk ./build-sdk.sh
