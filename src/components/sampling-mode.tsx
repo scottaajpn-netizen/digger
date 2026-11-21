@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { SamplingFilters, SamplingVideo } from "@/lib/sampling/youtube";
+import { MAX_SAMPLING_CHOICES, type SamplingFilters, type SamplingVideo } from "@/lib/sampling/youtube";
 import { samplingPlaybackAction } from "@/lib/sampling/playback";
 import { SamplingYouTubePlayer } from "@/components/sampling-youtube-player";
 
@@ -25,9 +25,10 @@ type SamplingProfile = {
 const STORAGE_KEY = "digger.sampling.v1";
 
 const DEFAULT_FILTERS: SamplingFilters = {
-  genre: "",
+  genres: [],
+  excludeGenres: [],
+  countries: [],
   keywords: "",
-  country: "",
   instrument: "",
   minDurationSeconds: 90,
   maxDurationSeconds: 480,
@@ -41,17 +42,28 @@ const DEFAULT_FILTERS: SamplingFilters = {
 };
 
 const genres = [
-  "",
   "soul",
   "funk",
   "jazz",
   "jazz funk",
+  "jazz fusion",
+  "blues",
+  "neo soul",
   "boogie",
   "disco",
   "house",
+  "deep house",
+  "garage",
+  "breakbeat",
+  "ambient",
+  "lo-fi",
+  "trap",
   "hip hop",
   "r&b",
   "gospel",
+  "rock",
+  "metal",
+  "classical",
   "brazilian",
   "afrobeat",
   "reggae dub",
@@ -60,6 +72,8 @@ const genres = [
   "psychedelic",
   "folk",
   "electronic",
+  "synthwave",
+  "world music",
 ] as const;
 
 
@@ -148,7 +162,7 @@ function numericInput(value: number | undefined) {
 export function SamplingMode() {
   const [filters, setFilters] = useState<SamplingFilters>(DEFAULT_FILTERS);
   const [draft, setDraft] = useState<SamplingFilters>(DEFAULT_FILTERS);
-  const [countrySelection, setCountrySelection] = useState("");
+  const [countrySearch, setCountrySearch] = useState("");
   const [customCountry, setCustomCountry] = useState("");
   const [profile, setProfile] = useState<SamplingProfile>(emptyProfile);
   const [pool, setPool] = useState<SamplingVideo[]>([]);
@@ -186,6 +200,55 @@ export function SamplingMode() {
   }, [profile, ready]);
 
   const current = pool[index];
+  const selectedCountries = draft.countries || [];
+  const selectedGenres = draft.genres || [];
+  const excludedGenres = draft.excludeGenres || [];
+
+  function toggleCountry(value: string) {
+    setDraft(previous => {
+      const selected = previous.countries || [];
+      const next = selected.includes(value)
+        ? selected.filter(item => item !== value)
+        : selected.length < MAX_SAMPLING_CHOICES ? [...selected, value] : selected;
+      return { ...previous, country: undefined, countries: next };
+    });
+  }
+
+  function addCustomCountry() {
+    const value = customCountry.trim().slice(0, 60);
+    if (!value) return;
+    setDraft(previous => {
+      const selected = previous.countries || [];
+      if (selected.some(item => item.toLowerCase() === value.toLowerCase()) || selected.length >= MAX_SAMPLING_CHOICES) return previous;
+      return { ...previous, country: undefined, countries: [...selected, value] };
+    });
+    setCustomCountry("");
+  }
+
+  function toggleGenre(value: string, mode: "include" | "exclude") {
+    setDraft(previous => {
+      const included = previous.genres || [];
+      const excluded = previous.excludeGenres || [];
+      if (mode === "include") {
+        const already = included.includes(value);
+        if (!already && included.length >= MAX_SAMPLING_CHOICES) return previous;
+        return {
+          ...previous,
+          genre: undefined,
+          genres: already ? included.filter(item => item !== value) : [...included, value],
+          excludeGenres: excluded.filter(item => item !== value),
+        };
+      }
+      const already = excluded.includes(value);
+      if (!already && excluded.length >= MAX_SAMPLING_CHOICES) return previous;
+      return {
+        ...previous,
+        genre: undefined,
+        genres: included.filter(item => item !== value),
+        excludeGenres: already ? excluded.filter(item => item !== value) : [...excluded, value],
+      };
+    });
+  }
 
   useEffect(() => {
     autoSkippedVideo.current = null;
@@ -308,9 +371,12 @@ export function SamplingMode() {
   function applyFilters() {
     const nextFilters: SamplingFilters = {
       ...draft,
-      genre: draft.genre?.trim() || undefined,
+      genre: undefined,
+      genres: selectedGenres,
+      excludeGenres: excludedGenres,
+      countries: selectedCountries,
       keywords: draft.keywords?.trim() || undefined,
-      country: draft.country?.trim() || undefined,
+      country: undefined,
       instrument: draft.instrument?.trim() || undefined,
       minViews: draft.minViews === undefined ? undefined : Math.max(0, draft.minViews),
       maxViews: draft.maxViews === undefined ? undefined : Math.max(0, draft.maxViews),
@@ -322,9 +388,9 @@ export function SamplingMode() {
   }
 
   function anything() {
-    const nextFilters: SamplingFilters = { duration: "any", archiveFocus: true, excludeShorts: true, excludeAI: true, excludeCompilations: true, minDurationSeconds: 90, maxDurationSeconds: 480 };
+    const nextFilters: SamplingFilters = { ...DEFAULT_FILTERS };
     setDraft(nextFilters);
-    setCountrySelection("");
+    setCountrySearch("");
     setCustomCountry("");
     setFilters(nextFilters);
     void loadPool(nextFilters);
