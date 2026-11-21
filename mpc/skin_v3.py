@@ -153,10 +153,10 @@ def build_sukotto():
           size=14, toggle=True, lamp="amber")
 
     # One tab, 4 rows of hardware Q-Links. Search is always tappable.
-    p.qgroup((42, 427, 1238, 514), ["prev_track", "start_track", "play_pause", "next_track"])
+    p.qgroup((43, 416, 1237, 522), ["prev_track", "start_track", "play_pause", "next_track"])
     p.qgroup((42, 523, 1238, 614), ["mark_in", "mark_out", "capture_rec", "save_last_30"])
-    p.qgroup((380, 25, 1215, 95), ["genre", "decade", "region", "country"])
-    p.qgroup((1035, 435, 1238, 614), ["search", "transport_sync", "rewind_15", "forward_15"])
+    p.qgroup((380, 25, 1245, 101), ["genre", "decade", "region", "country"])
+    p.qgroup((985, 415, 1241, 616), ["search", "transport_sync", "rewind_15", "forward_15"])
     return p, c
 
 
