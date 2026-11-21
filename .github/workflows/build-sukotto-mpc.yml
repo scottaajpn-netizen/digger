@@ -1,0 +1,57 @@
+name: Build Sukotto Digger for MPC One Gen 1
+
+on:
+  push:
+    branches:
+      - feat/mpc-sukotto-one-track-v1
+    paths:
+      - "mpc/**"
+      - ".github/workflows/build-sukotto-mpc.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  armv7-mpc-plugin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+      - name: Python dependencies
+        run: python -m pip install --upgrade pillow
+      - name: Get fixed upstream Crate Digger and SDK commits
+        shell: bash
+        run: |
+          git clone https://github.com/sd88me/mpc-vst-cratedigger.git /tmp/cratedigger
+          git -C /tmp/cratedigger checkout 331d32442fc7a53f5bd6bd2d7eb2648ed59dd661
+          git clone https://github.com/inmusic-software/mpc-plugin-builder-sdk.git /tmp/mpc-sdk
+          git -C /tmp/mpc-sdk checkout a5949cf6fe2cbfb95bcbe0ddf1f7ef555e71f2be
+      - name: Generate one-track MPC plugin and check Python syntax
+        run: |
+          python -m py_compile mpc/patch_sukotto.py
+          python mpc/patch_sukotto.py /tmp/cratedigger
+          python -m py_compile /tmp/cratedigger/tools/make_tui.py /tmp/cratedigger/tools/package.py
+          cd /tmp/cratedigger
+          python tools/make_tui.py --preview
+      - name: Build standalone ARMv7 VST2
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd /tmp/cratedigger
+          MPC_SDK=/tmp/mpc-sdk ./build-sdk.sh
+          python tools/package.py
+          test -s "dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip"
+      - name: Upload experimental package
+        uses: actions/upload-artifact@v4
+        with:
+          name: sukotto-digger-mpc-one-armv7-experimental
+          path: /tmp/cratedigger/dist/Sukotto-Digger-2.2.0-VST2-Plugins-armv7.zip
+          if-no-files-found: error
+          retention-days: 14
